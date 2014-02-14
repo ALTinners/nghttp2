@@ -1,0 +1,30 @@
+nghttp2 (0.3.0-3) experimental; urgency=medium
+
+  * Update debian/sphinx.tar.bz2 from latest git upstream
+  * debian/copyright: Updated to describe above
+
+ -- Dave Beckett <dajobe@debian.org>  Fri, 14 Feb 2014 09:53:50 -0800
+
+nghttp2 (0.3.0-2) experimental; urgency=medium
+
+  * Build-Depends: pkg-config, libpython-dev
+
+ -- Dave Beckett <dajobe@debian.org>  Mon, 10 Feb 2014 19:09:47 -0800
+
+nghttp2 (0.3.0-1) experimental; urgency=medium
+
+  * New upstream release
+  * Major soname bumped so rename packages to libnghttp2-2*
+  * Added libnghttp2-2-dbg package
+  * Added libnghttp2-2.shlibs to manage changing ABI
+  * debian/copyright: updated for new files
+  * debian/watch: added debian and uupdate
+  * Added debian/sphinx.tar.bz2 from upstream so 'make html' works.
+
+ -- Dave Beckett <dajobe@debian.org>  Fri, 07 Feb 2014 14:45:39 -0800
+
+nghttp2 (0.2.0-1) experimental; urgency=low
+
+  * Initial release. (Closes: #737261)
+
+ -- Dave Beckett <dajobe@debian.org>  Fri, 31 Jan 2014 23:18:41 -0800

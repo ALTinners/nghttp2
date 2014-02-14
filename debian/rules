@@ -1,0 +1,37 @@
+#!/usr/bin/make -f
+
+include /usr/share/cdbs/1/rules/debhelper.mk
+#include /usr/share/cdbs/1/rules/autoreconf.mk
+include /usr/share/cdbs/1/class/autotools.mk
+
+DEB_DBG_PACKAGE_libnghttp2-2 = libnghttp2-2-dbg
+
+DEB_CONFIGURE_EXTRA_FLAGS += --libdir=\$${prefix}/lib/$(DEB_HOST_MULTIARCH) \
+  --bindir=\$${prefix}/bin/$(DEB_HOST_MULTIARCH)
+
+LDFLAGS += -Wl,--default-symver
+
+## Show what dh_autoreconf is deleting / moving / restoring
+#DEB_DH_AUTORECONF_ARGS := --verbose
+
+clean::
+	rm -rf doc/manual/html doc/manual/doctrees doc/apiref.rst
+	rm -rf doc/_themes
+
+configure/libnghttp2-doc::
+	tar -x -p -j -f $(CURDIR)/debian/sphinx.tar.bz2
+
+install/libnghttp-dev::
+	rm -f debian/tmp/usr/lib/*/libnghttp2.la
+
+build/libnghttp2-doc::
+	$(MAKE) html
+
+install/libnghttp2-doc::
+	d=$(CURDIR)/debian/libnghttp2-doc/usr/share/doc/libnghttp2-doc; \
+	mkdir -p $$d; \
+	cp -pr doc/manual/html/* $$d; \
+	cd $$d/_static; \
+	ln -sf /usr/share/javascript/jquery/jquery.js; \
+	ln -sf /usr/share/javascript/underscore/underscore.js
+

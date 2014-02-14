@@ -1,0 +1,8 @@
+Possible extra dependencies - already packaged
+  libcunit1-dev / libcunit1 (optional): for testing >= 2.1
+  python 2.7+ / cython 0.19+ : for python bindings
+
+Not packaged for debian
+  failmalloc: for testing
+  libssl-dev: 1.0.3+ (not yet released) needed for ALPN support
+  spdylay: for SPDY support >= 1.2.3
