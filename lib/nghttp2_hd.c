@@ -1414,6 +1414,7 @@ ssize_t nghttp2_hd_inflate_hd(nghttp2_hd_inflater *inflater,
 
   DEBUGF(fprintf(stderr, "nghtp2_hd_infalte_hd start state=%d\n",
                  inflater->state));
+  hd_inflate_keep_free(inflater);
   *inflate_flags = NGHTTP2_HD_INFLATE_NONE;
   for(; in != last;) {
     switch(inflater->state) {
@@ -1642,6 +1643,10 @@ ssize_t nghttp2_hd_inflate_hd(nghttp2_hd_inflater *inflater,
   }
   assert(in == last);
   if(in_final) {
+    if(inflater->state != NGHTTP2_HD_STATE_OPCODE) {
+      rv = NGHTTP2_ERR_HEADER_COMP;
+      goto fail;
+    }
     for(; inflater->end_headers_index < inflater->ctx.hd_table.len;
         ++inflater->end_headers_index) {
       nghttp2_hd_entry *ent;

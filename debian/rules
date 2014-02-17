@@ -16,10 +16,6 @@ LDFLAGS += -Wl,--default-symver
 
 clean::
 	rm -rf doc/manual/html doc/manual/doctrees doc/apiref.rst
-	rm -rf doc/_themes
-
-configure/libnghttp2-doc::
-	tar -x -p -j -f $(CURDIR)/debian/sphinx.tar.bz2
 
 install/libnghttp-dev::
 	rm -f debian/tmp/usr/lib/*/libnghttp2.la

@@ -1,6 +1,0 @@
-* Added debian/source.tbz with contents of
-  doc/_themes/sphinx_rtd_theme/ from upstream GIT sources since it
-  was not present in the release.  Filed an issue
-  https://github.com/tatsuhiro-t/nghttp2/issues/26
-
- -- Dave Beckett <dajobe@debian.org>, Fri,  7 Feb 2014 14:35:51 -0800

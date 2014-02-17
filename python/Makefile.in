@@ -390,7 +390,7 @@ EXTRA_DIST = cnghttp2.pxd setup.py
 @ENABLE_PYTHON_BINDINGS_TRUE@	$(PYTHON_CPPFLAGS) \
 @ENABLE_PYTHON_BINDINGS_TRUE@	-fno-strict-aliasing \
 @ENABLE_PYTHON_BINDINGS_TRUE@	-I$(top_srcdir)/lib/includes \
-@ENABLE_PYTHON_BINDINGS_TRUE@	-I$(build_srcdir)/lib/includes \
+@ENABLE_PYTHON_BINDINGS_TRUE@	-I$(top_builddir)/lib/includes \
 @ENABLE_PYTHON_BINDINGS_TRUE@	-I$(top_srcdir)/lib
 
 @ENABLE_PYTHON_BINDINGS_TRUE@nghttp2_la_LDFLAGS = \
