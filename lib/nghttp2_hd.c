@@ -531,10 +531,10 @@ static  uint8_t* decode_length(ssize_t *res, int *final, ssize_t initial,
       *final = 1;
       return in + 1;
     }
-  }
-  if(++in == last) {
-    *res = n;
-    return in;
+    if(++in == last) {
+      *res = n;
+      return in;
+    }
   }
   for(r = 0; in != last; ++in, r += 7) {
     n += (*in & 0x7f) << r;
@@ -1412,6 +1412,10 @@ ssize_t nghttp2_hd_inflate_hd(nghttp2_hd_inflater *inflater,
   uint8_t *last = in + inlen;
   int rfin = 0;
 
+  if(inflater->ctx.bad) {
+    return NGHTTP2_ERR_HEADER_COMP;
+  }
+
   DEBUGF(fprintf(stderr, "nghtp2_hd_infalte_hd start state=%d\n",
                  inflater->state));
   hd_inflate_keep_free(inflater);
@@ -1477,6 +1481,7 @@ ssize_t nghttp2_hd_inflate_hd(nghttp2_hd_inflater *inflater,
         }
       } else {
         inflater->index = inflater->left;
+        assert(inflater->index > 0);
         --inflater->index;
         inflater->ent_name = nghttp2_hd_table_get(&inflater->ctx,
                                                   inflater->index);
