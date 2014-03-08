@@ -1,9 +1,18 @@
+nghttp2 (0.3.2-2) experimental; urgency=medium
+
+  * Explicitly set to install AUTHORS and README.rst (not README
+    which is a pointer).  (Closes: #741102)
+  * Remove useless objects.inv from libnghttp2-doc
+
+ -- Dave Beckett <dajobe@debian.org>  Sat, 08 Mar 2014 10:36:48 -0800
+
 nghttp2 (0.3.2-1) experimental; urgency=medium
 
   * New upstream release
   * Added doc-base file for libnghttp2-doc
+  * Mark libnghttp2-2-dbg as Multi-Arch: same
 
- -- Dave Beckett <dajobe@debian.org>  Sun, 02 Mar 2014 10:08:21 -0800
+ -- Dave Beckett <dajobe@debian.org>  Sun, 02 Mar 2014 10:24:19 -0800
 
 nghttp2 (0.3.1-1) experimental; urgency=medium
 

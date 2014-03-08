@@ -14,6 +14,9 @@ LDFLAGS += -Wl,--default-symver
 ## Show what dh_autoreconf is deleting / moving / restoring
 #DEB_DH_AUTORECONF_ARGS := --verbose
 
+# Do not want README so set the default docs explicitly
+DEB_INSTALL_DOCS_ALL = AUTHORS README.rst
+
 clean::
 	rm -rf doc/manual/html doc/manual/doctrees doc/apiref.rst
 
@@ -27,7 +30,8 @@ install/libnghttp2-doc::
 	d=$(CURDIR)/debian/libnghttp2-doc/usr/share/doc/libnghttp2-doc; \
 	mkdir -p $$d; \
 	cp -pr doc/manual/html/* $$d; \
-	cd $$d/_static; \
+	cd $$d; \
+	rm -f objects.inv; \
+	cd _static; \
 	ln -sf /usr/share/javascript/jquery/jquery.js; \
 	ln -sf /usr/share/javascript/underscore/underscore.js
-
