@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2013 Tatsuhiro Tsujikawa
  *
@@ -49,7 +49,8 @@
 #define ARRLEN(x) (sizeof(x)/sizeof(x[0]))
 
 #define MAKE_NV(NAME, VALUE)                                            \
-  { (uint8_t*)NAME, (uint8_t*)VALUE, sizeof(NAME) - 1, sizeof(VALUE) - 1 }
+  { (uint8_t*)NAME, (uint8_t*)VALUE, sizeof(NAME) - 1, sizeof(VALUE) - 1, \
+      NGHTTP2_NV_FLAG_NONE }
 
 struct app_context;
 typedef struct app_context app_context;
@@ -190,7 +191,7 @@ static http2_session_data* create_http2_session_data(app_context *app_ctx,
     (app_ctx->evbase, fd, ssl,
      BUFFEREVENT_SSL_ACCEPTING,
      BEV_OPT_CLOSE_ON_FREE | BEV_OPT_DEFER_CALLBACKS);
-  session_data->handshake_leftlen = NGHTTP2_CLIENT_CONNECTION_HEADER_LEN;
+  session_data->handshake_leftlen = NGHTTP2_CLIENT_CONNECTION_PREFACE_LEN;
   rv = getnameinfo(addr, addrlen, host, sizeof(host), NULL, 0, NI_NUMERICHOST);
   if(rv != 0) {
     session_data->client_addr = strdup("(unknown)");
@@ -327,7 +328,7 @@ static char* percent_decode(const uint8_t *value, size_t valuelen)
 
 static ssize_t file_read_callback
 (nghttp2_session *session, int32_t stream_id,
- uint8_t *buf, size_t length, int *eof,
+ uint8_t *buf, size_t length, uint32_t *data_flags,
  nghttp2_data_source *source, void *user_data)
 {
   int fd = source->fd;
@@ -337,7 +338,7 @@ static ssize_t file_read_callback
     return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
   }
   if(r == 0) {
-    *eof = 1;
+    *data_flags |= NGHTTP2_DATA_FLAG_EOF;
   }
   return r;
 }
@@ -382,9 +383,17 @@ static int error_reply(nghttp2_session *session,
     }
     return 0;
   }
-  write(pipefd[1], ERROR_HTML, sizeof(ERROR_HTML) - 1);
+
+  rv = write(pipefd[1], ERROR_HTML, sizeof(ERROR_HTML) - 1);
   close(pipefd[1]);
+
+  if(rv != sizeof(ERROR_HTML)) {
+    close(pipefd[0]);
+    return -1;
+  }
+
   stream_data->fd = pipefd[0];
+
   if(send_response(session, stream_data->stream_id, hdrs, ARRLEN(hdrs),
                    pipefd[0]) != 0) {
     close(pipefd[0]);
@@ -399,6 +408,7 @@ static int on_header_callback(nghttp2_session *session,
                               const nghttp2_frame *frame,
                               const uint8_t *name, size_t namelen,
                               const uint8_t *value, size_t valuelen,
+                              uint8_t flags,
                               void *user_data)
 {
   http2_stream_data *stream_data;
@@ -410,7 +420,7 @@ static int on_header_callback(nghttp2_session *session,
     }
     stream_data = nghttp2_session_get_stream_user_data(session,
                                                        frame->hd.stream_id);
-    if(stream_data->request_path) {
+    if(!stream_data || stream_data->request_path) {
       break;
     }
     if(namelen == sizeof(PATH) - 1 && memcmp(PATH, name, namelen) == 0) {
@@ -529,6 +539,9 @@ static int on_stream_close_callback(nghttp2_session *session,
   http2_stream_data *stream_data;
 
   stream_data = nghttp2_session_get_stream_user_data(session, stream_id);
+  if(!stream_data) {
+    return 0;
+  }
   remove_stream(session_data, stream_data);
   delete_http2_stream_data(stream_data);
   return 0;
@@ -536,7 +549,9 @@ static int on_stream_close_callback(nghttp2_session *session,
 
 static void initialize_nghttp2_session(http2_session_data *session_data)
 {
-  nghttp2_session_callbacks callbacks = {0};
+  nghttp2_session_callbacks callbacks;
+
+  memset(&callbacks, 0, sizeof(callbacks));
 
   callbacks.send_callback = send_callback;
   callbacks.on_frame_recv_callback = on_frame_recv_callback;
@@ -546,7 +561,7 @@ static void initialize_nghttp2_session(http2_session_data *session_data)
   nghttp2_session_server_new(&session_data->session, &callbacks, session_data);
 }
 
-/* Send HTTP/2.0 client connection header, which includes 24 bytes
+/* Send HTTP/2 client connection header, which includes 24 bytes
    magic octets and SETTINGS frame */
 static int send_server_connection_header(http2_session_data *session_data)
 {
@@ -626,9 +641,9 @@ static void handshake_readcb(struct bufferevent *bev, void *ptr)
   uint8_t data[24];
   struct evbuffer *input = bufferevent_get_input(session_data->bev);
   int readlen = evbuffer_remove(input, data, session_data->handshake_leftlen);
-  const char *conhead = NGHTTP2_CLIENT_CONNECTION_HEADER;
+  const char *conhead = NGHTTP2_CLIENT_CONNECTION_PREFACE;
 
-  if(memcmp(conhead + NGHTTP2_CLIENT_CONNECTION_HEADER_LEN
+  if(memcmp(conhead + NGHTTP2_CLIENT_CONNECTION_PREFACE_LEN
             - session_data->handshake_leftlen, data, readlen) != 0) {
     delete_http2_session_data(session_data);
     return;
@@ -675,7 +690,7 @@ static void start_listen(struct event_base *evbase, const char *service,
   hints.ai_flags = AI_PASSIVE;
 #ifdef AI_ADDRCONFIG
   hints.ai_flags |= AI_ADDRCONFIG;
-#endif // AI_ADDRCONFIG
+#endif /* AI_ADDRCONFIG */
 
   rv = getaddrinfo(NULL, service, &hints, &res);
   if(rv != 0) {

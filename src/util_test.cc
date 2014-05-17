@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2013 Tatsuhiro Tsujikawa
  *
@@ -91,6 +91,24 @@ void test_util_to_base64(void)
   x = "AAA--B_B";
   util::to_base64(x);
   CU_ASSERT("AAA++B/B" == x);
+}
+
+void test_util_percent_encode_token(void)
+{
+  CU_ASSERT("h2" == util::percent_encode_token("h2"));
+  CU_ASSERT("h3~" == util::percent_encode_token("h3~"));
+  CU_ASSERT("100%25" == util::percent_encode_token("100%"));
+  CU_ASSERT("http%202" == util::percent_encode_token("http 2"));
+}
+
+void test_util_utox(void)
+{
+  CU_ASSERT("0" == util::utox(0));
+  CU_ASSERT("1" == util::utox(1));
+  CU_ASSERT("F" == util::utox(15));
+  CU_ASSERT("10" == util::utox(16));
+  CU_ASSERT("3B9ACA07" == util::utox(1000000007));
+  CU_ASSERT("100000000" == util::utox(1LL << 32));
 }
 
 } // namespace shrpx

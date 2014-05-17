@@ -1,4 +1,4 @@
-# nghttp2 - HTTP/2.0 C Library
+# nghttp2 - HTTP/2 C Library
 
 # Copyright (c) 2012 Tatsuhiro Tsujikawa
 
@@ -31,21 +31,21 @@ check_PROGRAMS += failmalloc
 endif # ENABLE_FAILMALLOC
 
 OBJECTS = main.c nghttp2_pq_test.c nghttp2_map_test.c nghttp2_queue_test.c \
-	nghttp2_buffer_test.c \
 	nghttp2_test_helper.c \
 	nghttp2_frame_test.c \
 	nghttp2_stream_test.c \
 	nghttp2_session_test.c \
 	nghttp2_hd_test.c \
 	nghttp2_npn_test.c \
-	nghttp2_gzip_test.c \
-	nghttp2_helper_test.c
+	nghttp2_helper_test.c \
+	nghttp2_buf_test.c
 
 HFILES = nghttp2_pq_test.h nghttp2_map_test.h nghttp2_queue_test.h \
-	nghttp2_buffer_test.h nghttp2_session_test.h \
+	nghttp2_session_test.h \
 	nghttp2_frame_test.h nghttp2_stream_test.h nghttp2_hd_test.h \
-	nghttp2_npn_test.h nghttp2_gzip_test.h nghttp2_helper_test.h \
-	nghttp2_test_helper.h
+	nghttp2_npn_test.h nghttp2_helper_test.h \
+	nghttp2_test_helper.h \
+	nghttp2_buf_test.h
 
 main_SOURCES = $(HFILES) $(OBJECTS)
 

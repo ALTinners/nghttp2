@@ -14,7 +14,7 @@
 
 @SET_MAKE@
 
-# nghttp2 - HTTP/2.0 C Library
+# nghttp2 - HTTP/2 C Library
 
 # Copyright (c) 2012, 2013 Tatsuhiro Tsujikawa
 
@@ -99,7 +99,8 @@ subdir = lib
 DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/Makefile.am \
 	$(srcdir)/libnghttp2.pc.in $(top_srcdir)/depcomp
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/m4/ax_cxx_compile_stdcxx_11.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/m4/ax_check_compile_flag.m4 \
+	$(top_srcdir)/m4/ax_cxx_compile_stdcxx_11.m4 \
 	$(top_srcdir)/m4/ax_python_devel.m4 \
 	$(top_srcdir)/m4/libtool.m4 $(top_srcdir)/m4/ltoptions.m4 \
 	$(top_srcdir)/m4/ltsugar.m4 $(top_srcdir)/m4/ltversion.m4 \
@@ -142,11 +143,11 @@ LTLIBRARIES = $(lib_LTLIBRARIES)
 libnghttp2_la_LIBADD =
 am__objects_1 =
 am__objects_2 = nghttp2_pq.lo nghttp2_map.lo nghttp2_queue.lo \
-	nghttp2_buffer.lo nghttp2_frame.lo nghttp2_stream.lo \
+	nghttp2_frame.lo nghttp2_buf.lo nghttp2_stream.lo \
 	nghttp2_outbound_item.lo nghttp2_session.lo nghttp2_submit.lo \
-	nghttp2_helper.lo nghttp2_npn.lo nghttp2_gzip.lo nghttp2_hd.lo \
+	nghttp2_helper.lo nghttp2_npn.lo nghttp2_hd.lo \
 	nghttp2_hd_huffman.lo nghttp2_hd_huffman_data.lo \
-	nghttp2_version.lo
+	nghttp2_version.lo nghttp2_priority_spec.lo nghttp2_option.lo
 am_libnghttp2_la_OBJECTS = $(am__objects_1) $(am__objects_2)
 libnghttp2_la_OBJECTS = $(am_libnghttp2_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
@@ -301,6 +302,7 @@ INSTALL_SCRIPT = @INSTALL_SCRIPT@
 INSTALL_STRIP_PROGRAM = @INSTALL_STRIP_PROGRAM@
 JANSSON_CFLAGS = @JANSSON_CFLAGS@
 JANSSON_LIBS = @JANSSON_LIBS@
+JEMALLOC_LIBS = @JEMALLOC_LIBS@
 LD = @LD@
 LDFLAGS = @LDFLAGS@
 LIBEVENT_OPENSSL_CFLAGS = @LIBEVENT_OPENSSL_CFLAGS@
@@ -439,21 +441,27 @@ pkgconfig_DATA = libnghttp2.pc
 DISTCLEANFILES = $(pkgconfig_DATA)
 lib_LTLIBRARIES = libnghttp2.la
 OBJECTS = nghttp2_pq.c nghttp2_map.c nghttp2_queue.c \
-	nghttp2_buffer.c nghttp2_frame.c \
+	nghttp2_frame.c \
+	nghttp2_buf.c \
 	nghttp2_stream.c nghttp2_outbound_item.c \
 	nghttp2_session.c nghttp2_submit.c \
 	nghttp2_helper.c \
-	nghttp2_npn.c nghttp2_gzip.c \
+	nghttp2_npn.c \
 	nghttp2_hd.c nghttp2_hd_huffman.c nghttp2_hd_huffman_data.c \
-	nghttp2_version.c
+	nghttp2_version.c \
+	nghttp2_priority_spec.c \
+	nghttp2_option.c
 
 HFILES = nghttp2_pq.h nghttp2_int.h nghttp2_map.h nghttp2_queue.h \
-	nghttp2_buffer.h nghttp2_frame.h \
+	nghttp2_frame.h \
+	nghttp2_buf.h \
 	nghttp2_session.h nghttp2_helper.h nghttp2_stream.h nghttp2_int.h \
-	nghttp2_npn.h nghttp2_gzip.h \
+	nghttp2_npn.h \
 	nghttp2_submit.h nghttp2_outbound_item.h \
 	nghttp2_net.h \
-	nghttp2_hd.h nghttp2_hd_huffman.h
+	nghttp2_hd.h nghttp2_hd_huffman.h \
+	nghttp2_priority_spec.h \
+	nghttp2_option.h
 
 libnghttp2_la_SOURCES = $(HFILES) $(OBJECTS)
 libnghttp2_la_LDFLAGS = -no-undefined \
@@ -540,17 +548,18 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_buffer.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_buf.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_frame.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_gzip.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_hd.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_hd_huffman.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_hd_huffman_data.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_helper.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_map.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_npn.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_option.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_outbound_item.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_pq.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_priority_spec.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_queue.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_session.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_stream.Plo@am__quote@

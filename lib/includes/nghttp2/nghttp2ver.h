@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012, 2013 Tatsuhiro Tsujikawa
  *
@@ -29,7 +29,7 @@
  * @macro
  * Version number of the nghttp2 library release
  */
-#define NGHTTP2_VERSION "0.3.2"
+#define NGHTTP2_VERSION "0.4.0"
 
 /**
  * @macro
@@ -37,6 +37,6 @@
  * release. This is a 24 bit number with 8 bits for major number, 8 bits
  * for minor and 8 bits for patch. Version 1.2.3 becomes 0x010203.
  */
-#define NGHTTP2_VERSION_NUM 0x000302
+#define NGHTTP2_VERSION_NUM 0x000400
 
 #endif /* NGHTTP2VER_H */

@@ -1,3 +1,16 @@
+nghttp2 (0.4.0-1) unstable; urgency=medium
+
+  * New upstream release
+  * Major soname bumped so rename packages to libnghttp2-3*
+
+ -- Dave Beckett <dajobe@debian.org>  Sat, 17 May 2014 09:35:36 -0700
+
+nghttp2 (0.3.2-3) experimental; urgency=medium
+
+  * Add symbols
+
+ -- Dave Beckett <dajobe@debian.org>  Sat, 08 Mar 2014 15:35:32 -0800
+
 nghttp2 (0.3.2-2) experimental; urgency=medium
 
   * Explicitly set to install AUTHORS and README.rst (not README

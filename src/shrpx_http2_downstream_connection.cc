@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -154,7 +154,7 @@ namespace {
 ssize_t http2_data_read_callback(nghttp2_session *session,
                                  int32_t stream_id,
                                  uint8_t *buf, size_t length,
-                                 int *eof,
+                                 uint32_t *data_flags,
                                  nghttp2_data_source *source,
                                  void *user_data)
 {
@@ -183,7 +183,7 @@ ssize_t http2_data_read_callback(nghttp2_session *session,
         if(!downstream->get_upgrade_request() ||
            (downstream->get_response_state() == Downstream::HEADER_COMPLETE &&
             !downstream->get_upgraded())) {
-          *eof = 1;
+          *data_flags |= NGHTTP2_DATA_FLAG_EOF;
         } else {
           return NGHTTP2_ERR_DEFERRED;
         }
@@ -204,7 +204,7 @@ ssize_t http2_data_read_callback(nghttp2_session *session,
         if(evbuffer_get_length(body) == 0) {
           // Check get_request_state() == MSG_COMPLETE just in case
           if(downstream->get_request_state() == Downstream::MSG_COMPLETE) {
-            *eof = 1;
+            *data_flags |= NGHTTP2_DATA_FLAG_EOF;
             break;
           }
           return NGHTTP2_ERR_DEFERRED;
@@ -246,15 +246,16 @@ int Http2DownstreamConnection::push_request_headers()
   downstream_->concat_norm_request_headers();
   auto end_headers = std::end(downstream_->get_request_headers());
 
-  // 6 means:
+  // 7 means:
   // 1. :method
   // 2. :scheme
   // 3. :path
   // 4. :authority (optional)
   // 5. via (optional)
   // 6. x-forwarded-for (optional)
+  // 7. x-forwarded-proto (optional)
   auto nva = std::vector<nghttp2_nv>();
-  nva.reserve(nheader + 6);
+  nva.reserve(nheader + 7);
   std::string via_value;
   std::string xff_value;
   std::string scheme, authority, path, query;
@@ -308,9 +309,11 @@ int Http2DownstreamConnection::push_request_headers()
       }
     }
     if(scheme.empty()) {
-      // The default scheme is http. For HTTP2 upstream, the path must
-      // be absolute URI, so scheme should be provided.
-      nva.push_back(http2::make_nv_ll(":scheme", "http"));
+      if(client_handler_->get_ssl()) {
+        nva.push_back(http2::make_nv_ll(":scheme", "https"));
+      } else {
+        nva.push_back(http2::make_nv_ll(":scheme", "http"));
+      }
     } else {
       nva.push_back(http2::make_nv_ls(":scheme", scheme));
     }
@@ -353,31 +356,44 @@ int Http2DownstreamConnection::push_request_headers()
   auto transfer_encoding =
     downstream_->get_norm_request_header("transfer-encoding");
   if(transfer_encoding != end_headers &&
-     util::strieq((*transfer_encoding).second.c_str(), "chunked")) {
+     util::strieq((*transfer_encoding).value.c_str(), "chunked")) {
     chunked_encoding = true;
   }
 
   auto xff = downstream_->get_norm_request_header("x-forwarded-for");
   if(get_config()->add_x_forwarded_for) {
     if(xff != end_headers) {
-      xff_value = (*xff).second;
+      xff_value = (*xff).value;
       xff_value += ", ";
     }
     xff_value += downstream_->get_upstream()->get_client_handler()->
       get_ipaddr();
     nva.push_back(http2::make_nv_ls("x-forwarded-for", xff_value));
   } else if(xff != end_headers) {
-    nva.push_back(http2::make_nv_ls("x-forwarded-for", (*xff).second));
+    nva.push_back(http2::make_nv_ls("x-forwarded-for", (*xff).value));
+  }
+
+  if(downstream_->get_request_method() != "CONNECT") {
+    // We use same protocol with :scheme header field
+    if(scheme.empty()) {
+      if(client_handler_->get_ssl()) {
+        nva.push_back(http2::make_nv_ll("x-forwarded-proto", "https"));
+      } else {
+        nva.push_back(http2::make_nv_ll("x-forwarded-proto", "http"));
+      }
+    } else {
+      nva.push_back(http2::make_nv_ls("x-forwarded-proto", scheme));
+    }
   }
 
   auto via = downstream_->get_norm_request_header("via");
   if(get_config()->no_via) {
     if(via != end_headers) {
-      nva.push_back(http2::make_nv_ls("via", (*via).second));
+      nva.push_back(http2::make_nv_ls("via", (*via).value));
     }
   } else {
     if(via != end_headers) {
-      via_value = (*via).second;
+      via_value = (*via).value;
       via_value += ", ";
     }
     via_value += http::create_via_header_value
@@ -403,10 +419,10 @@ int Http2DownstreamConnection::push_request_headers()
     nghttp2_data_provider data_prd;
     data_prd.source.ptr = this;
     data_prd.read_callback = http2_data_read_callback;
-    rv = http2session_->submit_request(this, downstream_->get_priorty(),
+    rv = http2session_->submit_request(this, downstream_->get_priority(),
                                        nva.data(), nva.size(), &data_prd);
   } else {
-    rv = http2session_->submit_request(this, downstream_->get_priorty(),
+    rv = http2session_->submit_request(this, downstream_->get_priority(),
                                        nva.data(), nva.size(), nullptr);
   }
   if(rv != 0) {
@@ -532,7 +548,7 @@ bool Http2DownstreamConnection::get_output_buffer_full()
 int Http2DownstreamConnection::on_priority_change(int32_t pri)
 {
   int rv;
-  if(downstream_->get_priorty() == pri) {
+  if(downstream_->get_priority() == pri) {
     return 0;
   }
   downstream_->set_priority(pri);

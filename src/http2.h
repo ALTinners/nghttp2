@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2013 Tatsuhiro Tsujikawa
  *
@@ -38,7 +38,33 @@
 
 namespace nghttp2 {
 
-typedef std::vector<std::pair<std::string, std::string>> Headers;
+struct Header {
+  Header(std::string name, std::string value, bool no_index=false)
+    : name(std::move(name)),
+      value(std::move(value)),
+      no_index(no_index)
+  {}
+
+  Header()
+    : no_index(false)
+  {}
+
+  bool operator==(const Header& other) const
+  {
+    return name == other.name && value == other.value;
+  }
+
+  bool operator<(const Header& rhs) const
+  {
+    return name < rhs.name || (name == rhs.name && value < rhs.value);
+  }
+
+  std::string name;
+  std::string value;
+  bool no_index;
+};
+
+typedef std::vector<Header> Headers;
 
 namespace http2 {
 
@@ -58,7 +84,7 @@ void copy_url_component(std::string& dest, const http_parser_url *u, int field,
                         const char* url);
 
 // Returns true if the header field |name| with length |namelen| bytes
-// is valid for HTTP/2.0.
+// is valid for HTTP/2.
 bool check_http2_allowed_header(const uint8_t *name, size_t namelen);
 
 // Calls check_http2_allowed_header with |name| and strlen(name),
@@ -66,7 +92,7 @@ bool check_http2_allowed_header(const uint8_t *name, size_t namelen);
 bool check_http2_allowed_header(const char *name);
 
 // Checks that headers |nva| do not contain disallowed header fields
-// in HTTP/2.0 spec. This function returns true if |nva| does not
+// in HTTP/2 spec. This function returns true if |nva| does not
 // contains such headers.
 bool check_http2_headers(const Headers& nva);
 
@@ -75,15 +101,18 @@ bool name_less(const Headers::value_type& lhs, const Headers::value_type& rhs);
 void normalize_headers(Headers& nva);
 
 Headers::value_type to_header(const uint8_t *name, size_t namelen,
-                              const uint8_t *value, size_t valuelen);
+                              const uint8_t *value, size_t valuelen,
+                              bool no_index);
 
 // Add name/value pairs to |nva|. The name is given in the |name| with
 // |namelen| bytes. This function inspects the |value| and split it
 // using '\0' as delimiter. Each token is added to the |nva| with the
-// name |name|.
+// name |name|.  If |no_index| is true, this name/value pair won't be
+// indexed when it is forwarded to the next hop.
 void split_add_header(Headers& nva,
                       const uint8_t *name, size_t namelen,
-                      const uint8_t *value, size_t valuelen);
+                      const uint8_t *value, size_t valuelen,
+                      bool no_index);
 
 // Returns sorted |nva| with |nvlen| elements. The headers are sorted
 // by name only and not necessarily stable. In addition to the
@@ -122,23 +151,24 @@ Headers concat_norm_headers(Headers headers);
 
 // Creates nghttp2_nv using |name| and |value| and returns it. The
 // returned value only references the data pointer to name.c_str() and
-// value.c_str().
-nghttp2_nv make_nv(const std::string& name, const std::string& value);
+// value.c_str().  If |no_index| is true, nghttp2_nv flags member has
+// NGHTTP2_NV_FLAG_NO_INDEX flag set.
+nghttp2_nv make_nv(const std::string& name, const std::string& value,
+                   bool no_index = false);
 
 // Create nghttp2_nv from string literal |name| and |value|.
 template<size_t N, size_t M>
 nghttp2_nv make_nv_ll(const char(&name)[N], const char(&value)[M])
 {
-  return { (uint8_t*)name, (uint8_t*)value,
-      (uint16_t)(N - 1), (uint16_t)(M - 1) };
+  return {(uint8_t*)name, (uint8_t*)value, N - 1, M - 1, NGHTTP2_NV_FLAG_NONE};
 }
 
 // Create nghttp2_nv from string literal |name| and c-string |value|.
 template<size_t N>
 nghttp2_nv make_nv_lc(const char(&name)[N], const char *value)
 {
-  return { (uint8_t*)name, (uint8_t*)value,
-      (uint16_t)(N - 1), (uint16_t)strlen(value) };
+  return {(uint8_t*)name, (uint8_t*)value, N - 1, strlen(value),
+      NGHTTP2_NV_FLAG_NONE};
 }
 
 // Create nghttp2_nv from string literal |name| and std::string
@@ -146,12 +176,12 @@ nghttp2_nv make_nv_lc(const char(&name)[N], const char *value)
 template<size_t N>
 nghttp2_nv make_nv_ls(const char(&name)[N], const std::string& value)
 {
-  return { (uint8_t*)name, (uint8_t*)value.c_str(),
-      (uint16_t)(N - 1), (uint16_t)value.size() };
+  return {(uint8_t*)name, (uint8_t*)value.c_str(), N - 1, value.size(),
+      NGHTTP2_NV_FLAG_NONE};
 }
 
 // Appends headers in |headers| to |nv|. Certain headers, including
-// disallowed headers in HTTP/2.0 spec and headers which require
+// disallowed headers in HTTP/2 spec and headers which require
 // special handling (i.e. via), are not copied.
 void copy_norm_headers_to_nva
 (std::vector<nghttp2_nv>& nva, const Headers& headers);

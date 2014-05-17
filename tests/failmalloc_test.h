@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -28,5 +28,6 @@
 void test_nghttp2_session_send(void);
 void test_nghttp2_session_recv(void);
 void test_nghttp2_frame(void);
+void test_nghttp2_hd(void);
 
 #endif /* FAILMALLOC_TEST_H */

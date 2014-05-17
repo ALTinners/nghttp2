@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2013 Tatsuhiro Tsujikawa
  *
@@ -52,7 +52,6 @@ typedef struct {
 typedef nghttp2_huff_decode huff_decode_table_type[16];
 
 typedef struct {
-  const huff_decode_table_type *huff_decode_table;
   /* Current huffman decoding state. We stripped leaf nodes, so the
      value range is [0..255], inclusive. */
   uint8_t state;

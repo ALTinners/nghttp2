@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -31,10 +31,32 @@
 
 #include "nghttp2_frame.h"
 #include "nghttp2_hd.h"
+#include "nghttp2_session.h"
 
 #define MAKE_NV(NAME, VALUE)                                            \
-  { (uint8_t*)NAME, (uint8_t*)VALUE, strlen(NAME), strlen(VALUE) }
+  { (uint8_t*)NAME, (uint8_t*)VALUE, strlen(NAME), strlen(VALUE),       \
+      NGHTTP2_NV_FLAG_NONE }
 #define ARRLEN(ARR) (sizeof(ARR)/sizeof(ARR[0]))
+
+#define assert_nv_equal(A, B, len)                          \
+  do {                                                      \
+    size_t alloclen = sizeof(nghttp2_nv) * len;             \
+    nghttp2_nv *sa = A, *sb = B;                            \
+    nghttp2_nv *a = malloc(alloclen);                       \
+    nghttp2_nv *b = malloc(alloclen);                       \
+    ssize_t i_;                                             \
+    memcpy(a, sa, alloclen);                                \
+    memcpy(b, sb, alloclen);                                \
+    nghttp2_nv_array_sort(a, len);                          \
+    nghttp2_nv_array_sort(b, len);                          \
+    for(i_ = 0; i_ < (ssize_t)len; ++i_) {                  \
+      CU_ASSERT(nghttp2_nv_equal(&a[i_], &b[i_]));          \
+    }                                                       \
+    free(b);                                                \
+    free(a);                                                \
+  } while(0);
+
+int unpack_framebuf(nghttp2_frame *frame, nghttp2_bufs *bufs);
 
 int unpack_frame(nghttp2_frame *frame, const uint8_t *in, size_t len);
 
@@ -55,6 +77,27 @@ void nva_out_reset(nva_out *out);
 void add_out(nva_out *out, nghttp2_nv *nv);
 
 ssize_t inflate_hd(nghttp2_hd_inflater *inflater, nva_out *out,
-                   uint8_t *buf, size_t buflen);
+                   nghttp2_bufs *bufs, size_t offset);
+
+int frame_pack_bufs_init(nghttp2_bufs *bufs);
+
+void bufs_large_init(nghttp2_bufs *bufs, size_t chunk_size);
+
+nghttp2_stream* open_stream(nghttp2_session *session, int32_t stream_id);
+
+nghttp2_stream* open_stream_with_dep(nghttp2_session *session,
+                                     int32_t stream_id,
+                                     nghttp2_stream *dep_stream);
+
+nghttp2_stream* open_stream_with_dep_weight(nghttp2_session *session,
+                                            int32_t stream_id,
+                                            int32_t weight,
+                                            nghttp2_stream *dep_stream);
+
+nghttp2_stream* open_stream_with_dep_excl(nghttp2_session *session,
+                                          int32_t stream_id,
+                                          nghttp2_stream *dep_stream);
+
+nghttp2_outbound_item* create_data_ob_item(void);
 
 #endif /* NGHTTP2_TEST_HELPER_H */

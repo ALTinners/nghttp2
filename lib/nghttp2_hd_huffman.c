@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2013 Tatsuhiro Tsujikawa
  *
@@ -30,11 +30,8 @@
 
 #include "nghttp2_hd.h"
 
-extern const nghttp2_huff_sym req_huff_sym_table[];
-extern const nghttp2_huff_decode req_huff_decode_table[][16];
-
-extern const nghttp2_huff_sym res_huff_sym_table[];
-extern const nghttp2_huff_decode res_huff_decode_table[][16];
+extern const nghttp2_huff_sym huff_sym_table[];
+extern const nghttp2_huff_decode huff_decode_table[][16];
 
 /*
  * Encodes huffman code |sym| into |*dest_ptr|, whose least |rembits|
@@ -43,40 +40,69 @@ extern const nghttp2_huff_decode res_huff_decode_table[][16];
  * and points where next output should be placed. The number of
  * unfilled bits in the pointed location is returned.
  */
-static size_t huff_encode_sym(uint8_t **dest_ptr, size_t rembits,
-                              const nghttp2_huff_sym *sym)
+static ssize_t huff_encode_sym(nghttp2_bufs *bufs, size_t *avail_ptr,
+                               size_t rembits,
+                               const nghttp2_huff_sym *sym)
 {
+  int rv;
   size_t nbits = sym->nbits;
+
   for(;;) {
     if(rembits > nbits) {
-      **dest_ptr |= sym->code << (rembits - nbits);
+      if(*avail_ptr) {
+        nghttp2_bufs_fast_orb_hold(bufs, sym->code << (rembits - nbits));
+      } else {
+        rv = nghttp2_bufs_orb_hold(bufs, sym->code << (rembits - nbits));
+        if(rv != 0) {
+          return rv;
+        }
+
+        *avail_ptr = nghttp2_bufs_cur_avail(bufs);
+      }
+
       rembits -= nbits;
+
       break;
     }
-    **dest_ptr |= sym->code >> (nbits - rembits);
-    ++*dest_ptr;
+
+    if(*avail_ptr) {
+      nghttp2_bufs_fast_orb(bufs, sym->code >> (nbits - rembits));
+      --*avail_ptr;
+    } else {
+      rv = nghttp2_bufs_orb(bufs, sym->code >> (nbits - rembits));
+      if(rv != 0) {
+        return rv;
+      }
+
+      *avail_ptr = nghttp2_bufs_cur_avail(bufs);
+    }
+
     nbits -= rembits;
     rembits = 8;
+
     if(nbits == 0) {
       break;
     }
-    **dest_ptr = 0;
+
+    if(*avail_ptr) {
+      nghttp2_bufs_fast_addb_hold(bufs, 0);
+    } else {
+      rv = nghttp2_bufs_addb_hold(bufs, 0);
+      if(rv != 0) {
+        return rv;
+      }
+
+      *avail_ptr = nghttp2_bufs_cur_avail(bufs);
+    }
   }
   return rembits;
 }
 
-size_t nghttp2_hd_huff_encode_count(const uint8_t *src, size_t len,
-                                    nghttp2_hd_side side)
+size_t nghttp2_hd_huff_encode_count(const uint8_t *src, size_t len)
 {
   size_t i;
   size_t nbits = 0;
-  const nghttp2_huff_sym *huff_sym_table;
 
-  if(side == NGHTTP2_HD_SIDE_REQUEST) {
-    huff_sym_table = req_huff_sym_table;
-  } else {
-    huff_sym_table = res_huff_sym_table;
-  }
   for(i = 0; i < len; ++i) {
     nbits += huff_sym_table[src[i]].nbits;
   }
@@ -84,67 +110,87 @@ size_t nghttp2_hd_huff_encode_count(const uint8_t *src, size_t len,
   return (nbits + 7) / 8;
 }
 
-ssize_t nghttp2_hd_huff_encode(uint8_t *dest, size_t destlen,
-                               const uint8_t *src, size_t srclen,
-                               nghttp2_hd_side side)
+int nghttp2_hd_huff_encode(nghttp2_bufs *bufs,
+                           const uint8_t *src, size_t srclen)
 {
+  int rv;
   int rembits = 8;
-  uint8_t *dest_first = dest;
   size_t i;
-  const nghttp2_huff_sym *huff_sym_table;
+  size_t avail;
 
-  if(side == NGHTTP2_HD_SIDE_REQUEST) {
-    huff_sym_table = req_huff_sym_table;
-  } else {
-    huff_sym_table = res_huff_sym_table;
-  }
+  avail = nghttp2_bufs_cur_avail(bufs);
+
   for(i = 0; i < srclen; ++i) {
     const nghttp2_huff_sym *sym = &huff_sym_table[src[i]];
     if(rembits == 8) {
-      *dest = 0;
+      if(avail) {
+        nghttp2_bufs_fast_addb_hold(bufs, 0);
+      } else {
+        rv = nghttp2_bufs_addb_hold(bufs, 0);
+        if(rv != 0) {
+          return rv;
+        }
+        avail = nghttp2_bufs_cur_avail(bufs);
+      }
     }
-    rembits = huff_encode_sym(&dest, rembits, sym);
+    rembits = huff_encode_sym(bufs, &avail, rembits, sym);
+    if(rembits < 0) {
+      return rembits;
+    }
   }
   /* 256 is special terminal symbol, pad with its prefix */
   if(rembits < 8) {
     const nghttp2_huff_sym *sym = &huff_sym_table[256];
-    *dest |= sym->code >> (sym->nbits - rembits);
-    ++dest;
+
+    /* Caution we no longer adjust avail here */
+    if(avail) {
+      nghttp2_bufs_fast_orb(bufs, sym->code >> (sym->nbits - rembits));
+    } else {
+      rv = nghttp2_bufs_orb(bufs, sym->code >> (sym->nbits - rembits));
+      if(rv != 0) {
+        return rv;
+      }
+    }
   }
-  return dest - dest_first;
+
+  return 0;
 }
 
-void nghttp2_hd_huff_decode_context_init(nghttp2_hd_huff_decode_context *ctx,
-                                         nghttp2_hd_side side)
+void nghttp2_hd_huff_decode_context_init(nghttp2_hd_huff_decode_context *ctx)
 {
-  if(side == NGHTTP2_HD_SIDE_REQUEST) {
-    ctx->huff_decode_table = req_huff_decode_table;
-  } else {
-    ctx->huff_decode_table = res_huff_decode_table;
-  }
   ctx->state = 0;
   ctx->accept = 1;
 }
 
 ssize_t nghttp2_hd_huff_decode(nghttp2_hd_huff_decode_context *ctx,
-                               nghttp2_buffer *dest,
+                               nghttp2_bufs *bufs,
                                const uint8_t *src, size_t srclen, int final)
 {
   size_t i, j;
   int rv;
+  size_t avail;
+
+  avail = nghttp2_bufs_cur_avail(bufs);
+
   /* We use the decoding algorithm described in
      http://graphics.ics.uci.edu/pub/Prefix.pdf */
   for(i = 0; i < srclen; ++i) {
     uint8_t in = src[i] >> 4;
     for(j = 0; j < 2; ++j) {
-      const nghttp2_huff_decode *t = &ctx->huff_decode_table[ctx->state][in];
+      const nghttp2_huff_decode *t = &huff_decode_table[ctx->state][in];
       if(t->state == -1) {
         return NGHTTP2_ERR_HEADER_COMP;
       }
       if(t->flags & NGHTTP2_HUFF_SYM) {
-        rv = nghttp2_buffer_add_byte(dest, t->sym);
-        if(rv != 0) {
-          return rv;
+        if(avail) {
+          nghttp2_bufs_fast_addb(bufs, t->sym);
+          --avail;
+        } else {
+          rv = nghttp2_bufs_addb(bufs, t->sym);
+          if(rv != 0) {
+            return rv;
+          }
+          avail = nghttp2_bufs_cur_avail(bufs);
         }
       }
       ctx->state = t->state;

@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -103,7 +103,7 @@ void start_element_func
     if(!src_attr) {
       return;
     }
-    add_link(parser_data, src_attr, REQ_PRI_MEDIUM);
+    add_link(parser_data, src_attr, REQ_PRI_LOW);
   }
 }
 } // namespace

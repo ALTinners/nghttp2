@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -45,17 +45,14 @@ SSL_CTX* create_ssl_context(const char *private_key_file,
 
 SSL_CTX* create_ssl_client_context();
 
-ClientHandler* accept_connection(event_base *evbase, SSL_CTX *ssl_ctx,
-                                 evutil_socket_t fd,
-                                 sockaddr *addr, int addrlen);
-
-bool numeric_host(const char *hostname);
+ClientHandler* accept_connection
+(event_base *evbase,
+ bufferevent_rate_limit_group *rate_limit_group,
+ SSL_CTX *ssl_ctx,
+ evutil_socket_t fd,
+ sockaddr *addr, int addrlen);
 
 int check_cert(SSL *ssl);
-
-void setup_ssl_lock();
-
-void teardown_ssl_lock();
 
 // Retrieves DNS and IP address in subjectAltNames and commonName from
 // the |cert|.
@@ -131,6 +128,9 @@ int cert_lookup_tree_add_cert_from_file(CertLookupTree *lt, SSL_CTX *ssl_ctx,
 // the |protos| is the one used in Config::npn_list.
 bool in_proto_list(char **protos, size_t len,
                    const unsigned char *proto, size_t protolen);
+
+// Returns true if security requirement for HTTP/2 is fulfilled.
+bool check_http2_requirement(SSL *ssl);
 
 } // namespace ssl
 

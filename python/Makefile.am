@@ -1,4 +1,4 @@
-# nghttp2 - HTTP/2.0 C Library
+# nghttp2 - HTTP/2 C Library
 
 # Copyright (c) 2013 Tatsuhiro Tsujikawa
 
@@ -21,27 +21,28 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-EXTRA_DIST = cnghttp2.pxd setup.py
+# This will avoid that setup.py gets deleted before it is executed in
+# clean-local in parallel build.
+.NOTPARALLEL:
+
+EXTRA_DIST = cnghttp2.pxd nghttp2.pyx
 
 if ENABLE_PYTHON_BINDINGS
 
-distclean-local:
-	-rm -f nghttp2.c
+all-local: nghttp2.c
+	$(PYTHON) setup.py build
+
+install-exec-local:
+	$(PYTHON) setup.py install --prefix=$(DESTDIR)$(prefix)
+
+uninstall-local:
+	rm -rf $(DESTDIR)$(libdir)/python*/site-packages/*nghttp2*
+
+clean-local:
+	$(PYTHON) setup.py clean --all
+	-rm -f $(builddir)/nghttp2.c
 
 .pyx.c:
 	$(CYTHON) -o $@ $<
-
-pyexec_LTLIBRARIES = nghttp2.la
-nghttp2_la_SOURCES = nghttp2.pyx
-nghttp2_la_CPPFLAGS = \
-	$(PYTHON_CPPFLAGS) \
-	-fno-strict-aliasing \
-	-I$(top_srcdir)/lib/includes \
-	-I$(top_builddir)/lib/includes \
-	-I$(top_srcdir)/lib
-nghttp2_la_LDFLAGS = \
-	$(PYTHON_LDFLAGS) \
-	-avoid-version -module
-nghttp2_la_LIBADD = $(top_builddir)/lib/libnghttp2.la
 
 endif # ENABLE_PYTHON_BINDINGS

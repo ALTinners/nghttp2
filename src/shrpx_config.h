@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -34,9 +34,12 @@
 #include <arpa/inet.h>
 #include <cstdio>
 #include <vector>
+#include <memory>
 
 #include <event.h>
 #include <openssl/ssl.h>
+
+#include <nghttp2/nghttp2.h>
 
 namespace shrpx {
 
@@ -93,6 +96,10 @@ extern const char SHRPX_OPT_READ_RATE[];
 extern const char SHRPX_OPT_READ_BURST[];
 extern const char SHRPX_OPT_WRITE_RATE[];
 extern const char SHRPX_OPT_WRITE_BURST[];
+extern const char SHRPX_OPT_WORKER_READ_RATE[];
+extern const char SHRPX_OPT_WORKER_READ_BURST[];
+extern const char SHRPX_OPT_WORKER_WRITE_RATE[];
+extern const char SHRPX_OPT_WORKER_WRITE_BURST[];
 extern const char SHRPX_OPT_NPN_LIST[];
 extern const char SHRPX_OPT_TLS_PROTO_LIST[];
 extern const char SHRPX_OPT_VERIFY_CLIENT[];
@@ -102,6 +109,10 @@ extern const char SHRPX_OPT_CLIENT_CERT_FILE[];
 extern const char SHRPX_OPT_FRONTEND_HTTP2_DUMP_REQUEST_HEADER[];
 extern const char SHRPX_OPT_FRONTEND_HTTP2_DUMP_RESPONSE_HEADER[];
 extern const char SHRPX_OPT_HTTP2_NO_COOKIE_CRUMBLING[];
+extern const char SHRPX_OPT_FRONTEND_FRAME_DEBUG[];
+extern const char SHRPX_OPT_PADDING[];
+extern const char SHRPX_OPT_ALTSVC[];
+extern const char SHRPX_OPT_ADD_RESPONSE_HEADER[];
 
 union sockaddr_union {
   sockaddr sa;
@@ -115,9 +126,33 @@ enum shrpx_proto {
   PROTO_HTTP
 };
 
+struct AltSvc {
+  AltSvc()
+    : protocol_id(nullptr),
+      host(nullptr),
+      origin(nullptr),
+      protocol_id_len(0),
+      host_len(0),
+      origin_len(0),
+      port(0)
+  {}
+
+  char *protocol_id;
+  char *host;
+  char *origin;
+
+  size_t protocol_id_len;
+  size_t host_len;
+  size_t origin_len;
+
+  uint16_t port;
+};
+
 struct Config {
   // The list of (private key file, certificate file) pair
   std::vector<std::pair<std::string, std::string>> subcerts;
+  std::vector<AltSvc> altsvcs;
+  std::vector<std::pair<std::string, std::string>> add_response_headers;
   sockaddr_union downstream_addr;
   // binary form of http proxy host and port
   sockaddr_union downstream_http_proxy_addr;
@@ -146,8 +181,10 @@ struct Config {
   char *downstream_http_proxy_userinfo;
   // host in http proxy URI
   char *downstream_http_proxy_host;
-  // Rate limit configuration
+  // Rate limit configuration per connection
   ev_token_bucket_cfg *rate_limit_cfg;
+  // Rate limit configuration per worker (thread)
+  ev_token_bucket_cfg *worker_rate_limit_cfg;
   // list of supported NPN/ALPN protocol strings in the order of
   // preference. The each element of this list is a NULL-terminated
   // string.
@@ -162,6 +199,7 @@ struct Config {
   char *client_cert_file;
   FILE *http2_upstream_dump_request_header;
   FILE *http2_upstream_dump_response_header;
+  nghttp2_option *http2_option;
   size_t downstream_addrlen;
   size_t num_worker;
   size_t http2_max_concurrent_streams;
@@ -175,10 +213,15 @@ struct Config {
   size_t read_burst;
   size_t write_rate;
   size_t write_burst;
+  size_t worker_read_rate;
+  size_t worker_read_burst;
+  size_t worker_write_rate;
+  size_t worker_write_burst;
   // The number of elements in npn_list
   size_t npn_list_len;
   // The number of elements in tls_proto_list
   size_t tls_proto_list_len;
+  size_t padding;
   // downstream protocol; this will be determined by given options.
   shrpx_proto downstream_proto;
   int syslog_facility;
@@ -213,6 +256,7 @@ struct Config {
   // true if stderr refers to a terminal.
   bool tty;
   bool http2_no_cookie_crumbling;
+  bool upstream_frame_debug;
 };
 
 const Config* get_config();
@@ -233,15 +277,21 @@ int load_config(const char *filename);
 std::string read_passwd_from_file(const char *filename);
 
 // Parses comma delimited strings in |s| and returns the array of
-// pointers, each element points to the each substring in |s|. The
-// number of elements are stored in |*outlen|. The |s| must be comma
-// delimited list of strings. The strings must be delimited by a
+// pointers, each element points to the each substring in |s|.  The
+// number of elements are stored in |*outlen|.  The |s| must be comma
+// delimited list of strings.  The strings must be delimited by a
 // single comma and any white spaces around it are treated as a part
-// of protocol strings. This function may modify |s| and the caller
-// must leave it as is after this call. This function allocates memory
-// to store the parsed strings and it is caller's responsibility to
-// deallocate the memory.
-char** parse_config_str_list(size_t *outlen, const char *s);
+// of protocol strings.  This function may modify |s| and the caller
+// must leave it as is after this call.  This function copies |s| and
+// first element in the return value points to it.  It is caller's
+// responsibility to deallocate its memory.
+std::unique_ptr<char*[]> parse_config_str_list(size_t *outlen, const char *s);
+
+// Parses header field in |optarg|.  We expect header field is formed
+// like "NAME: VALUE".  We require that NAME is non empty string.  ":"
+// is allowed at the start of the NAME, but NAME == ":" is not
+// allowed.  This function returns pair of NAME and VALUE.
+std::pair<std::string, std::string> parse_header(const char *optarg);
 
 // Copies NULL-terminated string |val| to |*destp|. If |*destp| is not
 // NULL, it is freed before copying.

@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -92,6 +92,13 @@ std::string colorizeHeaders(const char *hdrs)
     p = np+1;
   }
   return nhdrs;
+}
+
+ssize_t select_padding_callback
+(nghttp2_session *session, const nghttp2_frame *frame, size_t max_payload,
+ void *user_data)
+{
+  return std::min(max_payload, frame->hd.length + get_config()->padding);
 }
 
 } // namespace http

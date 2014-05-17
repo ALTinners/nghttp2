@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -45,14 +45,17 @@ struct WorkerEvent {
 
 class ThreadEventReceiver {
 public:
-  ThreadEventReceiver(SSL_CTX *ssl_ctx, Http2Session *http2session);
+  ThreadEventReceiver(event_base *evbase, SSL_CTX *ssl_ctx,
+                      Http2Session *http2session);
   ~ThreadEventReceiver();
   void on_read(bufferevent *bev);
 private:
+  event_base *evbase_;
   SSL_CTX *ssl_ctx_;
   // Shared HTTP2 session for each thread. NULL if not client
   // mode. Not deleted by this object.
   Http2Session *http2session_;
+  bufferevent_rate_limit_group *rate_limit_group_;
 };
 
 } // namespace shrpx

@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2013 Tatsuhiro Tsujikawa
  *
@@ -52,12 +52,12 @@ enum {
 };
 
 #define MAKE_NV(NAME, VALUE)                                            \
-  {(uint8_t*)NAME, (uint8_t*)VALUE,                                     \
-      (uint16_t)(sizeof(NAME) - 1), (uint16_t)(sizeof(VALUE) - 1) }
+  {(uint8_t*)NAME, (uint8_t*)VALUE, sizeof(NAME) - 1, sizeof(VALUE) - 1, \
+      NGHTTP2_NV_FLAG_NONE}
 
 #define MAKE_NV_CS(NAME, VALUE)                                         \
-  {(uint8_t*)NAME, (uint8_t*)VALUE,                                     \
-      (uint16_t)(sizeof(NAME) - 1), (uint16_t)(strlen(VALUE)) }
+  {(uint8_t*)NAME, (uint8_t*)VALUE, sizeof(NAME) - 1, strlen(VALUE),    \
+      NGHTTP2_NV_FLAG_NONE}
 
 struct Connection {
   SSL *ssl;
@@ -72,8 +72,6 @@ struct Connection {
 };
 
 struct Request {
-  /* The gzip stream inflater for the compressed response. */
-  nghttp2_gzip *inflater;
   char *host;
   /* In this program, path contains query component as well. */
   char *path;
@@ -139,36 +137,6 @@ static void diec(const char *func, int error_code)
   exit(EXIT_FAILURE);
 }
 
-static char CONTENT_LENGTH[] = "content-encoding";
-static size_t CONTENT_LENGTH_LEN = sizeof(CONTENT_LENGTH) - 1;
-static char GZIP[] = "gzip";
-static size_t GZIP_LEN = sizeof(GZIP) - 1;
-
-/*
- * Check response is content-encoding: gzip. We need this because
- * HTTP/2.0 client is required to support gzip.
- */
-static void check_gzip(struct Request *req, nghttp2_nv *nva, size_t nvlen)
-{
-  size_t i;
-  if(req->inflater) {
-    return;
-  }
-  for(i = 0; i < nvlen; ++i) {
-    if(CONTENT_LENGTH_LEN == nva[i].namelen &&
-       memcmp(CONTENT_LENGTH, nva[i].name, nva[i].namelen) == 0 &&
-       GZIP_LEN == nva[i].valuelen &&
-       memcmp(GZIP, nva[i].value, nva[i].valuelen) == 0) {
-      int rv;
-      rv = nghttp2_gzip_inflate_new(&req->inflater);
-      if(rv != 0) {
-        die("Can't allocate inflate stream.");
-      }
-      break;
-    }
-  }
-}
-
 /*
  * The implementation of nghttp2_send_callback type. Here we write
  * |data| with size |length| to the network and return the number of
@@ -229,29 +197,6 @@ static ssize_t recv_callback(nghttp2_session *session,
   return rv;
 }
 
-/*
- * The implementation of nghttp2_before_frame_send_callback type.  We
- * use this function to get stream ID of the request. This is because
- * stream ID is not known when we submit the request
- * (nghttp2_submit_request).
- */
-static int before_frame_send_callback(nghttp2_session *session,
-                                      const nghttp2_frame *frame,
-                                      void *user_data)
-{
-  if(frame->hd.type == NGHTTP2_HEADERS &&
-     frame->headers.cat == NGHTTP2_HCAT_REQUEST) {
-    struct Request *req;
-    int32_t stream_id = frame->hd.stream_id;
-    req = nghttp2_session_get_stream_user_data(session, stream_id);
-    if(req && req->stream_id == -1) {
-      req->stream_id = stream_id;
-      printf("[INFO] Stream ID = %d\n", stream_id);
-    }
-  }
-  return 0;
-}
-
 static int on_frame_send_callback(nghttp2_session *session,
                                   const nghttp2_frame *frame, void *user_data)
 {
@@ -290,7 +235,6 @@ static int on_frame_recv_callback(nghttp2_session *session,
       struct Request *req;
       req = nghttp2_session_get_stream_user_data(session, frame->hd.stream_id);
       if(req) {
-        check_gzip(req, frame->headers.nva, frame->headers.nvlen);
         printf("[INFO] C <---------------------------- S (HEADERS)\n");
         for(i = 0; i < frame->headers.nvlen; ++i) {
           fwrite(nva[i].name, nva[i].namelen, 1, stdout);
@@ -351,25 +295,7 @@ static int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
   if(req) {
     printf("[INFO] C <---------------------------- S (DATA chunk)\n"
            "%lu bytes\n", (unsigned long int)len);
-    if(req->inflater) {
-      while(len > 0) {
-        uint8_t out[MAX_OUTLEN];
-        size_t outlen = MAX_OUTLEN;
-        size_t tlen = len;
-        int rv;
-        rv = nghttp2_gzip_inflate(req->inflater, out, &outlen, data, &tlen);
-        if(rv == -1) {
-          nghttp2_submit_rst_stream(session, NGHTTP2_FLAG_NONE, stream_id,
-                                    NGHTTP2_INTERNAL_ERROR);
-          break;
-        }
-        fwrite(out, 1, outlen, stdout);
-        data += tlen;
-        len -= tlen;
-      }
-    } else {
-      fwrite(data, 1, len, stdout);
-    }
+    fwrite(data, 1, len, stdout);
     printf("\n");
   }
   return 0;
@@ -386,7 +312,6 @@ static void setup_nghttp2_callbacks(nghttp2_session_callbacks *callbacks)
   memset(callbacks, 0, sizeof(nghttp2_session_callbacks));
   callbacks->send_callback = send_callback;
   callbacks->recv_callback = recv_callback;
-  callbacks->before_frame_send_callback = before_frame_send_callback;
   callbacks->on_frame_send_callback = on_frame_send_callback;
   callbacks->on_frame_recv_callback = on_frame_recv_callback;
   callbacks->on_stream_close_callback = on_stream_close_callback;
@@ -395,7 +320,7 @@ static void setup_nghttp2_callbacks(nghttp2_session_callbacks *callbacks)
 
 /*
  * Callback function for TLS NPN. Since this program only supports
- * HTTP/2.0 protocol, if server does not offer HTTP/2.0 the nghttp2
+ * HTTP/2 protocol, if server does not offer HTTP/2 the nghttp2
  * library supports, we terminate program.
  */
 static int select_next_proto_cb(SSL* ssl,
@@ -404,11 +329,11 @@ static int select_next_proto_cb(SSL* ssl,
                                 void *arg)
 {
   int rv;
-  /* nghttp2_select_next_protocol() selects HTTP/2.0 protocol the
+  /* nghttp2_select_next_protocol() selects HTTP/2 protocol the
      nghttp2 library supports. */
   rv = nghttp2_select_next_protocol(out, outlen, in, inlen);
   if(rv <= 0) {
-    die("Server did not advertise HTTP/2.0 protocol");
+    die("Server did not advertise HTTP/2 protocol");
   }
   return SSL_TLSEXT_ERR_OK;
 }
@@ -521,8 +446,7 @@ static void ctl_poll(struct pollfd *pollfd, struct Connection *connection)
  */
 static void submit_request(struct Connection *connection, struct Request *req)
 {
-  int pri = 0;
-  int rv;
+  int32_t stream_id;
   const nghttp2_nv nva[] = {
     /* Make sure that the last item is NULL */
     MAKE_NV(":method", "GET"),
@@ -532,11 +456,17 @@ static void submit_request(struct Connection *connection, struct Request *req)
     MAKE_NV("accept", "*/*"),
     MAKE_NV("user-agent", "nghttp2/"NGHTTP2_VERSION)
   };
-  rv = nghttp2_submit_request(connection->session, pri,
-                              nva, sizeof(nva)/sizeof(nva[0]), NULL, req);
-  if(rv != 0) {
-    diec("nghttp2_submit_request", rv);
+
+  stream_id = nghttp2_submit_request(connection->session, NULL,
+                                     nva, sizeof(nva)/sizeof(nva[0]),
+                                     NULL, req);
+
+  if(stream_id < 0) {
+    diec("nghttp2_submit_request", stream_id);
   }
+
+  req->stream_id = stream_id;
+  printf("[INFO] Stream ID = %d\n", stream_id);
 }
 
 /*
@@ -562,7 +492,6 @@ static void request_init(struct Request *req, const struct URI *uri)
   req->path = strcopy(uri->path, uri->pathlen);
   req->hostport = strcopy(uri->hostport, uri->hostportlen);
   req->stream_id = -1;
-  req->inflater = NULL;
 }
 
 static void request_free(struct Request *req)
@@ -570,7 +499,6 @@ static void request_free(struct Request *req)
   free(req->host);
   free(req->path);
   free(req->hostport);
-  nghttp2_gzip_inflate_del(req->inflater);
 }
 
 /*
@@ -614,8 +542,8 @@ static void fetch_uri(const struct URI *uri)
   connection.want_io = IO_NONE;
 
   /* Send connection header in blocking I/O mode */
-  SSL_write(ssl, NGHTTP2_CLIENT_CONNECTION_HEADER,
-            NGHTTP2_CLIENT_CONNECTION_HEADER_LEN);
+  SSL_write(ssl, NGHTTP2_CLIENT_CONNECTION_PREFACE,
+            NGHTTP2_CLIENT_CONNECTION_PREFACE_LEN);
 
   /* Here make file descriptor non-block */
   make_non_block(fd);

@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2014 Tatsuhiro Tsujikawa
  *
@@ -58,6 +58,32 @@ void test_shrpx_config_parse_config_str_list(void)
   CU_ASSERT(0 == strcmp("alpha", res[0]));
   CU_ASSERT(0 == strcmp("bravo", res[1]));
   CU_ASSERT(0 == strcmp("charlie", res[2]));
+}
+
+void test_shrpx_config_parse_header(void)
+{
+  auto p = parse_header("a: b");
+  CU_ASSERT("a" == p.first);
+  CU_ASSERT("b" == p.second);
+
+  p = parse_header("a:  b");
+  CU_ASSERT("a" == p.first);
+  CU_ASSERT("b" == p.second);
+
+  p = parse_header(":a: b");
+  CU_ASSERT(":a" == p.first);
+  CU_ASSERT("b" == p.second);
+
+  p = parse_header("a: :b");
+  CU_ASSERT("a" == p.first);
+  CU_ASSERT(":b" == p.second);
+
+  p = parse_header(": b");
+  CU_ASSERT(p.first.empty());
+
+  p = parse_header("alpha: bravo charlie");
+  CU_ASSERT("alpha" == p.first);
+  CU_ASSERT("bravo charlie" == p.second);
 }
 
 } // namespace shrpx

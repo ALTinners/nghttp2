@@ -1,4 +1,4 @@
-# nghttp2 - HTTP/2.0 C Library
+# nghttp2 - HTTP/2 C Library
 
 # Copyright (c) 2012 Tatsuhiro Tsujikawa
 
@@ -36,6 +36,7 @@ AM_CPPFLAGS = \
 	@LIBEVENT_OPENSSL_CFLAGS@ \
 	@OPENSSL_CFLAGS@ \
 	@JANSSON_CFLAGS@ \
+	@ZLIB_CFLAGS@ \
 	@DEFS@
 AM_LDFLAGS = \
 	@LIBSPDYLAY_LIBS@ \
@@ -43,6 +44,8 @@ AM_LDFLAGS = \
 	@LIBEVENT_OPENSSL_LIBS@ \
 	@OPENSSL_LIBS@ \
 	@JANSSON_LIBS@ \
+	@ZLIB_LIBS@ \
+	@JEMALLOC_LIBS@ \
 	@SRC_LIBS@
 
 LDADD = \
@@ -51,10 +54,11 @@ LDADD = \
 
 if ENABLE_APP
 
-bin_PROGRAMS += nghttp nghttpd nghttpx
+bin_PROGRAMS += nghttp nghttpd nghttpx h2load
 
-HELPER_OBJECTS = util.cc http2.cc timegm.c app_helper.cc
-HELPER_HFILES = util.h http2.h timegm.h app_helper.h nghttp2_config.h
+HELPER_OBJECTS = util.cc http2.cc timegm.c app_helper.cc nghttp2_gzip.c
+HELPER_HFILES = util.h http2.h timegm.h app_helper.h nghttp2_config.h \
+	nghttp2_gzip.h
 
 HTML_PARSER_OBJECTS =
 HTML_PARSER_HFILES = HtmlParser.h
@@ -67,10 +71,23 @@ nghttp_SOURCES = ${HELPER_OBJECTS} ${HELPER_HFILES} nghttp.cc \
 	${HTML_PARSER_OBJECTS} ${HTML_PARSER_HFILES}
 
 nghttpd_SOURCES = ${HELPER_OBJECTS} ${HELPER_HFILES} nghttpd.cc \
+	ssl.cc ssl.h \
 	HttpServer.cc HttpServer.h
+
+h2load_SOURCES = util.cc util.h http2.cc http2.h h2load.cc h2load.h \
+	timegm.c timegm.h \
+	ssl.cc ssl.h \
+	h2load_session.h \
+	h2load_http2_session.cc h2load_http2_session.h
+
+if HAVE_SPDYLAY
+h2load_SOURCES += h2load_spdy_session.cc h2load_spdy_session.h
+endif # HAVE_SPDYLAY
 
 NGHTTPX_SRCS = \
 	util.cc util.h http2.cc http2.h timegm.c timegm.h base64.h \
+	app_helper.cc app_helper.h \
+	ssl.cc ssl.h \
 	shrpx_config.cc shrpx_config.h \
 	shrpx_error.h \
 	shrpx_listen_handler.cc shrpx_listen_handler.h \
@@ -110,7 +127,9 @@ nghttpx_unittest_SOURCES = shrpx-unittest.cc \
 	shrpx_downstream_test.cc shrpx_downstream_test.h \
 	shrpx_config_test.cc shrpx_config_test.h \
 	http2_test.cc http2_test.h \
-	util_test.cc util_test.h
+	util_test.cc util_test.h \
+	nghttp2_gzip_test.c nghttp2_gzip_test.h \
+	nghttp2_gzip.c nghttp2_gzip.h
 nghttpx_unittest_CPPFLAGS = ${AM_CPPFLAGS}\
 	 -DNGHTTP2_TESTS_DIR=\"$(top_srcdir)/tests\"
 nghttpx_unittest_LDFLAGS = -static
@@ -128,8 +147,8 @@ bin_PROGRAMS += inflatehd deflatehd
 
 HPACK_TOOLS_COMMON_SRCS = comp_helper.c comp_helper.h
 
-inflatehd_SOURCES = inflatehd.c $(HPACK_TOOLS_COMMON_SRCS)
+inflatehd_SOURCES = inflatehd.cc $(HPACK_TOOLS_COMMON_SRCS)
 
-deflatehd_SOURCES = deflatehd.c $(HPACK_TOOLS_COMMON_SRCS)
+deflatehd_SOURCES = deflatehd.cc $(HPACK_TOOLS_COMMON_SRCS)
 
 endif # ENABLE_HPACK_TOOLS

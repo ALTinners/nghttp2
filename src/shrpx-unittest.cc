@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2013 Tatsuhiro Tsujikawa
  *
@@ -27,12 +27,13 @@
 #include <CUnit/Basic.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
-/* include test cases' include files here */
+// include test cases' include files here
 #include "shrpx_ssl_test.h"
 #include "shrpx_downstream_test.h"
 #include "shrpx_config_test.h"
 #include "http2_test.h"
 #include "util_test.h"
+#include "nghttp2_gzip_test.h"
 
 static int init_suite1(void)
 {
@@ -54,18 +55,18 @@ int main(int argc, char* argv[])
    SSL_load_error_strings();
    SSL_library_init();
 
-   /* initialize the CUnit test registry */
+   // initialize the CUnit test registry
    if (CUE_SUCCESS != CU_initialize_registry())
       return CU_get_error();
 
-   /* add a suite to the registry */
+   // add a suite to the registry
    pSuite = CU_add_suite("shrpx_TestSuite", init_suite1, clean_suite1);
    if (NULL == pSuite) {
       CU_cleanup_registry();
       return CU_get_error();
    }
 
-   /* add the tests to the suite */
+   // add the tests to the suite
    if(!CU_add_test(pSuite, "ssl_create_lookup_tree",
                    shrpx::test_shrpx_ssl_create_lookup_tree) ||
       !CU_add_test(pSuite, "ssl_cert_lookup_tree_add_cert_from_file",
@@ -107,17 +108,23 @@ int main(int argc, char* argv[])
                    shrpx::test_downstream_rewrite_norm_location_response_header) ||
       !CU_add_test(pSuite, "config_parse_config_str_list",
                    shrpx::test_shrpx_config_parse_config_str_list) ||
+      !CU_add_test(pSuite, "config_parse_header",
+                   shrpx::test_shrpx_config_parse_header) ||
       !CU_add_test(pSuite, "util_streq", shrpx::test_util_streq) ||
       !CU_add_test(pSuite, "util_strieq", shrpx::test_util_strieq) ||
       !CU_add_test(pSuite, "util_inp_strlower",
                    shrpx::test_util_inp_strlower) ||
       !CU_add_test(pSuite, "util_to_base64",
-                   shrpx::test_util_to_base64)) {
+                   shrpx::test_util_to_base64) ||
+      !CU_add_test(pSuite, "util_percent_encode_token",
+                   shrpx::test_util_percent_encode_token) ||
+      !CU_add_test(pSuite, "util_utox", shrpx::test_util_utox) ||
+      !CU_add_test(pSuite, "gzip_inflate", test_nghttp2_gzip_inflate)) {
      CU_cleanup_registry();
      return CU_get_error();
    }
 
-   /* Run all tests using the CUnit Basic interface */
+   // Run all tests using the CUnit Basic interface
    CU_basic_set_mode(CU_BRM_VERBOSE);
    CU_basic_run_tests();
    num_tests_failed = CU_get_number_of_tests_failed();

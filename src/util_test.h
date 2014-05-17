@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2013 Tatsuhiro Tsujikawa
  *
@@ -31,6 +31,8 @@ void test_util_streq(void);
 void test_util_strieq(void);
 void test_util_inp_strlower(void);
 void test_util_to_base64(void);
+void test_util_percent_encode_token(void);
+void test_util_utox(void);
 
 } // namespace shrpx
 

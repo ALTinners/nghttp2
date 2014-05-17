@@ -1,4 +1,4 @@
-# nghttp2 - HTTP/2.0 C Library
+# nghttp2 - HTTP/2 C Library
 
 # Copyright (c) 2012 Tatsuhiro Tsujikawa
 
@@ -21,7 +21,7 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-man_MANS = nghttp.1 nghttpd.1 nghttpx.1
+man_MANS = nghttp.1 nghttpd.1 nghttpx.1 h2load.1
 
 EXTRA_DIST = \
 	mkapiref.py \
@@ -30,6 +30,7 @@ EXTRA_DIST = \
 	sources/index.rst \
 	sources/tutorial-client.rst \
 	sources/tutorial-server.rst \
+	sources/nghttpx-howto.rst \
 	_themes/sphinx_rtd_theme/footer.html \
 	_themes/sphinx_rtd_theme/theme.conf \
 	_themes/sphinx_rtd_theme/layout_old.html \

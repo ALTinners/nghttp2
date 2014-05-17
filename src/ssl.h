@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -22,18 +22,22 @@
  * OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-#ifndef NGHTTP2_GZIP_H
+#include "nghttp2_config.h"
 
-#ifdef HAVE_CONFIG_H
-#  include <config.h>
-#endif /* HAVE_CONFIG_H */
-#include <zlib.h>
+namespace nghttp2 {
 
-#include <nghttp2/nghttp2.h>
+namespace ssl {
 
-struct nghttp2_gzip {
-  z_stream zst;
-  int8_t finished;
+// Acquire OpenSSL global lock to share SSL_CTX across multiple
+// threads. The constructor acquires lock and destructor unlocks.
+class LibsslGlobalLock {
+public:
+  LibsslGlobalLock();
+  ~LibsslGlobalLock();
+  LibsslGlobalLock(const LibsslGlobalLock&) = delete;
+  LibsslGlobalLock& operator=(const LibsslGlobalLock&) = delete;
 };
 
-#endif /* NGHTTP2_GZIP_H */
+} // namespace ssl
+
+} // namespace nghttp2

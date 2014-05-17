@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -40,6 +40,10 @@
 #include <event2/bufferevent_ssl.h>
 
 #include <nghttp2/nghttp2.h>
+
+#ifdef HAVE_SPDYLAY
+#include <spdylay/spdylay.h>
+#endif // HAVE_SPDYLAY
 
 #include "shrpx_log.h"
 #include "shrpx_client_handler.h"
@@ -127,7 +131,8 @@ int servername_callback(SSL *ssl, int *al, void *arg)
       }
     }
   }
-  return SSL_TLSEXT_ERR_NOACK;
+
+  return SSL_TLSEXT_ERR_OK;
 }
 } // namespace
 
@@ -152,16 +157,61 @@ void info_callback(const SSL *ssl, int where, int ret)
 
 #if OPENSSL_VERSION_NUMBER >= 0x10002000L
 namespace {
+// Returns true if ALPN identifier list |in| of length |inlen|
+// contains http/1.1.
+bool check_http1_available_in_alpn_list(const unsigned char *in,
+                                        unsigned int inlen)
+{
+  for(unsigned int i = 0; i < inlen; i += 1 + in[i]) {
+    if(in[i] == 8 && i + 1 + in[i] <= inlen &&
+       memcmp("http/1.1", &in[i + 1], in[i]) == 0) {
+
+      return true;
+    }
+  }
+
+  return false;
+}
+} // namespace
+
+namespace {
 int alpn_select_proto_cb(SSL* ssl,
                          const unsigned char **out,
                          unsigned char *outlen,
                          const unsigned char *in, unsigned int inlen,
                          void *arg)
 {
-  if(nghttp2_select_next_protocol
-     (const_cast<unsigned char**>(out), outlen, in, inlen) == -1) {
+  int rv;
+
+  if(check_http2_requirement(ssl)) {
+
+    rv = nghttp2_select_next_protocol
+      (const_cast<unsigned char**>(out), outlen, in, inlen);
+
+    if(rv == 1) {
+      // HTTP/2 was selected
+      return SSL_TLSEXT_ERR_OK;
+    }
+  } else if(check_http1_available_in_alpn_list(in, inlen)) {
+    *out = reinterpret_cast<const unsigned char*>("http/1.1");
+    *outlen = strlen("http/1.1");
+
+    rv = 0;
+  } else {
+    rv = -1;
+  }
+
+#ifdef HAVE_SPDYLAY
+  rv = spdylay_select_next_protocol
+    (const_cast<unsigned char**>(out), outlen, in, inlen);
+#endif // HAVE_SPDYLAY
+
+  if(rv == -1) {
+    // No selection was made
     return SSL_TLSEXT_ERR_NOACK;
   }
+
+  // We selected http/1.1
   return SSL_TLSEXT_ERR_OK;
 }
 } // namespace
@@ -246,7 +296,7 @@ SSL_CTX* create_ssl_context(const char *private_key_file,
   EC_KEY_free(ecdh);
 #endif // OPENSSL_VERSION_NUBMER < 0x10002000L
 
-#endif /* OPENSSL_NO_EC */
+#endif // OPENSSL_NO_EC
 
   if(get_config()->dh_param_file) {
     // Read DH parameters from file
@@ -428,9 +478,12 @@ SSL_CTX* create_ssl_client_context()
   return ssl_ctx;
 }
 
-ClientHandler* accept_connection(event_base *evbase, SSL_CTX *ssl_ctx,
-                                 evutil_socket_t fd,
-                                 sockaddr *addr, int addrlen)
+ClientHandler* accept_connection
+(event_base *evbase,
+ bufferevent_rate_limit_group *rate_limit_group,
+ SSL_CTX *ssl_ctx,
+ evutil_socket_t fd,
+ sockaddr *addr, int addrlen)
 {
   char host[NI_MAXHOST];
   int rv;
@@ -475,25 +528,11 @@ ClientHandler* accept_connection(event_base *evbase, SSL_CTX *ssl_ctx,
       }
       return nullptr;
     }
-    return new ClientHandler(bev, fd, ssl, host);
+    return new ClientHandler(bev, rate_limit_group, fd, ssl, host);
   } else {
     LOG(ERROR) << "getnameinfo() failed: " << gai_strerror(rv);
     return nullptr;
   }
-}
-
-bool numeric_host(const char *hostname)
-{
-  struct addrinfo hints;
-  struct addrinfo* res;
-  memset(&hints, 0, sizeof(hints));
-  hints.ai_family = AF_UNSPEC;
-  hints.ai_flags = AI_NUMERICHOST;
-  if(getaddrinfo(hostname, nullptr, &hints, &res)) {
-    return false;
-  }
-  freeaddrinfo(res);
-  return true;
 }
 
 namespace {
@@ -538,7 +577,7 @@ int verify_hostname(const char *hostname,
                     const std::vector<std::string>& ip_addrs,
                     const std::string& common_name)
 {
-  if(numeric_host(hostname)) {
+  if(util::numeric_host(hostname)) {
     if(ip_addrs.empty()) {
       return util::strieq(common_name.c_str(), hostname) ? 0 : -1;
     }
@@ -664,43 +703,6 @@ int check_cert(SSL *ssl)
     return -1;
   }
   return 0;
-}
-
-namespace {
-std::unique_ptr<pthread_mutex_t[]> ssl_locks;
-} // namespace
-
-namespace {
-void ssl_locking_cb(int mode, int type, const char *file, int line)
-{
-  if(mode & CRYPTO_LOCK) {
-    pthread_mutex_lock(&(ssl_locks[type]));
-  } else {
-    pthread_mutex_unlock(&(ssl_locks[type]));
-  }
-}
-} // namespace
-
-void setup_ssl_lock()
-{
-  ssl_locks = util::make_unique<pthread_mutex_t[]>(CRYPTO_num_locks());
-  for(int i = 0; i < CRYPTO_num_locks(); ++i) {
-    // Always returns 0
-    pthread_mutex_init(&(ssl_locks[i]), 0);
-  }
-  //CRYPTO_set_id_callback(ssl_thread_id); OpenSSL manual says that if
-  // threadid_func is not specified using
-  // CRYPTO_THREADID_set_callback(), then default implementation is
-  // used. We use this default one.
-  CRYPTO_set_locking_callback(ssl_locking_cb);
-}
-
-void teardown_ssl_lock()
-{
-  for(int i = 0; i < CRYPTO_num_locks(); ++i) {
-    pthread_mutex_destroy(&(ssl_locks[i]));
-  }
-  ssl_locks.reset();
 }
 
 CertLookupTree* cert_lookup_tree_new()
@@ -915,6 +917,26 @@ bool in_proto_list(char **protos, size_t len,
     }
   }
   return false;
+}
+
+bool check_http2_requirement(SSL *ssl)
+{
+  auto tls_ver = SSL_version(ssl);
+
+  switch(tls_ver) {
+  case TLS1_1_VERSION:
+  case TLS1_2_VERSION:
+    break;
+  default:
+    LOG(INFO) << "TLSv1.2 or TLSv1.1 was not negotiated. "
+              << "HTTP/2 must not be negotiated.";
+    return false;
+  }
+
+  // TODO Figure out that ECDHE or DHE was negotiated and their key
+  // size.  SSL_get_server_tmp_key() cannot be used on server side.
+
+  return true;
 }
 
 } // namespace ssl

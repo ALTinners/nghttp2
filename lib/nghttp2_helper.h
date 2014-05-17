@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -78,7 +78,7 @@ int nghttp2_reserve_buffer(uint8_t **buf_ptr, size_t *buflen_ptr,
                            size_t min_length);
 
 /*
- * Allocates |n| bytes of memory and copy the meory region pointed by
+ * Allocates |n| bytes of memory and copy the memory region pointed by
  * |src| with the length |n| bytes into it. Returns the allocated memory.
  *
  * This function returns pointer to allocated memory, or one of the
@@ -125,5 +125,12 @@ int nghttp2_should_send_window_update(int32_t local_window_size,
  * but may be exposed as public API.
  */
 void nghttp2_free(void *ptr);
+
+/*
+ * Copies the buffer |src| of length |len| to the destination pointed
+ * by the |dest|, assuming that the |dest| is at lest |len| bytes long
+ * . Returns dest + len.
+ */
+uint8_t* nghttp2_cpymem(uint8_t *dest, const void *src, size_t len);
 
 #endif /* NGHTTP2_HELPER_H */

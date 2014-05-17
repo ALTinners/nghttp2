@@ -1,7 +1,7 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
- * Copyright (c) 2012 Tatsuhiro Tsujikawa
+ * Copyright (c) 2014 Tatsuhiro Tsujikawa
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -22,9 +22,31 @@
  * OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-#ifndef NGHTTP2_GZIP_TEST_H
-#define NGHTTP2_GZIP_TEST_H
+#ifndef H2LOAD_HTTP2_SESSION_H
+#define H2LOAD_HTTP2_SESSION_H
 
-void test_nghttp2_gzip_inflate(void);
+#include "h2load_session.h"
 
-#endif /* NGHTTP2_GZIP_TEST_H */
+#include <nghttp2/nghttp2.h>
+
+namespace h2load {
+
+struct Client;
+
+class Http2Session : public Session {
+public:
+  Http2Session(Client *client);
+  virtual ~Http2Session();
+  virtual void on_connect();
+  virtual void submit_request();
+  virtual ssize_t on_read();
+  virtual int on_write();
+  virtual void terminate();
+private:
+  Client *client_;
+  nghttp2_session *session_;
+};
+
+} // namespace h2load
+
+#endif // H2LOAD_HTTP2_SESSION_H
