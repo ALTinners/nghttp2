@@ -131,7 +131,6 @@ void evlistener_errorcb(evconnlistener *listener, void *ptr)
 namespace {
 evconnlistener* create_evlistener(ListenHandler *handler, int family)
 {
-  // TODO Listen both IPv4 and IPv6
   addrinfo hints;
   int fd = -1;
   int r;
@@ -145,8 +144,10 @@ evconnlistener* create_evlistener(ListenHandler *handler, int family)
   hints.ai_flags |= AI_ADDRCONFIG;
 #endif // AI_ADDRCONFIG
 
+  auto node = strcmp("*", get_config()->host) == 0 ? NULL : get_config()->host;
+
   addrinfo *res, *rp;
-  r = getaddrinfo(get_config()->host, service.c_str(), &hints, &res);
+  r = getaddrinfo(node, service.c_str(), &hints, &res);
   if(r != 0) {
     if(LOG_ENABLED(INFO)) {
       LOG(INFO) << "Unable to get IPv" << (family == AF_INET ? "4" : "6")
@@ -346,7 +347,7 @@ void fill_default_config()
   mod_config()->daemon = false;
 
   mod_config()->server_name = "nghttpx nghttp2/" NGHTTP2_VERSION;
-  set_config_str(&mod_config()->host, "0.0.0.0");
+  set_config_str(&mod_config()->host, "*");
   mod_config()->port = 3000;
   mod_config()->private_key_file = 0;
   mod_config()->private_key_passwd = 0;
@@ -499,7 +500,9 @@ Connections:
       << get_config()->downstream_host << ","
       << get_config()->downstream_port << R"('
   -f, --frontend=<HOST,PORT>
-                     Set frontend host and port.
+                     Set frontend host and port.  If <HOST> is '*', it
+                     assumes  all addresses  including  both IPv4  and
+                     IPv6.
                      Default: ')"
       << get_config()->host << "," << get_config()->port << R"('
   --backlog=<NUM>    Set  listen  backlog  size.    If  -1  is  given,
@@ -646,12 +649,12 @@ SSL/TLS:
                      Path to  file that contains DH  parameters in PEM
                      format.  Without  this option, DHE  cipher suites
                      are not available.
-  --npn-list=<LIST>  Comma delimited list  of NPN/ALPN protocol sorted
-                     in  the order  of  preference.   That means  most
-                     desirable  protocol comes  first.  The  parameter
-                     must be delimited by a  single comma only and any
-                     white spaces  are treated  as a part  of protocol
-                     string.
+  --npn-list=<LIST>  Comma delimited list  of ALPN protocol identifier
+                     sorted in  the order  of preference.   That means
+                     most  desirable protocol  comes  first.  This  is
+                     used in both ALPN and NPN.  The parameter must be
+                     delimited by  a single  comma only and  any white
+                     spaces are treated as a part of protocol string.
                      Default: )" << DEFAULT_NPN_LIST << R"(
   --verify-client    Require and verify client certificate.
   --verify-client-cacert=<PATH>

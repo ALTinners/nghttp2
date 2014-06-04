@@ -4342,7 +4342,7 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session,
 
         iframe->frame.hd.flags = NGHTTP2_FLAG_NONE;
 
-        if(iframe->payloadleft != 5) {
+        if(iframe->payloadleft != NGHTTP2_PRIORITY_SPECLEN) {
           busy = 1;
 
           iframe->state = NGHTTP2_IB_FRAME_SIZE_ERROR;
@@ -4352,7 +4352,7 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session,
 
         iframe->state = NGHTTP2_IB_READ_NBYTE;
 
-        inbound_frame_set_mark(iframe, 5);
+        inbound_frame_set_mark(iframe, NGHTTP2_PRIORITY_SPECLEN);
 
         break;
       case NGHTTP2_RST_STREAM:
@@ -4490,7 +4490,7 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session,
           break;
         }
 
-        if(iframe->payloadleft < 9) {
+        if(iframe->payloadleft < NGHTTP2_ALTSVC_MINLEN) {
           busy = 1;
 
           iframe->state = NGHTTP2_IB_FRAME_SIZE_ERROR;
@@ -4499,7 +4499,7 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session,
         }
 
         iframe->state = NGHTTP2_IB_READ_NBYTE;
-        inbound_frame_set_mark(iframe, 8);
+        inbound_frame_set_mark(iframe, NGHTTP2_ALTSVC_FIXED_PARTLEN);
 
         break;
       case NGHTTP2_BLOCKED:
@@ -4711,7 +4711,7 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session,
       case NGHTTP2_ALTSVC: {
         size_t varlen;
 
-        varlen = iframe->frame.hd.length - 8;
+        varlen = iframe->frame.hd.length - NGHTTP2_ALTSVC_FIXED_PARTLEN;
 
         if(varlen > 0) {
           iframe->raw_lbuf = malloc(varlen);
@@ -5195,7 +5195,7 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session,
 
         DEBUGF(fprintf(stderr, "recv: data_readlen=%zu\n", data_readlen));
 
-        if(data_readlen > 0 &&
+        if(stream && data_readlen > 0 &&
            session->callbacks.on_data_chunk_recv_callback) {
           rv = session->callbacks.on_data_chunk_recv_callback
             (session,
@@ -5293,28 +5293,47 @@ int nghttp2_session_recv(nghttp2_session *session)
   }
 }
 
+/*
+ * Returns the number of active streams, which includes streams in
+ * reserved state.
+ */
+static size_t session_get_num_active_streams(nghttp2_session *session)
+{
+  return nghttp2_map_size(&session->streams) - session->num_closed_streams;
+}
+
 int nghttp2_session_want_read(nghttp2_session *session)
 {
+  size_t num_active_streams;
+
   /* If these flags are set, we don't want to read. The application
      should drop the connection. */
   if((session->goaway_flags & NGHTTP2_GOAWAY_FAIL_ON_SEND) &&
      (session->goaway_flags & NGHTTP2_GOAWAY_SEND)) {
     return 0;
   }
+
+  num_active_streams = session_get_num_active_streams(session);
+
   /* Unless GOAWAY is sent or received, we always want to read
      incoming frames. After GOAWAY is sent or received, we are only
      interested in active streams. */
-  return !session->goaway_flags || nghttp2_map_size(&session->streams) > 0;
+  return !session->goaway_flags || num_active_streams > 0;
 }
 
 int nghttp2_session_want_write(nghttp2_session *session)
 {
+  size_t num_active_streams;
+
   /* If these flags are set, we don't want to write any data. The
      application should drop the connection. */
   if((session->goaway_flags & NGHTTP2_GOAWAY_FAIL_ON_SEND) &&
      (session->goaway_flags & NGHTTP2_GOAWAY_SEND)) {
     return 0;
   }
+
+  num_active_streams = session_get_num_active_streams(session);
+
   /*
    * Unless GOAWAY is sent or received, we want to write frames if
    * there is pending ones. If pending frame is request/push response
@@ -5325,7 +5344,7 @@ int nghttp2_session_want_write(nghttp2_session *session)
   return (session->aob.item != NULL || !nghttp2_pq_empty(&session->ob_pq) ||
           (!nghttp2_pq_empty(&session->ob_ss_pq) &&
            !session_is_outgoing_concurrent_streams_max(session))) &&
-    (!session->goaway_flags || nghttp2_map_size(&session->streams) > 0);
+    (!session->goaway_flags || num_active_streams > 0);
 }
 
 int nghttp2_session_add_ping(nghttp2_session *session, uint8_t flags,

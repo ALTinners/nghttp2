@@ -177,8 +177,10 @@ ssize_t nghttp2_hd_huff_decode(nghttp2_hd_huff_decode_context *ctx,
   for(i = 0; i < srclen; ++i) {
     uint8_t in = src[i] >> 4;
     for(j = 0; j < 2; ++j) {
-      const nghttp2_huff_decode *t = &huff_decode_table[ctx->state][in];
-      if(t->state == -1) {
+      const nghttp2_huff_decode *t;
+
+      t = &huff_decode_table[ctx->state][in];
+      if(t->flags & NGHTTP2_HUFF_FAIL) {
         return NGHTTP2_ERR_HEADER_COMP;
       }
       if(t->flags & NGHTTP2_HUFF_SYM) {

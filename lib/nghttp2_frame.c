@@ -91,8 +91,8 @@ void nghttp2_frame_headers_free(nghttp2_headers *frame)
 void nghttp2_frame_priority_init(nghttp2_priority *frame, int32_t stream_id,
                                  const nghttp2_priority_spec *pri_spec)
 {
-  frame_set_hd(&frame->hd, 5, NGHTTP2_PRIORITY, NGHTTP2_FLAG_NONE,
-               stream_id);
+  frame_set_hd(&frame->hd, NGHTTP2_PRIORITY_SPECLEN, NGHTTP2_PRIORITY,
+               NGHTTP2_FLAG_NONE, stream_id);
   frame->pri_spec = *pri_spec;
 }
 
@@ -196,8 +196,7 @@ void nghttp2_frame_altsvc_init(nghttp2_altsvc *frame, int32_t stream_id,
 {
   size_t payloadlen;
 
-  /* 8 for Max-Age, Port, Reserved and PID_LEN.  1 for HOST_LEN. */
-  payloadlen = 8 + protocol_id_len + 1 + host_len + origin_len;
+  payloadlen = NGHTTP2_ALTSVC_MINLEN + protocol_id_len + host_len + origin_len;
 
   frame_set_hd(&frame->hd, payloadlen, NGHTTP2_ALTSVC, NGHTTP2_FLAG_NONE,
                stream_id);
@@ -263,7 +262,7 @@ void nghttp2_frame_private_data_free(nghttp2_private_data *frame)
 size_t nghttp2_frame_priority_len(uint8_t flags)
 {
   if(flags & NGHTTP2_FLAG_PRIORITY) {
-    return 5;
+    return NGHTTP2_PRIORITY_SPECLEN;
   }
 
   return 0;
@@ -437,7 +436,7 @@ int nghttp2_frame_pack_priority(nghttp2_bufs *bufs, nghttp2_priority *frame)
 
   buf = &bufs->head->buf;
 
-  assert(nghttp2_buf_avail(buf) >= 5);
+  assert(nghttp2_buf_avail(buf) >= NGHTTP2_PRIORITY_SPECLEN);
 
   buf->pos -= NGHTTP2_FRAME_HDLEN;
 
@@ -445,7 +444,7 @@ int nghttp2_frame_pack_priority(nghttp2_bufs *bufs, nghttp2_priority *frame)
 
   nghttp2_frame_pack_priority_spec(buf->last, &frame->pri_spec);
 
-  buf->last += 5;
+  buf->last += NGHTTP2_PRIORITY_SPECLEN;
 
   return 0;
 }

@@ -2200,6 +2200,15 @@ int nghttp2_priority_spec_check_default(const nghttp2_priority_spec *pri_spec);
  * :enum:`NGHTTP2_ERR_STREAM_ID_NOT_AVAILABLE`
  *     No stream ID is available because maximum stream ID was
  *     reached.
+ *
+ * .. warning::
+ *
+ *   This function returns assigned stream ID if it succeeds.  But
+ *   that stream is not opened yet.  The application must not submit
+ *   frame to that stream ID before
+ *   :member:`nghttp2_session_callbacks.before_frame_send_callback` is
+ *   called for this frame.
+ *
  */
 int32_t nghttp2_submit_request(nghttp2_session *session,
                                const nghttp2_priority_spec *pri_spec,
@@ -2309,6 +2318,15 @@ int nghttp2_submit_response(nghttp2_session *session,
  * :enum:`NGHTTP2_ERR_STREAM_ID_NOT_AVAILABLE`
  *     No stream ID is available because maximum stream ID was
  *     reached.
+ *
+ * .. warning::
+ *
+ *   This function returns assigned stream ID if it succeeds and
+ *   |stream_id| is -1.  But that stream is not opened yet.  The
+ *   application must not submit frame to that stream ID before
+ *   :member:`nghttp2_session_callbacks.before_frame_send_callback` is
+ *   called for this frame.
+ *
  */
 int32_t nghttp2_submit_headers(nghttp2_session *session, uint8_t flags,
                                int32_t stream_id,
@@ -2469,6 +2487,15 @@ int nghttp2_submit_settings(nghttp2_session *session, uint8_t flags,
  * :enum:`NGHTTP2_ERR_STREAM_ID_NOT_AVAILABLE`
  *     No stream ID is available because maximum stream ID was
  *     reached.
+ *
+ * .. warning::
+ *
+ *   This function returns assigned promised stream ID if it succeeds.
+ *   But that stream is not opened yet.  The application must not
+ *   submit frame to that stream ID before
+ *   :member:`nghttp2_session_callbacks.before_frame_send_callback` is
+ *   called for this frame.
+ *
  */
 int32_t nghttp2_submit_push_promise(nghttp2_session *session, uint8_t flags,
                                     int32_t stream_id,
