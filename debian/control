@@ -10,13 +10,13 @@ Build-Depends: debhelper (>= 9), cdbs (>= 0.4.93~),
 Standards-Version: 3.9.5
 Homepage: http://tatsuhiro-t.github.io/nghttp2/
 
-Package: libnghttp2-3-dev
+Package: libnghttp2-4-dev
 Suggests: libnghttp2-doc
 Section: libdevel
 Architecture: any
-Conflicts: libnghttp2-2-dev
-Replaces: libnghttp2-2-dev
-Depends: ${misc:Depends}, libnghttp2-3 (= ${binary:Version}), pkg-config
+Conflicts: libnghttp2-3-dev
+Replaces: libnghttp2-3-dev
+Depends: ${misc:Depends}, libnghttp2-4 (= ${binary:Version}), pkg-config
 Recommends: nghttp2d
 Description: nghttp2 HTTP 2.0 development libraries and headers
  Provides development library and headers for an experimental
@@ -29,7 +29,7 @@ Depends: ${misc:Depends}, lynx | www-browser, libjs-underscore, libjs-jquery
 Description: Documentation for the nghttp2 HTTP 2.0 library
  HTML documentation for the experimental nghttp2 library.
 
-Package: libnghttp2-3
+Package: libnghttp2-4
 Section: libs
 Architecture: any
 Multi-Arch: same
@@ -39,12 +39,12 @@ Description: nghttp HTTP 2.0 library
  Provides a library that provides an experimental implementation of
  Hypertext Transfer Protocol version 2.0.
 
-Package: libnghttp2-3-dbg
+Package: libnghttp2-4-dbg
 Priority: extra
 Section: debug
 Architecture: any
 Multi-Arch: same
-Depends: ${misc:Depends}, libnghttp2-3 (= ${binary:Version})
+Depends: ${misc:Depends}, libnghttp2-4 (= ${binary:Version})
 Description: nghttp HTTP 2.0 library - debugging symbols
  Provides a library that provides an experimental implementation of
  Hypertext Transfer Protocol version 2.0.
@@ -55,7 +55,7 @@ Description: nghttp HTTP 2.0 library - debugging symbols
 Package: nghttp2
 Architecture: any
 Multi-Arch: foreign
-Depends: ${misc:Depends}, libnghttp2-3 (= ${binary:Version}), ${shlibs:Depends}
+Depends: ${misc:Depends}, libnghttp2-4 (= ${binary:Version}), ${shlibs:Depends}
 Description: nghttp HTTP 2.0 servers
  Provides experimental implementation of Hypertext Transfer Protocol
  version 2.0 including a server (nghttpd), client (nghttp) and

@@ -30,6 +30,9 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 
+#include <memory>
+#include <vector>
+
 #include <openssl/ssl.h>
 
 #include <event.h>
@@ -45,6 +48,7 @@ struct WorkerInfo {
 };
 
 class Http2Session;
+struct WorkerStat;
 
 class ListenHandler {
 public:
@@ -52,20 +56,21 @@ public:
   ~ListenHandler();
   int accept_connection(evutil_socket_t fd, sockaddr *addr, int addrlen);
   void create_worker_thread(size_t num);
+  void worker_reopen_log_files();
   event_base* get_evbase() const;
   int create_http2_session();
 private:
+  std::vector<WorkerInfo> workers_;
   event_base *evbase_;
   // The frontend server SSL_CTX
   SSL_CTX *sv_ssl_ctx_;
   // The backend server SSL_CTX
   SSL_CTX *cl_ssl_ctx_;
-  WorkerInfo *workers_;
   // Shared backend HTTP2 session. NULL if multi-threaded. In
   // multi-threaded case, see shrpx_worker.cc.
-  Http2Session *http2session_;
+  std::unique_ptr<Http2Session> http2session_;
   bufferevent_rate_limit_group *rate_limit_group_;
-  size_t num_worker_;
+  std::unique_ptr<WorkerStat> worker_stat_;
   unsigned int worker_round_robin_cnt_;
 };
 

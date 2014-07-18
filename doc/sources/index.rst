@@ -19,7 +19,13 @@ Contents:
    package_README
    tutorial-client
    tutorial-server
+   tutorial-hpack
+   nghttp.1
+   nghttpd.1
+   nghttpx.1
+   h2load.1
    nghttpx-howto
+   h2load-howto
    apiref
    python-apiref
    nghttp2.h
@@ -40,5 +46,5 @@ Released Versions
 Resources
 ---------
 
-* http://tools.ietf.org/html/draft-ietf-httpbis-http2-12
-* http://tools.ietf.org/html/draft-ietf-httpbis-header-compression-07
+* http://tools.ietf.org/html/draft-ietf-httpbis-http2-13
+* http://tools.ietf.org/html/draft-ietf-httpbis-header-compression-08

@@ -40,6 +40,7 @@
 #include "shrpx_client_handler.h"
 #include "shrpx_ssl.h"
 #include "shrpx_http.h"
+#include "shrpx_worker_config.h"
 #include "http2.h"
 #include "util.h"
 #include "base64.h"
@@ -57,6 +58,7 @@ Http2Session::Http2Session(event_base *evbase, SSL_CTX *ssl_ctx)
     wrbev_(nullptr),
     rdbev_(nullptr),
     settings_timerev_(nullptr),
+    recv_ign_window_size_(0),
     fd_(-1),
     state_(DISCONNECTED),
     notified_(false),
@@ -257,14 +259,13 @@ void eventcb(bufferevent *bev, short events, void *ptr)
       SSLOG(INFO, http2session) << "Connection established";
     }
     http2session->set_state(Http2Session::CONNECTED);
-    if(!get_config()->downstream_no_tls) {
-      if(!ssl::check_http2_requirement(http2session->get_ssl()) ||
-         (!get_config()->insecure && http2session->check_cert() != 0)) {
+    if(!get_config()->downstream_no_tls &&
+       !get_config()->insecure &&
+       http2session->check_cert() != 0) {
 
-        http2session->disconnect();
+      http2session->disconnect();
 
-        return;
-      }
+      return;
     }
 
     if(http2session->on_connect() != 0) {
@@ -338,15 +339,16 @@ void proxy_eventcb(bufferevent *bev, short events, void *ptr)
       SSLOG(INFO, http2session) << "Connected to the proxy";
     }
     std::string req = "CONNECT ";
-    req += get_config()->downstream_hostport;
+    req += get_config()->downstream_hostport.get();
     req += " HTTP/1.1\r\nHost: ";
-    req += get_config()->downstream_host;
+    req += get_config()->downstream_host.get();
     req += "\r\n";
     if(get_config()->downstream_http_proxy_userinfo) {
       req += "Proxy-Authorization: Basic ";
-      size_t len = strlen(get_config()->downstream_http_proxy_userinfo);
-      req += base64::encode(get_config()->downstream_http_proxy_userinfo,
-                            get_config()->downstream_http_proxy_userinfo+len);
+      size_t len = strlen(get_config()->downstream_http_proxy_userinfo.get());
+      req += base64::encode
+        (get_config()->downstream_http_proxy_userinfo.get(),
+         get_config()->downstream_http_proxy_userinfo.get() + len);
       req += "\r\n";
     }
     req += "\r\n";
@@ -393,7 +395,8 @@ int Http2Session::initiate_connection()
   if(get_config()->downstream_http_proxy_host && state_ == DISCONNECTED) {
     if(LOG_ENABLED(INFO)) {
       SSLOG(INFO, this) << "Connecting to the proxy "
-                        << get_config()->downstream_http_proxy_host << ":"
+                        << get_config()->downstream_http_proxy_host.get()
+                        << ":"
                         << get_config()->downstream_http_proxy_port;
     }
     bev_ = bufferevent_socket_new(evbase_, -1, BEV_OPT_DEFER_CALLBACKS);
@@ -414,7 +417,8 @@ int Http2Session::initiate_connection()
        get_config()->downstream_http_proxy_addrlen);
     if(rv != 0) {
       SSLOG(ERROR, this) << "Failed to connect to the proxy "
-                         << get_config()->downstream_http_proxy_host << ":"
+                         << get_config()->downstream_http_proxy_host.get()
+                         << ":"
                          << get_config()->downstream_http_proxy_port;
       return SHRPX_ERR_NETWORK;
     }
@@ -442,13 +446,13 @@ int Http2Session::initiate_connection()
 
       const char *sni_name = nullptr;
       if ( get_config()->backend_tls_sni_name ) {
-        sni_name = get_config()->backend_tls_sni_name;
+        sni_name = get_config()->backend_tls_sni_name.get();
       }
       else {
-        sni_name = get_config()->downstream_host;
+        sni_name = get_config()->downstream_host.get();
       }
 
-      if(!util::numeric_host(sni_name)) {
+      if(sni_name && !util::numeric_host(sni_name)) {
         // TLS extensions: SNI. There is no documentation about the return
         // code for this function (actually this is macro wrapping SSL_ctrl
         // at the time of this writing).
@@ -516,6 +520,7 @@ int Http2Session::initiate_connection()
 
   // Unreachable
   DIE();
+  return 0;
 }
 
 void Http2Session::unwrap_free_bev()
@@ -666,6 +671,7 @@ int Http2Session::submit_window_update(Http2DownstreamConnection *dconn,
     stream_id = dconn->get_downstream()->get_downstream_stream_id();
   } else {
     stream_id = 0;
+    recv_ign_window_size_ = 0;
   }
   rv = nghttp2_submit_window_update(session_, NGHTTP2_FLAG_NONE,
                                     stream_id, amount);
@@ -936,6 +942,16 @@ int on_response_headers(Http2Session *http2session,
   downstream->set_response_major(2);
   downstream->set_response_minor(0);
 
+  if(LOG_ENABLED(INFO)) {
+    std::stringstream ss;
+    for(auto& nv : nva) {
+      ss << TTY_HTTP_HD << nv.name << TTY_RST << ": " << nv.value << "\n";
+    }
+    SSLOG(INFO, http2session) << "HTTP response headers. stream_id="
+                              << frame->hd.stream_id
+                              << "\n" << ss.str();
+  }
+
   auto content_length = http2::get_header(nva, "content-length");
   if(!content_length && downstream->get_request_method() != "HEAD" &&
      downstream->get_request_method() != "CONNECT") {
@@ -954,18 +970,9 @@ int on_response_headers(Http2Session *http2session,
         // connection open.  In HTTP2, we are supporsed not to
         // receive transfer-encoding.
         downstream->add_response_header("transfer-encoding", "chunked");
+        downstream->set_chunked_response(true);
       }
     }
-  }
-
-  if(LOG_ENABLED(INFO)) {
-    std::stringstream ss;
-    for(auto& nv : nva) {
-      ss << TTY_HTTP_HD << nv.name << TTY_RST << ": " << nv.value << "\n";
-    }
-    SSLOG(INFO, http2session) << "HTTP response headers. stream_id="
-                              << frame->hd.stream_id
-                              << "\n" << ss.str();
   }
 
   auto upstream = downstream->get_upstream();
@@ -1031,7 +1038,14 @@ int on_frame_recv_callback
     break;
   }
   case NGHTTP2_HEADERS:
-    return on_response_headers(http2session, session, frame);
+    if(frame->headers.cat == NGHTTP2_HCAT_RESPONSE) {
+      rv = on_response_headers(http2session, session, frame);
+
+      if(rv != 0) {
+        return rv;
+      }
+    }
+    break;
   case NGHTTP2_RST_STREAM: {
     auto sd = static_cast<StreamData*>
       (nghttp2_session_get_stream_user_data(session, frame->hd.stream_id));
@@ -1098,18 +1112,23 @@ int on_data_chunk_recv_callback(nghttp2_session *session,
     (nghttp2_session_get_stream_user_data(session, stream_id));
   if(!sd || !sd->dconn) {
     http2session->submit_rst_stream(stream_id, NGHTTP2_INTERNAL_ERROR);
+    http2session->handle_ign_data_chunk(len);
     return 0;
   }
   auto downstream = sd->dconn->get_downstream();
   if(!downstream || downstream->get_downstream_stream_id() != stream_id) {
     http2session->submit_rst_stream(stream_id, NGHTTP2_INTERNAL_ERROR);
+    http2session->handle_ign_data_chunk(len);
     return 0;
   }
+
+  downstream->add_response_bodylen(len);
 
   auto upstream = downstream->get_upstream();
   rv = upstream->on_downstream_body(downstream, data, len, false);
   if(rv != 0) {
     http2session->submit_rst_stream(stream_id, NGHTTP2_INTERNAL_ERROR);
+    http2session->handle_ign_data_chunk(len);
     downstream->set_response_state(Downstream::MSG_RESET);
   }
   call_downstream_readcb(http2session, downstream);
@@ -1265,16 +1284,46 @@ int Http2Session::on_connect()
     return -1;
   }
 
+  if(!get_config()->downstream_no_tls &&
+     !ssl::check_http2_requirement(ssl_)) {
+
+    rv = terminate_session(NGHTTP2_INADEQUATE_SECURITY);
+
+    if(rv != 0) {
+      return -1;
+    }
+  }
+
   rv = send();
   if(rv != 0) {
     return -1;
   }
 
+  if(!get_config()->downstream_no_tls &&
+     !ssl::check_http2_requirement(ssl_)) {
+
+    return 0;
+  }
+
   // submit pending request
   for(auto dconn : dconns_) {
-    if(dconn->push_request_headers() != 0) {
-      return -1;
+    if(dconn->push_request_headers() == 0) {
+      continue;
     }
+
+    if(LOG_ENABLED(INFO)) {
+      SSLOG(INFO, this) << "backend request failed";
+    }
+
+    auto downstream = dconn->get_downstream();
+
+    if(!downstream) {
+      continue;
+    }
+
+    auto upstream = downstream->get_upstream();
+
+    upstream->on_downstream_abort_request(downstream, 400);
   }
   return 0;
 }
@@ -1419,6 +1468,21 @@ size_t Http2Session::get_outbuf_length() const
 SSL* Http2Session::get_ssl() const
 {
   return ssl_;
+}
+
+int Http2Session::handle_ign_data_chunk(size_t len)
+{
+  int32_t window_size;
+
+  recv_ign_window_size_ += len;
+
+  window_size = nghttp2_session_get_effective_local_window_size(session_);
+
+  if(recv_ign_window_size_ >= window_size / 2) {
+    submit_window_update(nullptr, recv_ign_window_size_);
+  }
+
+  return 0;
 }
 
 } // namespace shrpx

@@ -104,7 +104,8 @@ host_triplet = @host@
 target_triplet = @target@
 @ENABLE_EXAMPLES_TRUE@noinst_PROGRAMS = client$(EXEEXT) \
 @ENABLE_EXAMPLES_TRUE@	libevent-client$(EXEEXT) \
-@ENABLE_EXAMPLES_TRUE@	libevent-server$(EXEEXT)
+@ENABLE_EXAMPLES_TRUE@	libevent-server$(EXEEXT) \
+@ENABLE_EXAMPLES_TRUE@	deflate$(EXEEXT)
 subdir = examples
 DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/Makefile.am \
 	$(top_srcdir)/depcomp
@@ -133,6 +134,13 @@ AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
 am__v_lt_0 = --silent
 am__v_lt_1 = 
+am__deflate_SOURCES_DIST = deflate.c
+@ENABLE_EXAMPLES_TRUE@am_deflate_OBJECTS = deflate.$(OBJEXT)
+deflate_OBJECTS = $(am_deflate_OBJECTS)
+deflate_LDADD = $(LDADD)
+@ENABLE_EXAMPLES_TRUE@deflate_DEPENDENCIES =  \
+@ENABLE_EXAMPLES_TRUE@	$(top_builddir)/lib/libnghttp2.la \
+@ENABLE_EXAMPLES_TRUE@	$(top_builddir)/third-party/libhttp-parser.la
 am__libevent_client_SOURCES_DIST = libevent-client.c
 @ENABLE_EXAMPLES_TRUE@am_libevent_client_OBJECTS =  \
 @ENABLE_EXAMPLES_TRUE@	libevent-client.$(OBJEXT)
@@ -183,9 +191,9 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
-SOURCES = $(client_SOURCES) $(libevent_client_SOURCES) \
-	$(libevent_server_SOURCES)
-DIST_SOURCES = $(am__client_SOURCES_DIST) \
+SOURCES = $(client_SOURCES) $(deflate_SOURCES) \
+	$(libevent_client_SOURCES) $(libevent_server_SOURCES)
+DIST_SOURCES = $(am__client_SOURCES_DIST) $(am__deflate_SOURCES_DIST) \
 	$(am__libevent_client_SOURCES_DIST) \
 	$(am__libevent_server_SOURCES_DIST)
 am__can_run_installinfo = \
@@ -397,6 +405,7 @@ top_srcdir = @top_srcdir@
 @ENABLE_EXAMPLES_TRUE@client_SOURCES = client.c
 @ENABLE_EXAMPLES_TRUE@libevent_client_SOURCES = libevent-client.c
 @ENABLE_EXAMPLES_TRUE@libevent_server_SOURCES = libevent-server.c
+@ENABLE_EXAMPLES_TRUE@deflate_SOURCES = deflate.c
 all: all-am
 
 .SUFFIXES:
@@ -445,6 +454,10 @@ client$(EXEEXT): $(client_OBJECTS) $(client_DEPENDENCIES) $(EXTRA_client_DEPENDE
 	@rm -f client$(EXEEXT)
 	$(AM_V_CCLD)$(LINK) $(client_OBJECTS) $(client_LDADD) $(LIBS)
 
+deflate$(EXEEXT): $(deflate_OBJECTS) $(deflate_DEPENDENCIES) $(EXTRA_deflate_DEPENDENCIES) 
+	@rm -f deflate$(EXEEXT)
+	$(AM_V_CCLD)$(LINK) $(deflate_OBJECTS) $(deflate_LDADD) $(LIBS)
+
 libevent-client$(EXEEXT): $(libevent_client_OBJECTS) $(libevent_client_DEPENDENCIES) $(EXTRA_libevent_client_DEPENDENCIES) 
 	@rm -f libevent-client$(EXEEXT)
 	$(AM_V_CCLD)$(LINK) $(libevent_client_OBJECTS) $(libevent_client_LDADD) $(LIBS)
@@ -460,6 +473,7 @@ distclean-compile:
 	-rm -f *.tab.c
 
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/client.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/deflate.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libevent-client.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libevent-server.Po@am__quote@
 

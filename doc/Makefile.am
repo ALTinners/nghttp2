@@ -27,10 +27,17 @@ EXTRA_DIST = \
 	mkapiref.py \
 	README.rst \
 	apiref-header.rst \
+	nghttp.1.rst \
+	nghttpd.1.rst \
+	nghttpx.1.rst \
+	h2load.1.rst \
 	sources/index.rst \
 	sources/tutorial-client.rst \
 	sources/tutorial-server.rst \
+	sources/tutorial-hpack.rst \
 	sources/nghttpx-howto.rst \
+	sources/h2load-howto.rst \
+	sources/python-apiref.rst \
 	_themes/sphinx_rtd_theme/footer.html \
 	_themes/sphinx_rtd_theme/theme.conf \
 	_themes/sphinx_rtd_theme/layout_old.html \

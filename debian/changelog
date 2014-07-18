@@ -1,3 +1,10 @@
+nghttp2 (0.5.0-1) unstable; urgency=medium
+
+  * New upstream release
+  * Major soname bumped so rename packages to libnghttp2-4*
+
+ -- Dave Beckett <dajobe@debian.org>  Fri, 18 Jul 2014 12:34:34 -0700
+
 nghttp2 (0.4.1-1) unstable; urgency=medium
 
   * New upstream release

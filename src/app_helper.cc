@@ -99,8 +99,6 @@ const char* strsettingsid(int32_t id)
     return "SETTINGS_MAX_CONCURRENT_STREAMS";
   case NGHTTP2_SETTINGS_INITIAL_WINDOW_SIZE:
     return "SETTINGS_INITIAL_WINDOW_SIZE";
-  case NGHTTP2_SETTINGS_COMPRESS_DATA:
-    return "SETTINGS_COMPRESS_DATA";
   default:
     return "UNKNOWN";
   }
@@ -129,10 +127,8 @@ const char* strframetype(uint8_t type)
     return "GOAWAY";
   case NGHTTP2_WINDOW_UPDATE:
     return "WINDOW_UPDATE";
-  case NGHTTP2_ALTSVC:
+  case NGHTTP2_EXT_ALTSVC:
     return "ALTSVC";
-  case NGHTTP2_BLOCKED:
-    return "BLOCKED";
   default:
     return "UNKNOWN";
   }
@@ -231,23 +227,11 @@ void print_flags(const nghttp2_frame_hd& hd)
       }
       s += "END_SEGMENT";
     }
-    if(hd.flags & NGHTTP2_FLAG_PAD_LOW) {
+    if(hd.flags & NGHTTP2_FLAG_PADDED) {
       if(!s.empty()) {
         s += " | ";
       }
-      s += "PAD_LOW";
-    }
-    if(hd.flags & NGHTTP2_FLAG_PAD_HIGH) {
-      if(!s.empty()) {
-        s += " | ";
-      }
-      s += "PAD_HIGH";
-    }
-    if(hd.flags & NGHTTP2_FLAG_COMPRESSED) {
-      if(!s.empty()) {
-        s += " | ";
-      }
-      s += "COMPRESSED";
+      s += "PADDED";
     }
     break;
   case NGHTTP2_HEADERS:
@@ -266,17 +250,11 @@ void print_flags(const nghttp2_frame_hd& hd)
       }
       s += "END_HEADERS";
     }
-    if(hd.flags & NGHTTP2_FLAG_PAD_LOW) {
+    if(hd.flags & NGHTTP2_FLAG_PADDED) {
       if(!s.empty()) {
         s += " | ";
       }
-      s += "PAD_LOW";
-    }
-    if(hd.flags & NGHTTP2_FLAG_PAD_HIGH) {
-      if(!s.empty()) {
-        s += " | ";
-      }
-      s += "PAD_HIGH";
+      s += "PADDED";
     }
     if(hd.flags & NGHTTP2_FLAG_PRIORITY) {
       if(!s.empty()) {
@@ -297,17 +275,11 @@ void print_flags(const nghttp2_frame_hd& hd)
     if(hd.flags & NGHTTP2_FLAG_END_HEADERS) {
       s += "END_HEADERS";
     }
-    if(hd.flags & NGHTTP2_FLAG_PAD_LOW) {
+    if(hd.flags & NGHTTP2_FLAG_PADDED) {
       if(!s.empty()) {
         s += " | ";
       }
-      s += "PAD_LOW";
-    }
-    if(hd.flags & NGHTTP2_FLAG_PAD_HIGH) {
-      if(!s.empty()) {
-        s += " | ";
-      }
-      s += "PAD_HIGH";
+      s += "PADDED";
     }
     break;
   case NGHTTP2_PING:
@@ -329,25 +301,6 @@ namespace {
 const char* frame_name_ansi_esc(print_type ptype)
 {
   return ansi_esc(ptype == PRINT_SEND ? "\033[1;35m" : "\033[1;36m");
-}
-} // namespace
-
-namespace {
-std::string ascii_dump(const uint8_t *data, size_t len)
-{
-  std::string res;
-
-  for(size_t i = 0; i < len; ++i) {
-    auto c = data[i];
-
-    if(c >= 0x20 && c < 0x7f) {
-      res += c;
-    } else {
-      res += ".";
-    }
-  }
-
-  return res;
 }
 } // namespace
 
@@ -409,7 +362,7 @@ void print_frame(print_type ptype, const nghttp2_frame *frame)
     break;
   case NGHTTP2_RST_STREAM:
     print_frame_attr_indent();
-    fprintf(outfile, "(error_code=%s(%u))\n",
+    fprintf(outfile, "(error_code=%s(0x%02x))\n",
             strstatus(frame->rst_stream.error_code),
             frame->rst_stream.error_code);
     break;
@@ -419,7 +372,7 @@ void print_frame(print_type ptype, const nghttp2_frame *frame)
             static_cast<unsigned long>(frame->settings.niv));
     for(size_t i = 0; i < frame->settings.niv; ++i) {
       print_frame_attr_indent();
-      fprintf(outfile, "[%s(%d):%u]\n",
+      fprintf(outfile, "[%s(0x%02x):%u]\n",
               strsettingsid(frame->settings.iv[i].settings_id),
               frame->settings.iv[i].settings_id,
               frame->settings.iv[i].value);
@@ -440,38 +393,48 @@ void print_frame(print_type ptype, const nghttp2_frame *frame)
   case NGHTTP2_GOAWAY:
     print_frame_attr_indent();
     fprintf(outfile,
-            "(last_stream_id=%d, error_code=%s(%u), opaque_data(%u)=[%s])\n",
+            "(last_stream_id=%d, error_code=%s(0x%02x), "
+            "opaque_data(%u)=[%s])\n",
             frame->goaway.last_stream_id,
             strstatus(frame->goaway.error_code),
             frame->goaway.error_code,
             static_cast<unsigned int>(frame->goaway.opaque_data_len),
-            ascii_dump(frame->goaway.opaque_data,
-                       frame->goaway.opaque_data_len).c_str());
+            util::ascii_dump(frame->goaway.opaque_data,
+                             frame->goaway.opaque_data_len).c_str());
     break;
   case NGHTTP2_WINDOW_UPDATE:
     print_frame_attr_indent();
     fprintf(outfile, "(window_size_increment=%d)\n",
             frame->window_update.window_size_increment);
     break;
-  case NGHTTP2_ALTSVC:
+  case NGHTTP2_EXT_ALTSVC: {
     print_frame_attr_indent();
+
+    auto altsvc = static_cast<const nghttp2_ext_altsvc*>(frame->ext.payload);
+
     fprintf(outfile, "(max-age=%u, port=%u, protocol_id=",
-            frame->altsvc.max_age, frame->altsvc.port);
-    if(frame->altsvc.protocol_id_len) {
-      fwrite(frame->altsvc.protocol_id, frame->altsvc.protocol_id_len, 1,
-             outfile);
+            altsvc->max_age, altsvc->port);
+
+    if(altsvc->protocol_id_len) {
+      fwrite(altsvc->protocol_id, altsvc->protocol_id_len, 1, outfile);
     }
+
     fprintf(outfile, ", host=");
-    if(frame->altsvc.host_len) {
-      fwrite(frame->altsvc.host, frame->altsvc.host_len, 1, outfile);
+
+    if(altsvc->host_len) {
+      fwrite(altsvc->host, altsvc->host_len, 1, outfile);
     }
+
     fprintf(outfile, ", origin=");
-    if(frame->altsvc.origin_len) {
-      fwrite(frame->altsvc.origin, frame->altsvc.origin_len, 1, outfile);
+
+    if(altsvc->origin_len) {
+      fwrite(altsvc->origin, altsvc->origin_len, 1, outfile);
     }
+
     fprintf(outfile, ")\n");
 
     break;
+  }
   default:
     break;
   }

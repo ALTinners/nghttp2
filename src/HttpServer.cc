@@ -58,6 +58,7 @@ extern "C" {
 #include "app_helper.h"
 #include "http2.h"
 #include "util.h"
+#include "ssl.h"
 
 #ifndef O_BINARY
 # define O_BINARY (0)
@@ -112,7 +113,8 @@ Config::Config()
     daemon(false),
     verify_client(false),
     no_tls(false),
-    error_gzip(false)
+    error_gzip(false),
+    early_response(false)
 {}
 
 Stream::Stream(Http2Handler *handler, int32_t stream_id)
@@ -120,8 +122,7 @@ Stream::Stream(Http2Handler *handler, int32_t stream_id)
     rtimer(nullptr),
     wtimer(nullptr),
     stream_id(stream_id),
-    file(-1),
-    enable_compression(false)
+    file(-1)
 {}
 
 Stream::~Stream()
@@ -597,6 +598,10 @@ int Http2Handler::wait_events()
     active = 1;
   }
 
+  if(pending_datalen_ > 0) {
+    active = 1;
+  }
+
   return active ? 0 : -1;
 }
 
@@ -726,12 +731,10 @@ int Http2Handler::on_connect()
     return r;
   }
   nghttp2_settings_entry entry[4];
-  size_t niv = 2;
+  size_t niv = 1;
 
   entry[0].settings_id = NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS;
   entry[0].value = 100;
-  entry[1].settings_id = NGHTTP2_SETTINGS_COMPRESS_DATA;
-  entry[1].value = 1;
 
   if(sessions_->get_config()->header_table_size >= 0) {
     entry[niv].settings_id = NGHTTP2_SETTINGS_HEADER_TABLE_SIZE;
@@ -949,19 +952,6 @@ void Http2Handler::terminate_session(nghttp2_error_code error_code)
   nghttp2_session_terminate_session(session_, error_code);
 }
 
-void Http2Handler::decide_compression(const std::string& path, Stream *stream)
-{
-  if(nghttp2_session_get_remote_settings
-     (session_, NGHTTP2_SETTINGS_COMPRESS_DATA) == 1 &&
-     (util::endsWith(path, ".html") ||
-      util::endsWith(path, ".js") ||
-      util::endsWith(path, ".css") ||
-      util::endsWith(path, ".txt"))) {
-
-    stream->enable_compression = true;
-  }
-}
-
 ssize_t file_read_callback
 (nghttp2_session *session, int32_t stream_id,
  uint8_t *buf, size_t length, uint32_t *data_flags,
@@ -972,48 +962,25 @@ ssize_t file_read_callback
 
   int fd = source->fd;
   ssize_t nread;
-  ssize_t rv;
 
-  // Compressing too small data is not efficient?
-  if(length >= 1024 && stream && stream->enable_compression) {
-    uint8_t srcbuf[4096];
-    auto maxread = std::min(length, sizeof(srcbuf));
+  while((nread = read(fd, buf, length)) == -1 && errno == EINTR);
 
-    while((nread = read(fd, srcbuf, maxread)) == -1 && errno == EINTR);
-    if(nread == -1) {
-      if(stream) {
-        remove_stream_read_timeout(stream);
-        remove_stream_write_timeout(stream);
-      }
+  if(nread == -1) {
+    remove_stream_read_timeout(stream);
+    remove_stream_write_timeout(stream);
 
-      return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
-    }
-
-    if(nread > 0) {
-      rv = deflate_data(buf, length, srcbuf, nread);
-
-      if(rv < 0) {
-        memcpy(buf, srcbuf, nread);
-      } else {
-        nread = rv;
-
-        *data_flags |= NGHTTP2_DATA_FLAG_COMPRESSED;
-      }
-    }
-  } else {
-    while((nread = read(fd, buf, length)) == -1 && errno == EINTR);
-    if(nread == -1) {
-      if(stream) {
-        remove_stream_read_timeout(stream);
-        remove_stream_write_timeout(stream);
-      }
-
-      return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
-    }
+    return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
   }
 
   if(nread == 0) {
     *data_flags |= NGHTTP2_DATA_FLAG_EOF;
+
+    if(nghttp2_session_get_stream_remote_close(session, stream_id) == 0) {
+      remove_stream_read_timeout(stream);
+      remove_stream_write_timeout(stream);
+
+      hd->submit_rst_stream(stream, NGHTTP2_NO_ERROR);
+    }
   }
 
   return nread;
@@ -1060,7 +1027,11 @@ void prepare_status_response(Stream *stream, Http2Handler *hd,
     gzclose(write_fd);
     headers.emplace_back("content-encoding", "gzip");
   } else {
-    auto rv = write(pipefd[1], body.c_str(), body.size());
+    ssize_t rv;
+
+    while((rv = write(pipefd[1], body.c_str(), body.size())) == -1 &&
+          errno == EINTR);
+
     if(rv != static_cast<ssize_t>(body.size())) {
       std::cerr << "Could not write all response body: " << rv << std::endl;
     }
@@ -1125,26 +1096,34 @@ void prepare_response(Stream *stream, Http2Handler *hd, bool allow_push = true)
   int file = open(path.c_str(), O_RDONLY | O_BINARY);
   if(file == -1) {
     prepare_status_response(stream, hd, STATUS_404);
-  } else {
-    struct stat buf;
-    if(fstat(file, &buf) == -1) {
-      close(file);
-      prepare_status_response(stream, hd, STATUS_404);
-    } else {
-      stream->file = file;
-      nghttp2_data_provider data_prd;
-      data_prd.source.fd = file;
-      data_prd.read_callback = file_read_callback;
-      if(last_mod_found && buf.st_mtime <= last_mod) {
-        prepare_status_response(stream, hd, STATUS_304);
-      } else {
-        hd->decide_compression(path, stream);
 
-        hd->submit_file_response(STATUS_200, stream, buf.st_mtime,
-                                 buf.st_size, &data_prd);
-      }
-    }
+    return;
   }
+
+  struct stat buf;
+
+  if(fstat(file, &buf) == -1) {
+    close(file);
+    prepare_status_response(stream, hd, STATUS_404);
+
+    return;
+  }
+
+  stream->file = file;
+
+  nghttp2_data_provider data_prd;
+
+  data_prd.source.fd = file;
+  data_prd.read_callback = file_read_callback;
+
+  if(last_mod_found && buf.st_mtime <= last_mod) {
+    prepare_status_response(stream, hd, STATUS_304);
+
+    return;
+  }
+
+  hd->submit_file_response(STATUS_200, stream, buf.st_mtime,
+                           buf.st_size, &data_prd);
 }
 } // namespace
 
@@ -1250,8 +1229,9 @@ int hd_on_frame_recv_callback
 
     if(frame->hd.flags & NGHTTP2_FLAG_END_STREAM) {
       remove_stream_read_timeout(stream);
-
-      prepare_response(stream, hd);
+      if(!hd->get_config()->early_response) {
+        prepare_response(stream, hd);
+      }
     } else {
       add_stream_read_timeout(stream);
     }
@@ -1285,12 +1265,17 @@ int hd_on_frame_recv_callback
         hd->submit_rst_stream(stream, NGHTTP2_PROTOCOL_ERROR);
         return 0;
       }
+
+      if(hd->get_config()->early_response) {
+        prepare_response(stream, hd);
+      }
     }
 
     if(frame->hd.flags & NGHTTP2_FLAG_END_STREAM) {
       remove_stream_read_timeout(stream);
-
-      prepare_response(stream, hd);
+      if(!hd->get_config()->early_response) {
+        prepare_response(stream, hd);
+      }
     } else {
       add_stream_read_timeout(stream);
     }
@@ -1700,7 +1685,7 @@ int HttpServer::run()
     SSL_CTX_set_mode(ssl_ctx, SSL_MODE_RELEASE_BUFFERS);
     SSL_CTX_set_mode(ssl_ctx, SSL_MODE_ENABLE_PARTIAL_WRITE);
 
-    SSL_CTX_set_cipher_list(ssl_ctx, "HIGH:!aNULL:!MD5");
+    SSL_CTX_set_cipher_list(ssl_ctx, ssl::DEFAULT_CIPHER_LIST);
 
 
     const unsigned char sid_ctx[] = "nghttpd";
@@ -1709,9 +1694,12 @@ int HttpServer::run()
 
 #ifndef OPENSSL_NO_EC
 
-#if OPENSSL_VERSION_NUMBER >= 0x10002000L
-    SSL_CTX_set_ecdh_auto(ssl_ctx, 1);
-#else // OPENSSL_VERSION_NUBMER < 0x10002000L
+  // Disabled SSL_CTX_set_ecdh_auto, because computational cost of
+  // chosen curve is much higher than P-256.
+
+// #if OPENSSL_VERSION_NUMBER >= 0x10002000L
+//     SSL_CTX_set_ecdh_auto(ssl_ctx, 1);
+// #else // OPENSSL_VERSION_NUBMER < 0x10002000L
     // Use P-256, which is sufficiently secure at the time of this
     // writing.
     auto ecdh = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
@@ -1722,9 +1710,31 @@ int HttpServer::run()
     }
     SSL_CTX_set_tmp_ecdh(ssl_ctx, ecdh);
     EC_KEY_free(ecdh);
-#endif // OPENSSL_VERSION_NUBMER < 0x10002000L
+// #endif // OPENSSL_VERSION_NUBMER < 0x10002000L
 
 #endif // OPENSSL_NO_EC
+
+    if(!config_->dh_param_file.empty()) {
+      // Read DH parameters from file
+      auto bio = BIO_new_file(config_->dh_param_file.c_str(), "r");
+      if(bio == nullptr) {
+        std::cerr << "BIO_new_file() failed: "
+                  << ERR_error_string(ERR_get_error(), nullptr) << std::endl;
+        return -1;
+      }
+
+      auto dh = PEM_read_bio_DHparams(bio, nullptr, nullptr, nullptr);
+
+      if(dh == nullptr) {
+        std::cerr << "PEM_read_bio_DHparams() failed: "
+                  << ERR_error_string(ERR_get_error(), nullptr) << std::endl;
+        return -1;
+      }
+
+      SSL_CTX_set_tmp_dh(ssl_ctx, dh);
+      DH_free(dh);
+      BIO_free(bio);
+    }
 
     if(SSL_CTX_use_PrivateKey_file(ssl_ctx,
                                    config_->private_key_file.c_str(),

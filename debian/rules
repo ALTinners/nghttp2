@@ -4,7 +4,7 @@ include /usr/share/cdbs/1/rules/debhelper.mk
 #include /usr/share/cdbs/1/rules/autoreconf.mk
 include /usr/share/cdbs/1/class/autotools.mk
 
-DEB_DBG_PACKAGE_libnghttp2-3 = libnghttp2-3-dbg
+DEB_DBG_PACKAGE_libnghttp2-4 = libnghttp2-4-dbg
 
 DEB_CONFIGURE_EXTRA_FLAGS += --libdir=\$${prefix}/lib/$(DEB_HOST_MULTIARCH) \
   --bindir=\$${prefix}/bin/$(DEB_HOST_MULTIARCH)

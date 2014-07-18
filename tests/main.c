@@ -89,6 +89,12 @@ int main(int argc, char* argv[])
                    test_nghttp2_session_recv_premature_headers) ||
       !CU_add_test(pSuite, "session_recv_altsvc",
                    test_nghttp2_session_recv_altsvc) ||
+      !CU_add_test(pSuite, "session_recv_unknown_frame",
+                   test_nghttp2_session_recv_unknown_frame) ||
+      !CU_add_test(pSuite, "session_recv_unexpected_continuation",
+                   test_nghttp2_session_recv_unexpected_continuation) ||
+      !CU_add_test(pSuite, "session_recv_settings_header_table_size",
+                   test_nghttp2_session_recv_settings_header_table_size) ||
       !CU_add_test(pSuite, "session_continue", test_nghttp2_session_continue) ||
       !CU_add_test(pSuite, "session_add_frame",
                    test_nghttp2_session_add_frame) ||
@@ -120,8 +126,8 @@ int main(int argc, char* argv[])
                    test_nghttp2_session_send_headers_start_stream) ||
       !CU_add_test(pSuite, "session_send_headers_reply",
                    test_nghttp2_session_send_headers_reply) ||
-      !CU_add_test(pSuite, "session_send_headers_header_comp_error",
-                   test_nghttp2_session_send_headers_header_comp_error) ||
+      !CU_add_test(pSuite, "session_send_headers_frame_size_error",
+                   test_nghttp2_session_send_headers_frame_size_error) ||
       !CU_add_test(pSuite, "session_send_headers_push_reply",
                    test_nghttp2_session_send_headers_push_reply) ||
       !CU_add_test(pSuite, "session_send_rst_stream",
@@ -205,12 +211,6 @@ int main(int argc, char* argv[])
                    test_nghttp2_session_pack_data_with_padding) ||
       !CU_add_test(pSuite, "session_pack_headers_with_padding",
                    test_nghttp2_session_pack_headers_with_padding) ||
-      !CU_add_test(pSuite, "session_pack_headers_with_padding2",
-                   test_nghttp2_session_pack_headers_with_padding2) ||
-      !CU_add_test(pSuite, "session_pack_headers_with_padding3",
-                   test_nghttp2_session_pack_headers_with_padding3) ||
-      !CU_add_test(pSuite, "session_pack_headers_with_padding4",
-                   test_nghttp2_session_pack_headers_with_padding4) ||
       !CU_add_test(pSuite, "pack_settings_payload",
                    test_nghttp2_pack_settings_payload) ||
       !CU_add_test(pSuite, "session_stream_dep_add",
@@ -229,6 +229,8 @@ int main(int argc, char* argv[])
                    test_nghttp2_session_stream_attach_data_subtree) ||
       !CU_add_test(pSuite, "session_stream_keep_closed_stream",
                    test_nghttp2_session_keep_closed_stream) ||
+      !CU_add_test(pSuite, "session_graceful_shutdown",
+                   test_nghttp2_session_graceful_shutdown) ||
       !CU_add_test(pSuite, "frame_pack_headers",
                    test_nghttp2_frame_pack_headers) ||
       !CU_add_test(pSuite, "frame_pack_headers_frame_too_large",
@@ -273,6 +275,8 @@ int main(int argc, char* argv[])
                    test_nghttp2_hd_inflate_clearall_inc) ||
       !CU_add_test(pSuite, "hd_inflate_zero_length_huffman",
                    test_nghttp2_hd_inflate_zero_length_huffman) ||
+      !CU_add_test(pSuite, "hd_ringbuf_reserve",
+                   test_nghttp2_hd_ringbuf_reserve) ||
       !CU_add_test(pSuite, "hd_change_table_size",
                    test_nghttp2_hd_change_table_size) ||
       !CU_add_test(pSuite, "hd_deflate_inflate",

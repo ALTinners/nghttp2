@@ -113,9 +113,9 @@ struct Worker {
   event_base *evbase;
   SSL_CTX *ssl_ctx;
   Config *config;
+  event *term_timer;
   size_t progress_interval;
   uint32_t id;
-  bool term_timer_started;
 
   Worker(uint32_t id, SSL_CTX *ssl_ctx, size_t nreq_todo, size_t nclients,
          Config *config);
@@ -139,11 +139,19 @@ struct Client {
   addrinfo *next_addr;
   size_t reqidx;
   ClientState state;
+  // The number of requests this client has to issue.
+  size_t req_todo;
+  // The number of requests this client has issued so far.
+  size_t req_started;
+  // The number of requests this client has issued and got response so
+  // far.
+  size_t req_done;
 
-  Client(Worker *worker);
+  Client(Worker *worker, size_t req_todo);
   ~Client();
   int connect();
   void disconnect();
+  void fail();
   void submit_request();
   void process_abandoned_streams();
   void report_progress();
