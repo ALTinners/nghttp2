@@ -88,6 +88,7 @@ libnghttp2.so.4 libnghttp2-4 #MINVER#
  nghttp2_free@libnghttp2.so.4 0.5.0
  nghttp2_get_uint16@libnghttp2.so.4 0.5.0
  nghttp2_get_uint32@libnghttp2.so.4 0.5.0
+ nghttp2_hd_decode_length@libnghttp2.so.4 0.5.1
  nghttp2_hd_deflate_bound@libnghttp2.so.4 0.5.0
  nghttp2_hd_deflate_change_table_size@libnghttp2.so.4 0.5.0
  nghttp2_hd_deflate_del@libnghttp2.so.4 0.5.0
@@ -270,4 +271,4 @@ libnghttp2.so.4 libnghttp2-4 #MINVER#
  nghttp2_submit_settings@libnghttp2.so.4 0.5.0
  nghttp2_submit_window_update@libnghttp2.so.4 0.5.0
  nghttp2_version@libnghttp2.so.4 0.5.0
- static_table_index@libnghttp2.so.4 0.5.0
+
