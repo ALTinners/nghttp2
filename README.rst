@@ -17,10 +17,12 @@ everything yet.
 Development Status
 ------------------
 
-We started to implement h2-13
-(http://tools.ietf.org/html/draft-ietf-httpbis-http2-13) and the
-header compression
-(http://tools.ietf.org/html/draft-ietf-httpbis-header-compression-08).
+We started to implement h2-14
+(http://tools.ietf.org/html/draft-ietf-httpbis-http2-14), the header
+compression
+(http://tools.ietf.org/html/draft-ietf-httpbis-header-compression-09)
+and HTTP Alternative Services
+(http://tools.ietf.org/html/draft-ietf-httpbis-alt-svc-02).
 
 The nghttp2 code base was forked from spdylay project.
 
@@ -30,14 +32,8 @@ HTTP/2 Features             Support
 Core frames handling        Yes
 Dependency Tree             Yes
 Large header (CONTINUATION) Yes
-ALTSVC extension            Yes \*1
+ALTSVC extension            Yes
 =========================== =======
-
-* \*1 As described in draft-12, but reserved byte was removed.  ALTSVC
-  may be removed from nghttp2 public API since it is not stabilized
-  yet.
-
-BLOCKED frame, which once existed in h2-12, was removed in h2-13.
 
 Public Test Server
 ------------------
@@ -45,17 +41,16 @@ Public Test Server
 The following endpoints are available to try out nghttp2
 implementation.
 
-* https://nghttp2.org/ (TLS + NPN)
+* https://nghttp2.org/ (TLS + ALPN/NPN)
 
-  NPN offer ``h2-13``, ``spdy/3.1`` and ``http/1.1``.
-  ALPN is currently disabled.
+  NPN offer ``h2-14``, ``spdy/3.1`` and ``http/1.1``.
 
   This endpoint requires TLSv1.2 and DHE or EDCHE with GCM cipher
   suite for HTTP/2 connection.
 
 * http://nghttp2.org/ (Upgrade / Direct)
 
-  ``h2c-13`` and ``http/1.1``.  We configured this server to send
+  ``h2c-14`` and ``http/1.1``.  We configured this server to send
   ALTSVC frame or Alt-Svc header field to announce that alternative
   service is available at port 443.
 
@@ -89,7 +84,7 @@ ALPN support requires unreleased version OpenSSL >= 1.0.2.
 To enable SPDY protocol in the application program ``nghttpx`` and
 ``h2load``, the following package is required:
 
-* spdylay >= 1.2.3
+* spdylay >= 1.3.0
 
 To enable ``-a`` option (getting linked assets from the downloaded
 resource) in ``nghttp``, the following package is required:
@@ -186,10 +181,10 @@ output from ``nghttp`` client::
 
     $ src/nghttp -nv https://nghttp2.org
     [  0.033][NPN] server offers:
-              * h2-13
+              * h2-14
               * spdy/3.1
               * http/1.1
-    The negotiated protocol: h2-13
+    The negotiated protocol: h2-14
     [  0.068] send SETTINGS frame <length=15, flags=0x00, stream_id=0>
               (niv=3)
               [SETTINGS_MAX_CONCURRENT_STREAMS(3):100]
@@ -258,7 +253,7 @@ The HTTP Upgrade is performed like this::
     GET / HTTP/1.1
     Host: nghttp2.org
     Connection: Upgrade, HTTP2-Settings
-    Upgrade: h2c-13
+    Upgrade: h2c-14
     HTTP2-Settings: AwAAAGQEAAD__wUAAAAB
     Accept: */*
     User-Agent: nghttp2/0.4.0-DEV
@@ -267,7 +262,7 @@ The HTTP Upgrade is performed like this::
     [  0.024] HTTP Upgrade response
     HTTP/1.1 101 Switching Protocols
     Connection: Upgrade
-    Upgrade: h2c-13
+    Upgrade: h2c-14
 
 
     [  0.024] HTTP Upgrade success
@@ -281,7 +276,7 @@ The HTTP Upgrade is performed like this::
               [SETTINGS_MAX_CONCURRENT_STREAMS(3):100]
               [SETTINGS_INITIAL_WINDOW_SIZE(4):65535]
     [  0.024] recv ALTSVC frame <length=43, flags=0x00, stream_id=0>
-              (max-age=86400, port=443, protocol_id=h2-13, host=nghttp2.org, origin=http://nghttp2.org)
+              (max-age=86400, port=443, protocol_id=h2-14, host=nghttp2.org, origin=http://nghttp2.org)
     [  0.024] send SETTINGS frame <length=0, flags=0x01, stream_id=0>
               ; ACK
               (niv=0)
@@ -389,7 +384,7 @@ information.  Here is sample output from ``nghttpd`` server::
 nghttpx - proxy
 +++++++++++++++
 
-``nghttpx`` is a multi-threaded reverse proxy for ``h2-13``, SPDY and
+``nghttpx`` is a multi-threaded reverse proxy for ``h2-14``, SPDY and
 HTTP/1.1 and powers nghttp2.org site.  It has several operation modes:
 
 ================== ============================ ============== =============
@@ -403,7 +398,7 @@ default mode       HTTP/2, SPDY, HTTP/1.1 (TLS) HTTP/1.1       Reverse proxy
 ================== ============================ ============== =============
 
 The interesting mode at the moment is the default mode.  It works like
-a reverse proxy and listens for ``h2-13``, SPDY and HTTP/1.1 and can
+a reverse proxy and listens for ``h2-14``, SPDY and HTTP/1.1 and can
 be deployed SSL/TLS terminator for existing web server.
 
 The default mode, ``--http2-proxy`` and ``--http2-bridge`` modes use
@@ -1081,3 +1076,25 @@ BaseRequestHandler usage:
     # give None to ssl to make the server non-SSL/TLS
     server = nghttp2.HTTP2Server(('127.0.0.1', 8443), Handler, ssl=ctx)
     server.serve_forever()
+
+Contribution
+------------
+
+[This text was composed based on 1.2. License section of curl/libcurl
+project.]
+
+When contributing with code, you agree to put your changes and new
+code under the same license nghttp2 is already using unless stated and
+agreed otherwise.
+
+When changing existing source code, you do not alter the copyright of
+the original file(s).  The copyright will still be owned by the
+original creator(s) or those who have been assigned copyright by the
+original author(s).
+
+By submitting a patch to the nghttp2 project, you are assumed to have
+the right to the code and to be allowed by your employer or whatever
+to hand over that patch/code to us.  We will credit you for your
+changes as far as possible, to give credit but also to keep a trace
+back to who made what changes.  Please always provide us with your
+full real name when contributing!

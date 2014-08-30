@@ -1,3 +1,11 @@
+nghttp2 (0.6.0-1) unstable; urgency=medium
+
+  * New upstream release
+  * Major soname bumped so rename packages to libnghttp2-5*
+  * Switch dev package to libnghttp2-dev from ftpmaster suggestion
+
+ -- Dave Beckett <dajobe@debian.org>  Sat, 30 Aug 2014 11:34:33 -0700
+
 nghttp2 (0.5.1-1) unstable; urgency=medium
 
   * New upstream release

@@ -31,6 +31,7 @@
 #include "shrpx_error.h"
 #include "shrpx_http.h"
 #include "shrpx_worker_config.h"
+#include "shrpx_connect_blocker.h"
 #include "http2.h"
 #include "util.h"
 
@@ -65,7 +66,7 @@ HttpDownstreamConnection::~HttpDownstreamConnection()
   // Downstream and DownstreamConnection may be deleted
   // asynchronously.
   if(downstream_) {
-    downstream_->set_downstream_connection(nullptr);
+    downstream_->release_downstream_connection();
   }
 }
 
@@ -76,12 +77,32 @@ int HttpDownstreamConnection::attach_downstream(Downstream *downstream)
   }
   auto upstream = downstream->get_upstream();
   if(!bev_) {
+    auto connect_blocker = client_handler_->get_http1_connect_blocker();
+
+    if(connect_blocker->blocked()) {
+      return -1;
+    }
+
     auto evbase = client_handler_->get_evbase();
+
+    auto fd = socket(get_config()->downstream_addr.storage.ss_family,
+                     SOCK_STREAM | SOCK_CLOEXEC, 0);
+
+    if(fd == -1) {
+      connect_blocker->on_failure();
+
+      return SHRPX_ERR_NETWORK;
+    }
+
     bev_ = bufferevent_socket_new
-      (evbase, -1,
+      (evbase, fd,
        BEV_OPT_CLOSE_ON_FREE | BEV_OPT_DEFER_CALLBACKS);
     if(!bev_) {
+      connect_blocker->on_failure();
+
       DCLOG(INFO, this) << "bufferevent_socket_new() failed";
+      close(fd);
+
       return SHRPX_ERR_NETWORK;
     }
     int rv = bufferevent_socket_connect
@@ -90,15 +111,20 @@ int HttpDownstreamConnection::attach_downstream(Downstream *downstream)
        const_cast<sockaddr*>(&get_config()->downstream_addr.sa),
        get_config()->downstream_addrlen);
     if(rv != 0) {
+      connect_blocker->on_failure();
+
       bufferevent_free(bev_);
       bev_ = nullptr;
       return SHRPX_ERR_NETWORK;
     }
+
+    connect_blocker->on_success();
+
     if(LOG_ENABLED(INFO)) {
       DCLOG(INFO, this) << "Connecting to downstream server";
     }
   }
-  downstream->set_downstream_connection(this);
+
   downstream_ = downstream;
 
   ioctrl_.set_bev(bev_);
@@ -135,15 +161,25 @@ int HttpDownstreamConnection::push_request_headers()
       hdrs += downstream_->get_request_path();
     }
   } else if(get_config()->http2_proxy &&
-     !downstream_->get_request_http2_scheme().empty() &&
-     !downstream_->get_request_http2_authority().empty() &&
-     downstream_->get_request_path().c_str()[0] == '/') {
+            !downstream_->get_request_http2_scheme().empty() &&
+            !downstream_->get_request_http2_authority().empty() &&
+            (downstream_->get_request_path().c_str()[0] == '/' ||
+             downstream_->get_request_path() == "*")) {
     // Construct absolute-form request target because we are going to
     // send a request to a HTTP/1 proxy.
     hdrs += downstream_->get_request_http2_scheme();
     hdrs += "://";
     hdrs += downstream_->get_request_http2_authority();
-    hdrs += downstream_->get_request_path();
+
+    // Server-wide OPTIONS takes following form in proxy request:
+    //
+    // OPTIONS http://example.org HTTP/1.1
+    //
+    // Notice that no slash after authority. See
+    // http://tools.ietf.org/html/rfc7230#section-5.3.4
+    if(downstream_->get_request_path() != "*") {
+      hdrs += downstream_->get_request_path();
+    }
   } else {
     // No proxy case. get_request_path() may be absolute-form but we
     // don't care.
@@ -235,7 +271,7 @@ int HttpDownstreamConnection::push_request_headers()
   if(LOG_ENABLED(INFO)) {
     const char *hdrp;
     std::string nhdrs;
-    if(worker_config.errorlog_tty) {
+    if(worker_config->errorlog_tty) {
       nhdrs = http::colorizeHeaders(hdrs.c_str());
       hdrp = nhdrs.c_str();
     } else {
@@ -260,8 +296,6 @@ int HttpDownstreamConnection::push_request_headers()
   bufferevent_set_timeouts(bev_,
                            &get_config()->downstream_read_timeout,
                            &get_config()->downstream_write_timeout);
-
-  downstream_->clear_request_headers();
 
   return 0;
 }
@@ -342,7 +376,7 @@ void idle_eventcb(bufferevent *bev, short events, void *arg)
   }
   auto client_handler = dconn->get_client_handler();
   client_handler->remove_downstream_connection(dconn);
-  delete dconn;
+  // dconn was deleted
 }
 } // namespace
 
@@ -351,8 +385,7 @@ void HttpDownstreamConnection::detach_downstream(Downstream *downstream)
   if(LOG_ENABLED(INFO)) {
     DCLOG(INFO, this) << "Detaching from DOWNSTREAM:" << downstream;
   }
-  downstream->set_downstream_connection(0);
-  downstream_ = 0;
+  downstream_ = nullptr;
   ioctrl_.force_resume_read();
   bufferevent_enable(bev_, EV_READ);
   bufferevent_setcb(bev_, 0, 0, idle_eventcb, this);
@@ -361,7 +394,6 @@ void HttpDownstreamConnection::detach_downstream(Downstream *downstream)
   bufferevent_set_timeouts(bev_,
                            &get_config()->downstream_idle_read_timeout,
                            &get_config()->downstream_write_timeout);
-  client_handler_->pool_downstream_connection(this);
 }
 
 bufferevent* HttpDownstreamConnection::get_bev()
@@ -374,7 +406,7 @@ void HttpDownstreamConnection::pause_read(IOCtrlReason reason)
   ioctrl_.pause_read(reason);
 }
 
-int HttpDownstreamConnection::resume_read(IOCtrlReason reason)
+int HttpDownstreamConnection::resume_read(IOCtrlReason reason, size_t consumed)
 {
   ioctrl_.resume_read(reason);
   return 0;
@@ -408,9 +440,26 @@ namespace {
 int htp_hdrs_completecb(http_parser *htp)
 {
   auto downstream = static_cast<Downstream*>(htp->data);
+  auto upstream = downstream->get_upstream();
+  int rv;
+
   downstream->set_response_http_status(htp->status_code);
   downstream->set_response_major(htp->http_major);
   downstream->set_response_minor(htp->http_minor);
+
+  if(downstream->get_non_final_response()) {
+    // For non-final response code, we just call
+    // on_downstream_header_complete() without changing response
+    // state.
+    rv = upstream->on_downstream_header_complete(downstream);
+
+    if(rv != 0) {
+      return -1;
+    }
+
+    return 0;
+  }
+
   downstream->set_response_connection_close(!http_should_keep_alive(htp));
   downstream->set_response_state(Downstream::HEADER_COMPLETE);
   downstream->inspect_http1_response();
@@ -418,15 +467,13 @@ int htp_hdrs_completecb(http_parser *htp)
   if(downstream->get_upgraded()) {
     downstream->set_response_connection_close(true);
   }
-  if(downstream->get_upstream()->on_downstream_header_complete(downstream)
-     != 0) {
+  if(upstream->on_downstream_header_complete(downstream) != 0) {
     return -1;
   }
 
   if(downstream->get_upgraded()) {
     // Upgrade complete, read until EOF in both ends
-    if(downstream->get_upstream()->resume_read(SHRPX_MSG_BLOCK,
-                                               downstream) != 0) {
+    if(upstream->resume_read(SHRPX_MSG_BLOCK, downstream, 0) != 0) {
       return -1;
     }
     downstream->set_request_state(Downstream::HEADER_COMPLETE);
@@ -443,6 +490,9 @@ int htp_hdrs_completecb(http_parser *htp)
   // 304 status code with nonzero Content-Length, but without response
   // body. See
   // http://tools.ietf.org/html/draft-ietf-httpbis-p1-messaging-20#section-3.3
+
+  // TODO It seems that the cases other than HEAD are handled by
+  // http-parser.  Need test.
   return downstream->get_request_method() == "HEAD" ||
     (100 <= status && status <= 199) || status == 204 ||
     status == 304 ? 1 : 0;
@@ -505,6 +555,13 @@ namespace {
 int htp_msg_completecb(http_parser *htp)
 {
   auto downstream = static_cast<Downstream*>(htp->data);
+
+  if(downstream->get_non_final_response()) {
+    downstream->reset_response();
+
+    return 0;
+  }
+
   downstream->set_response_state(Downstream::MSG_COMPLETE);
   // Block reading another response message from (broken?)
   // server. This callback is not called if the connection is
@@ -593,6 +650,9 @@ int HttpDownstreamConnection::on_read()
 
 int HttpDownstreamConnection::on_write()
 {
+  auto upstream = downstream_->get_upstream();
+  upstream->resume_read(SHRPX_NO_BUFFER, downstream_,
+                        downstream_->get_request_datalen());
   return 0;
 }
 

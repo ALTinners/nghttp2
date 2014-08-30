@@ -38,14 +38,19 @@
 
 namespace shrpx {
 
-Downstream::Downstream(Upstream *upstream, int stream_id, int priority)
+Downstream::Downstream(Upstream *upstream, int32_t stream_id, int32_t priority)
   : request_bodylen_(0),
     response_bodylen_(0),
     upstream_(upstream),
-    dconn_(nullptr),
     response_body_buf_(nullptr),
+    upstream_rtimerev_(nullptr),
+    upstream_wtimerev_(nullptr),
+    downstream_rtimerev_(nullptr),
+    downstream_wtimerev_(nullptr),
     request_headers_sum_(0),
     response_headers_sum_(0),
+    request_datalen_(0),
+    response_datalen_(0),
     stream_id_(stream_id),
     priority_(priority),
     downstream_stream_id_(-1),
@@ -63,12 +68,12 @@ Downstream::Downstream(Upstream *upstream, int stream_id, int priority)
     http2_settings_seen_(false),
     chunked_request_(false),
     request_connection_close_(false),
-    request_expect_100_continue_(false),
     request_header_key_prev_(false),
     request_http2_expect_body_(false),
     chunked_response_(false),
     response_connection_close_(false),
-    response_header_key_prev_(false)
+    response_header_key_prev_(false),
+    expect_final_response_(false)
 {}
 
 Downstream::~Downstream()
@@ -80,22 +85,62 @@ Downstream::~Downstream()
     // Passing NULL to evbuffer_free() causes segmentation fault.
     evbuffer_free(response_body_buf_);
   }
-  if(dconn_) {
-    delete dconn_;
+  if(upstream_rtimerev_) {
+    event_free(upstream_rtimerev_);
+  }
+  if(upstream_wtimerev_) {
+    event_free(upstream_wtimerev_);
+  }
+  if(downstream_rtimerev_) {
+    event_free(downstream_rtimerev_);
+  }
+  if(downstream_wtimerev_) {
+    event_free(downstream_wtimerev_);
   }
   if(LOG_ENABLED(INFO)) {
     DLOG(INFO, this) << "Deleted";
   }
 }
 
-void Downstream::set_downstream_connection(DownstreamConnection *dconn)
+int Downstream::attach_downstream_connection
+(std::unique_ptr<DownstreamConnection> dconn)
 {
-  dconn_ = dconn;
+  if(dconn->attach_downstream(this) != 0) {
+    return -1;
+  }
+
+  dconn_ = std::move(dconn);
+
+  return 0;
+}
+
+void Downstream::detach_downstream_connection()
+{
+  if(!dconn_) {
+    return;
+  }
+
+  dconn_->detach_downstream(this);
+
+  auto handler = dconn_->get_client_handler();
+
+  handler->pool_downstream_connection
+    (std::unique_ptr<DownstreamConnection>(dconn_.release()));
+}
+
+void Downstream::release_downstream_connection()
+{
+  dconn_.release();
 }
 
 DownstreamConnection* Downstream::get_downstream_connection()
 {
-  return dconn_;
+  return dconn_.get();
+}
+
+std::unique_ptr<DownstreamConnection> Downstream::pop_downstream_connection()
+{
+  return std::unique_ptr<DownstreamConnection>(dconn_.release());
 }
 
 void Downstream::pause_read(IOCtrlReason reason)
@@ -105,13 +150,13 @@ void Downstream::pause_read(IOCtrlReason reason)
   }
 }
 
-int Downstream::resume_read(IOCtrlReason reason)
+int Downstream::resume_read(IOCtrlReason reason, size_t consumed)
 {
   if(dconn_) {
-    return dconn_->resume_read(reason);
-  } else {
-    return 0;
+    return dconn_->resume_read(reason, consumed);
   }
+
+  return 0;
 }
 
 void Downstream::force_resume_read()
@@ -230,11 +275,6 @@ Headers::const_iterator Downstream::get_norm_request_header
   return get_norm_header(request_headers_, name);
 }
 
-void Downstream::concat_norm_request_headers()
-{
-  request_headers_ = http2::concat_norm_headers(std::move(request_headers_));
-}
-
 void Downstream::add_request_header(std::string name, std::string value)
 {
   request_header_key_prev_ = true;
@@ -256,8 +296,8 @@ void Downstream::split_add_request_header
  bool no_index)
 {
   request_headers_sum_ += namelen + valuelen;
-  http2::split_add_header(request_headers_, name, namelen, value, valuelen,
-                          no_index);
+  http2::add_header(request_headers_, name, namelen, value, valuelen,
+                    no_index);
 }
 
 bool Downstream::get_request_header_key_prev() const
@@ -429,11 +469,6 @@ void Downstream::set_request_http2_expect_body(bool f)
   request_http2_expect_body_ = f;
 }
 
-bool Downstream::get_expect_100_continue() const
-{
-  return request_expect_100_continue_;
-}
-
 bool Downstream::get_output_buffer_full()
 {
   if(dconn_) {
@@ -463,7 +498,13 @@ int Downstream::push_upload_data_chunk(const uint8_t *data, size_t datalen)
     return -1;
   }
   request_bodylen_ += datalen;
-  return dconn_->push_upload_data_chunk(data, datalen);
+  if(dconn_->push_upload_data_chunk(data, datalen) != 0) {
+    return -1;
+  }
+
+  request_datalen_ += datalen;
+
+  return 0;
 }
 
 int Downstream::end_upload_data()
@@ -483,11 +524,6 @@ const Headers& Downstream::get_response_headers() const
 void Downstream::normalize_response_headers()
 {
   http2::normalize_headers(response_headers_);
-}
-
-void Downstream::concat_norm_response_headers()
-{
-  response_headers_ = http2::concat_norm_headers(std::move(response_headers_));
 }
 
 Headers::const_iterator Downstream::get_norm_response_header
@@ -551,8 +587,8 @@ void Downstream::split_add_response_header
  bool no_index)
 {
   response_headers_sum_ += namelen + valuelen;
-  http2::split_add_header(response_headers_, name, namelen, value, valuelen,
-                          no_index);
+  http2::add_header(response_headers_, name, namelen, value, valuelen,
+                    no_index);
 }
 
 bool Downstream::get_response_header_key_prev() const
@@ -754,11 +790,6 @@ void Downstream::inspect_http1_request()
       if(util::strifind(hd.value.c_str(), "chunked")) {
         chunked_request_ = true;
       }
-    } else if(!request_expect_100_continue_ &&
-              util::strieq(hd.name.c_str(), "expect")) {
-      if(util::strifind(hd.value.c_str(), "100-continue")) {
-        request_expect_100_continue_ = true;
-      }
     }
   }
 }
@@ -773,6 +804,18 @@ void Downstream::inspect_http1_response()
       }
     }
   }
+}
+
+void Downstream::reset_response()
+{
+  response_http_status_ = 0;
+  response_major_ = 1;
+  response_minor_ = 1;
+}
+
+bool Downstream::get_non_final_response() const
+{
+  return response_http_status_ / 100 == 1;
 }
 
 bool Downstream::get_upgraded() const
@@ -805,15 +848,309 @@ int32_t Downstream::get_downstream_stream_id() const
   return downstream_stream_id_;
 }
 
-nghttp2_error_code Downstream::get_response_rst_stream_error_code() const
+uint32_t Downstream::get_response_rst_stream_error_code() const
 {
   return response_rst_stream_error_code_;
 }
 
-void Downstream::set_response_rst_stream_error_code
-(nghttp2_error_code error_code)
+void Downstream::set_response_rst_stream_error_code(uint32_t error_code)
 {
   response_rst_stream_error_code_ = error_code;
+}
+
+void Downstream::set_expect_final_response(bool f)
+{
+  expect_final_response_ = f;
+}
+
+bool Downstream::get_expect_final_response() const
+{
+  return expect_final_response_;
+}
+
+size_t Downstream::get_request_datalen() const
+{
+  return request_datalen_;
+}
+
+void Downstream::dec_request_datalen(size_t len)
+{
+  assert(request_datalen_ >= len);
+  request_datalen_ -= len;
+}
+
+void Downstream::reset_request_datalen()
+{
+  request_datalen_ = 0;
+}
+
+void Downstream::add_response_datalen(size_t len)
+{
+  response_datalen_ += len;
+}
+
+void Downstream::dec_response_datalen(size_t len)
+{
+  assert(response_datalen_ >= len);
+  response_datalen_ -= len;
+}
+
+size_t Downstream::get_response_datalen() const
+{
+  return response_datalen_;
+}
+
+void Downstream::reset_response_datalen()
+{
+  response_datalen_ = 0;
+}
+
+bool Downstream::expect_response_body() const
+{
+  return request_method_ != "HEAD" &&
+    response_http_status_ / 100 != 1 &&
+    response_http_status_ != 304 &&
+    response_http_status_ != 204;
+}
+
+namespace {
+bool pseudo_header_allowed(const Headers& headers)
+{
+  if(headers.empty()) {
+    return true;
+  }
+
+  return headers.back().name.c_str()[0] == ':';
+}
+} // namespace
+
+bool Downstream::request_pseudo_header_allowed() const
+{
+  return pseudo_header_allowed(request_headers_);
+}
+
+bool Downstream::response_pseudo_header_allowed() const
+{
+  return pseudo_header_allowed(response_headers_);
+}
+
+namespace {
+void upstream_timeoutcb(evutil_socket_t fd, short event, void *arg)
+{
+  auto downstream = static_cast<Downstream*>(arg);
+  auto upstream = downstream->get_upstream();
+
+  auto which = event == EV_READ ? "read" : "write";
+
+  if(LOG_ENABLED(INFO)) {
+    DLOG(INFO, downstream) << "upstream timeout stream_id="
+                           << downstream->get_stream_id()
+                           << " event=" << which;
+  }
+
+  downstream->disable_upstream_rtimer();
+  downstream->disable_upstream_wtimer();
+
+  upstream->on_timeout(downstream);
+}
+} // namespace
+
+namespace {
+void upstream_rtimeoutcb(evutil_socket_t fd, short event, void *arg)
+{
+  upstream_timeoutcb(fd, EV_READ, arg);
+}
+} // namespace
+
+namespace {
+void upstream_wtimeoutcb(evutil_socket_t fd, short event, void *arg)
+{
+  upstream_timeoutcb(fd, EV_WRITE, arg);
+}
+} // namespace
+
+namespace {
+event* init_timer(event_base *evbase, event_callback_fn cb, void *arg)
+{
+  auto timerev = evtimer_new(evbase, cb, arg);
+
+  if(timerev == nullptr) {
+    LOG(WARNING) << "timer initialization failed";
+    return nullptr;
+  }
+
+  return timerev;
+}
+} // namespace
+
+void Downstream::init_upstream_timer()
+{
+  auto evbase = upstream_->get_client_handler()->get_evbase();
+
+  if(get_config()->stream_read_timeout.tv_sec > 0) {
+    upstream_rtimerev_ = init_timer(evbase, upstream_rtimeoutcb, this);
+  }
+
+  if(get_config()->stream_write_timeout.tv_sec > 0) {
+    upstream_wtimerev_ = init_timer(evbase, upstream_wtimeoutcb, this);
+  }
+}
+
+namespace {
+void reset_timer(event *timer, const timeval *timeout)
+{
+  if(!timer) {
+    return;
+  }
+
+  event_add(timer, timeout);
+}
+} // namespace
+
+namespace {
+void try_reset_timer(event *timer, const timeval *timeout)
+{
+  if(!timer) {
+    return;
+  }
+
+  if(!evtimer_pending(timer, nullptr)) {
+    return;
+  }
+
+  event_add(timer, timeout);
+}
+} // namespace
+
+namespace {
+void ensure_timer(event *timer, const timeval *timeout)
+{
+  if(!timer) {
+    return;
+  }
+
+  if(evtimer_pending(timer, nullptr)) {
+    return;
+  }
+
+  event_add(timer, timeout);
+}
+} // namespace
+
+namespace {
+void disable_timer(event *timer)
+{
+  if(!timer) {
+    return;
+  }
+
+  event_del(timer);
+}
+} // namespace
+
+void Downstream::reset_upstream_rtimer()
+{
+  reset_timer(upstream_rtimerev_, &get_config()->stream_read_timeout);
+  try_reset_timer(upstream_wtimerev_, &get_config()->stream_write_timeout);
+}
+
+void Downstream::reset_upstream_wtimer()
+{
+  reset_timer(upstream_wtimerev_, &get_config()->stream_write_timeout);
+  try_reset_timer(upstream_rtimerev_, &get_config()->stream_read_timeout);
+}
+
+void Downstream::ensure_upstream_wtimer()
+{
+  ensure_timer(upstream_wtimerev_, &get_config()->stream_write_timeout);
+}
+
+void Downstream::disable_upstream_rtimer()
+{
+  disable_timer(upstream_rtimerev_);
+}
+
+void Downstream::disable_upstream_wtimer()
+{
+  disable_timer(upstream_wtimerev_);
+}
+
+namespace {
+void downstream_timeoutcb(evutil_socket_t fd, short event, void *arg)
+{
+  auto downstream = static_cast<Downstream*>(arg);
+
+  auto which = event == EV_READ ? "read" : "write";
+
+  if(LOG_ENABLED(INFO)) {
+    DLOG(INFO, downstream) << "downstream timeout stream_id="
+                           << downstream->get_downstream_stream_id()
+                           << " event=" << which;
+  }
+
+  downstream->disable_downstream_rtimer();
+  downstream->disable_downstream_wtimer();
+
+  auto dconn = downstream->get_downstream_connection();
+
+  if(dconn) {
+    dconn->on_timeout();
+  }
+}
+} // namespace
+
+namespace {
+void downstream_rtimeoutcb(evutil_socket_t fd, short event, void *arg)
+{
+  downstream_timeoutcb(fd, EV_READ, arg);
+}
+} // namespace
+
+namespace {
+void downstream_wtimeoutcb(evutil_socket_t fd, short event, void *arg)
+{
+  downstream_timeoutcb(fd, EV_WRITE, arg);
+}
+} // namespace
+
+void Downstream::init_downstream_timer()
+{
+  auto evbase = upstream_->get_client_handler()->get_evbase();
+
+  if(get_config()->stream_read_timeout.tv_sec > 0) {
+    downstream_rtimerev_ = init_timer(evbase, downstream_rtimeoutcb, this);
+  }
+
+  if(get_config()->stream_write_timeout.tv_sec > 0) {
+    downstream_wtimerev_ = init_timer(evbase, downstream_wtimeoutcb, this);
+  }
+}
+
+void Downstream::reset_downstream_rtimer()
+{
+  reset_timer(downstream_rtimerev_, &get_config()->stream_read_timeout);
+  try_reset_timer(downstream_wtimerev_, &get_config()->stream_write_timeout);
+}
+
+void Downstream::reset_downstream_wtimer()
+{
+  reset_timer(downstream_wtimerev_, &get_config()->stream_write_timeout);
+  try_reset_timer(downstream_rtimerev_, &get_config()->stream_read_timeout);
+}
+
+void Downstream::ensure_downstream_wtimer()
+{
+  ensure_timer(downstream_wtimerev_, &get_config()->stream_write_timeout);
+}
+
+void Downstream::disable_downstream_rtimer()
+{
+  disable_timer(downstream_rtimerev_);
+}
+
+void Downstream::disable_downstream_wtimer()
+{
+  disable_timer(downstream_wtimerev_);
 }
 
 } // namespace shrpx

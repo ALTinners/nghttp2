@@ -64,7 +64,19 @@ Http2DownstreamConnection::~Http2DownstreamConnection()
     evbuffer_free(request_body_buf_);
   }
   if(downstream_) {
+    downstream_->disable_downstream_rtimer();
+    downstream_->disable_downstream_wtimer();
+
     if(submit_rst_stream(downstream_) == 0) {
+      http2session_->notify();
+    }
+
+    if(downstream_->get_downstream_stream_id() != -1) {
+      http2session_->consume(downstream_->get_downstream_stream_id(),
+                             downstream_->get_response_datalen());
+
+      downstream_->reset_response_datalen();
+
       http2session_->notify();
     }
   }
@@ -72,7 +84,7 @@ Http2DownstreamConnection::~Http2DownstreamConnection()
   // Downstream and DownstreamConnection may be deleted
   // asynchronously.
   if(downstream_) {
-    downstream_->set_downstream_connection(nullptr);
+    downstream_->release_downstream_connection();
   }
   if(LOG_ENABLED(INFO)) {
     DCLOG(INFO, this) << "Deleted";
@@ -109,8 +121,11 @@ int Http2DownstreamConnection::attach_downstream(Downstream *downstream)
   if(http2session_->get_state() == Http2Session::DISCONNECTED) {
     http2session_->notify();
   }
-  downstream->set_downstream_connection(this);
+
   downstream_ = downstream;
+
+  downstream_->init_downstream_timer();
+
   return 0;
 }
 
@@ -122,13 +137,23 @@ void Http2DownstreamConnection::detach_downstream(Downstream *downstream)
   if(submit_rst_stream(downstream) == 0) {
     http2session_->notify();
   }
-  downstream->set_downstream_connection(nullptr);
-  downstream_ = nullptr;
 
-  client_handler_->pool_downstream_connection(this);
+  if(downstream_->get_downstream_stream_id() != -1) {
+    http2session_->consume(downstream_->get_downstream_stream_id(),
+                           downstream_->get_response_datalen());
+
+    downstream_->reset_response_datalen();
+
+    http2session_->notify();
+  }
+
+  downstream->disable_downstream_rtimer();
+  downstream->disable_downstream_wtimer();
+  downstream_ = nullptr;
 }
 
-int Http2DownstreamConnection::submit_rst_stream(Downstream *downstream)
+int Http2DownstreamConnection::submit_rst_stream(Downstream *downstream,
+                                                 uint32_t error_code)
 {
   int rv = -1;
   if(http2session_->get_state() == Http2Session::CONNECTED &&
@@ -144,8 +169,7 @@ int Http2DownstreamConnection::submit_rst_stream(Downstream *downstream)
                           << downstream->get_downstream_stream_id();
       }
       rv = http2session_->submit_rst_stream
-        (downstream->get_downstream_stream_id(),
-         NGHTTP2_INTERNAL_ERROR);
+        (downstream->get_downstream_stream_id(), error_code);
     }
   }
   return rv;
@@ -179,50 +203,57 @@ ssize_t http2_data_read_callback(nghttp2_session *session,
       DCLOG(FATAL, dconn) << "evbuffer_remove() failed";
       return NGHTTP2_ERR_CALLBACK_FAILURE;
     }
-    if(nread == 0) {
-      if(downstream->get_request_state() == Downstream::MSG_COMPLETE) {
-        if(!downstream->get_upgrade_request() ||
-           (downstream->get_response_state() == Downstream::HEADER_COMPLETE &&
-            !downstream->get_upgraded())) {
-          *data_flags |= NGHTTP2_DATA_FLAG_EOF;
-        } else {
-          return NGHTTP2_ERR_DEFERRED;
-        }
-        break;
-      } else {
-        // This is important because it will handle flow control
-        // stuff.
-        if(downstream->get_upstream()->resume_read(SHRPX_NO_BUFFER,
-                                                   downstream) != 0) {
-          // In this case, downstream may be deleted.
-          return NGHTTP2_ERR_CALLBACK_FAILURE;
-        }
-        // Check dconn is still alive because Upstream::resume_read()
-        // may delete downstream which will delete dconn.
-        if(sd->dconn == nullptr) {
-          return NGHTTP2_ERR_DEFERRED;
-        }
-        if(evbuffer_get_length(body) == 0) {
-          // Check get_request_state() == MSG_COMPLETE just in case
-          if(downstream->get_request_state() == Downstream::MSG_COMPLETE) {
-            *data_flags |= NGHTTP2_DATA_FLAG_EOF;
-            break;
-          }
-          return NGHTTP2_ERR_DEFERRED;
-        }
-      }
-    } else {
-      // Send WINDOW_UPDATE before buffer is empty to avoid delay
-      // because of RTT.
-      if(!downstream->get_output_buffer_full() &&
-         downstream->get_upstream()->resume_read(SHRPX_NO_BUFFER,
-                                                 downstream) == -1) {
+
+    if(nread > 0) {
+      // This is important because it will handle flow control
+      // stuff.
+      if(downstream->get_upstream()->resume_read
+         (SHRPX_NO_BUFFER, downstream, nread) != 0) {
         // In this case, downstream may be deleted.
+        return NGHTTP2_ERR_CALLBACK_FAILURE;
+      }
+
+      // Check dconn is still alive because Upstream::resume_read()
+      // may delete downstream which will delete dconn.
+      if(sd->dconn == nullptr) {
+        return NGHTTP2_ERR_DEFERRED;
+      }
+
+      break;
+    }
+
+    if(downstream->get_request_state() == Downstream::MSG_COMPLETE) {
+      if(!downstream->get_upgrade_request() ||
+         (downstream->get_response_state() == Downstream::HEADER_COMPLETE &&
+          !downstream->get_upgraded())) {
+        *data_flags |= NGHTTP2_DATA_FLAG_EOF;
+      } else {
+        downstream->disable_downstream_wtimer();
+
         return NGHTTP2_ERR_DEFERRED;
       }
       break;
+    } else {
+      if(evbuffer_get_length(body) == 0) {
+        // Check get_request_state() == MSG_COMPLETE just in case
+        if(downstream->get_request_state() == Downstream::MSG_COMPLETE) {
+          *data_flags |= NGHTTP2_DATA_FLAG_EOF;
+          break;
+        }
+
+        downstream->disable_downstream_wtimer();
+
+        return NGHTTP2_ERR_DEFERRED;
+      }
     }
   }
+
+  if(evbuffer_get_length(body) > 0 && !downstream->get_output_buffer_full()) {
+    downstream->reset_downstream_wtimer();
+  } else {
+    downstream->disable_downstream_wtimer();
+  }
+
   return nread;
 }
 } // namespace
@@ -244,7 +275,7 @@ int Http2DownstreamConnection::push_request_headers()
     downstream_->crumble_request_cookie();
   }
   downstream_->normalize_request_headers();
-  downstream_->concat_norm_request_headers();
+
   auto end_headers = std::end(downstream_->get_request_headers());
 
   // 7 means:
@@ -302,7 +333,12 @@ int Http2DownstreamConnection::push_request_headers()
       http2::copy_url_component(path, &u, UF_PATH, url);
       http2::copy_url_component(query, &u, UF_QUERY, url);
       if(path.empty()) {
-        path = "/";
+        if(!authority.empty() &&
+           downstream_->get_request_method() == "OPTIONS") {
+          path = "*";
+        } else {
+          path = "/";
+        }
       }
       if(!query.empty()) {
         path += "?";
@@ -430,7 +466,7 @@ int Http2DownstreamConnection::push_request_headers()
     return -1;
   }
 
-  downstream_->clear_request_headers();
+  downstream_->reset_downstream_wtimer();
 
   http2session_->notify();
   return 0;
@@ -449,6 +485,9 @@ int Http2DownstreamConnection::push_upload_data_chunk(const uint8_t *data,
     if(rv != 0) {
       return -1;
     }
+
+    downstream_->ensure_downstream_wtimer();
+
     http2session_->notify();
   }
   return 0;
@@ -462,41 +501,44 @@ int Http2DownstreamConnection::end_upload_data()
     if(rv != 0) {
       return -1;
     }
+
+    downstream_->ensure_downstream_wtimer();
+
     http2session_->notify();
   }
   return 0;
 }
 
-int Http2DownstreamConnection::resume_read(IOCtrlReason reason)
+int Http2DownstreamConnection::resume_read
+(IOCtrlReason reason, size_t consumed)
 {
-  int rv1 = 0, rv2 = 0;
-  if(http2session_->get_state() == Http2Session::CONNECTED &&
-     http2session_->get_flow_control()) {
-    int32_t window_size_increment;
-    window_size_increment = http2::determine_window_update_transmission
-      (http2session_->get_session(), 0);
-    if(window_size_increment != -1) {
-      rv1 = http2session_->submit_window_update(nullptr, window_size_increment);
-      if(rv1 == 0) {
-        http2session_->notify();
-      }
-    }
-    if(downstream_ && downstream_->get_downstream_stream_id() != -1) {
-      window_size_increment = http2::determine_window_update_transmission
-        (http2session_->get_session(), downstream_->get_downstream_stream_id());
-      if(window_size_increment != -1) {
-        rv2 = http2session_->submit_window_update(this, window_size_increment);
-        if(rv2 == 0) {
-          http2session_->notify();
-        }
-      }
-    }
-  }
-  if(rv1 == 0 && rv2 == 0) {
+  int rv;
+
+  if(http2session_->get_state() != Http2Session::CONNECTED ||
+     !http2session_->get_flow_control()) {
     return 0;
   }
-  DLOG(WARNING, this) << "Sending WINDOW_UPDATE failed";
-  return -1;
+
+  if(!downstream_ || downstream_->get_downstream_stream_id() == -1) {
+    return 0;
+  }
+
+  if(consumed > 0) {
+    assert(downstream_->get_response_datalen() >= consumed);
+
+    rv = http2session_->consume(downstream_->get_downstream_stream_id(),
+                                consumed);
+
+    if(rv != 0) {
+      return -1;
+    }
+
+    downstream_->dec_response_datalen(consumed);
+
+    http2session_->notify();
+  }
+
+  return 0;
 }
 
 int Http2DownstreamConnection::on_read()
@@ -565,6 +607,15 @@ int Http2DownstreamConnection::on_priority_change(int32_t pri)
   }
   http2session_->notify();
   return 0;
+}
+
+int Http2DownstreamConnection::on_timeout()
+{
+  if(!downstream_) {
+    return 0;
+  }
+
+  return submit_rst_stream(downstream_, NGHTTP2_NO_ERROR);
 }
 
 } // namespace shrpx

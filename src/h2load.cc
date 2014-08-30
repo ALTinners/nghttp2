@@ -44,6 +44,7 @@
 #include <event2/bufferevent_ssl.h>
 
 #include <openssl/err.h>
+#include <openssl/conf.h>
 
 #include "http-parser/http_parser.h"
 
@@ -814,6 +815,8 @@ int main(int argc, char **argv)
   memset(&act, 0, sizeof(struct sigaction));
   act.sa_handler = SIG_IGN;
   sigaction(SIGPIPE, &act, nullptr);
+  OPENSSL_config(nullptr);
+  OpenSSL_add_all_algorithms();
   SSL_load_error_strings();
   SSL_library_init();
 
@@ -966,8 +969,7 @@ int main(int argc, char **argv)
     worker.stats.bytes_head += stats.bytes_head;
     worker.stats.bytes_body += stats.bytes_body;
 
-    for(size_t i = 0; i < sizeof(stats.status) / sizeof(stats.status[0]);
-        ++i) {
+    for(size_t i = 0; i < util::array_size(stats.status); ++i) {
       worker.stats.status[i] += stats.status[i];
     }
   }

@@ -74,6 +74,8 @@ const char SHRPX_OPT_FRONTEND_READ_TIMEOUT[] = "frontend-read-timeout";
 const char SHRPX_OPT_FRONTEND_WRITE_TIMEOUT[] = "frontend-write-timeout";
 const char SHRPX_OPT_BACKEND_READ_TIMEOUT[] = "backend-read-timeout";
 const char SHRPX_OPT_BACKEND_WRITE_TIMEOUT[] = "backend-write-timeout";
+const char SHRPX_OPT_STREAM_READ_TIMEOUT[] = "stream-read-timeout";
+const char SHRPX_OPT_STREAM_WRITE_TIMEOUT[] = "stream-write-timeout";
 const char SHRPX_OPT_ACCESSLOG_FILE[] = "accesslog-file";
 const char SHRPX_OPT_ACCESSLOG_SYSLOG[] = "accesslog-syslog";
 const char SHRPX_OPT_ERRORLOG_FILE[] = "errorlog-file";
@@ -101,6 +103,10 @@ const char SHRPX_OPT_CACERT[] = "cacert";
 const char SHRPX_OPT_BACKEND_IPV4[] = "backend-ipv4";
 const char SHRPX_OPT_BACKEND_IPV6[] = "backend-ipv6";
 const char SHRPX_OPT_BACKEND_HTTP_PROXY_URI[] = "backend-http-proxy-uri";
+const char SHRPX_OPT_READ_RATE[] = "read-rate";
+const char SHRPX_OPT_READ_BURST[] = "read-burst";
+const char SHRPX_OPT_WRITE_RATE[] = "write-rate";
+const char SHRPX_OPT_WRITE_BURST[] = "write-burst";
 const char SHRPX_OPT_WORKER_READ_RATE[] = "worker-read-rate";
 const char SHRPX_OPT_WORKER_READ_BURST[] = "worker-read-burst";
 const char SHRPX_OPT_WORKER_WRITE_RATE[] = "worker-write-rate";
@@ -122,6 +128,10 @@ const char SHRPX_OPT_ALTSVC[] = "altsvc";
 const char SHRPX_OPT_ADD_RESPONSE_HEADER[] = "add-response-header";
 const char SHRPX_OPT_WORKER_FRONTEND_CONNECTIONS[] =
   "worker-frontend-connections";
+const char SHRPX_OPT_NO_LOCATION_REWRITE[] = "no-location-rewrite";
+const char SHRPX_OPT_BACKEND_CONNECTIONS_PER_FRONTEND[] =
+  "backend-connections-per-frontend";
+const char SHRPX_OPT_LISTENER_DISABLE_TIMEOUT[] = "listener-disable-timeout";
 
 namespace {
 Config *config = nullptr;
@@ -189,17 +199,19 @@ bool is_secure(const char *filename)
 }
 } // namespace
 
-namespace {
 FILE* open_file_for_write(const char *filename)
 {
   auto f = fopen(filename, "wb");
   if(f == nullptr) {
     LOG(ERROR) << "Failed to open " << filename << " for writing. Cause: "
                << strerror(errno);
+    return nullptr;
   }
+
+  evutil_make_socket_closeonexec(fileno(f));
+
   return f;
 }
-} // namespace
 
 std::string read_passwd_from_file(const char *filename)
 {
@@ -285,6 +297,60 @@ std::pair<std::string, std::string> parse_header(const char *optarg)
   return {std::string(optarg, colon), std::string(value, strlen(value))};
 }
 
+template<typename T>
+int parse_uint(T *dest, const char *opt, const char *optarg)
+{
+  char *end = nullptr;
+
+  errno = 0;
+
+  auto val = strtol(optarg, &end, 10);
+
+  if(!optarg[0] || errno != 0 || *end || val < 0) {
+    LOG(ERROR) << opt << ": bad value.  Specify an integer >= 0.";
+    return -1;
+  }
+
+  *dest = val;
+
+  return 0;
+}
+
+template<typename T>
+int parse_int(T *dest, const char *opt, const char *optarg)
+{
+  char *end = nullptr;
+
+  errno = 0;
+
+  auto val = strtol(optarg, &end, 10);
+
+  if(!optarg[0] || errno != 0 || *end) {
+    LOG(ERROR) << opt << ": bad value.  Specify an integer.";
+    return -1;
+  }
+
+  *dest = val;
+
+  return 0;
+}
+
+namespace {
+int parse_timeval(timeval *dest, const char *opt, const char *optarg)
+{
+  time_t sec;
+
+  if(parse_uint(&sec, opt, optarg) != 0) {
+    return -1;
+  }
+
+  dest->tv_sec = sec;
+  dest->tv_usec = 0;
+
+  return 0;
+}
+} // namespace
+
 int parse_config(const char *opt, const char *optarg)
 {
   char host[NI_MAXHOST];
@@ -312,20 +378,17 @@ int parse_config(const char *opt, const char *optarg)
   }
 
   if(util::strieq(opt, SHRPX_OPT_WORKERS)) {
-    mod_config()->num_worker = strtol(optarg, nullptr, 10);
-
-    return 0;
+    return parse_uint(&mod_config()->num_worker, opt, optarg);
   }
 
   if(util::strieq(opt, SHRPX_OPT_HTTP2_MAX_CONCURRENT_STREAMS)) {
-    mod_config()->http2_max_concurrent_streams = strtol(optarg, nullptr, 10);
-
-    return 0;
+    return parse_uint(&mod_config()->http2_max_concurrent_streams,
+                      opt, optarg);
   }
 
   if(util::strieq(opt, SHRPX_OPT_LOG_LEVEL)) {
     if(Log::set_severity_level_by_name(optarg) == -1) {
-      LOG(ERROR) << "Invalid severity level: " << optarg;
+      LOG(ERROR) << opt << ": Invalid severity level: " << optarg;
       return -1;
     }
 
@@ -369,38 +432,32 @@ int parse_config(const char *opt, const char *optarg)
   }
 
   if(util::strieq(opt, SHRPX_OPT_FRONTEND_HTTP2_READ_TIMEOUT)) {
-    timeval tv = {strtol(optarg, nullptr, 10), 0};
-    mod_config()->http2_upstream_read_timeout = tv;
-
-    return 0;
+    return parse_timeval(&mod_config()->http2_upstream_read_timeout,
+                         opt, optarg);
   }
 
   if(util::strieq(opt, SHRPX_OPT_FRONTEND_READ_TIMEOUT)) {
-    timeval tv = {strtol(optarg, nullptr, 10), 0};
-    mod_config()->upstream_read_timeout = tv;
-
-    return 0;
+    return parse_timeval(&mod_config()->upstream_read_timeout, opt, optarg);
   }
 
   if(util::strieq(opt, SHRPX_OPT_FRONTEND_WRITE_TIMEOUT)) {
-    timeval tv = {strtol(optarg, nullptr, 10), 0};
-    mod_config()->upstream_write_timeout = tv;
-
-    return 0;
+    return parse_timeval(&mod_config()->upstream_write_timeout, opt, optarg);
   }
 
   if(util::strieq(opt, SHRPX_OPT_BACKEND_READ_TIMEOUT)) {
-    timeval tv = {strtol(optarg, nullptr, 10), 0};
-    mod_config()->downstream_read_timeout = tv;
-
-    return 0;
+    return parse_timeval(&mod_config()->downstream_read_timeout, opt, optarg);
   }
 
   if(util::strieq(opt, SHRPX_OPT_BACKEND_WRITE_TIMEOUT)) {
-    timeval tv = {strtol(optarg, nullptr, 10), 0};
-    mod_config()->downstream_write_timeout = tv;
+    return parse_timeval(&mod_config()->downstream_write_timeout, opt, optarg);
+  }
 
-    return 0;
+  if(util::strieq(opt, SHRPX_OPT_STREAM_READ_TIMEOUT)) {
+    return parse_timeval(&mod_config()->stream_read_timeout, opt, optarg);
+  }
+
+  if(util::strieq(opt, SHRPX_OPT_STREAM_WRITE_TIMEOUT)) {
+    return parse_timeval(&mod_config()->stream_write_timeout, opt, optarg);
   }
 
   if(util::strieq(opt, SHRPX_OPT_ACCESSLOG_FILE)) {
@@ -428,56 +485,66 @@ int parse_config(const char *opt, const char *optarg)
   }
 
   if(util::strieq(opt, SHRPX_OPT_BACKEND_KEEP_ALIVE_TIMEOUT)) {
-    timeval tv = {strtol(optarg, nullptr, 10), 0};
-    mod_config()->downstream_idle_read_timeout = tv;
-
-    return 0;
+    return parse_timeval(&mod_config()->downstream_idle_read_timeout,
+                         opt, optarg);
   }
 
   if(util::strieq(opt, SHRPX_OPT_FRONTEND_HTTP2_WINDOW_BITS) ||
      util::strieq(opt, SHRPX_OPT_BACKEND_HTTP2_WINDOW_BITS)) {
+
     size_t *resp;
-    const char *optname;
+
     if(util::strieq(opt, SHRPX_OPT_FRONTEND_HTTP2_WINDOW_BITS)) {
       resp = &mod_config()->http2_upstream_window_bits;
-      optname = SHRPX_OPT_FRONTEND_HTTP2_WINDOW_BITS;
     } else {
       resp = &mod_config()->http2_downstream_window_bits;
-      optname = SHRPX_OPT_BACKEND_HTTP2_WINDOW_BITS;
     }
+
     errno = 0;
-    unsigned long int n = strtoul(optarg, nullptr, 10);
-    if(errno == 0 && n < 31) {
-      *resp = n;
-    } else {
-      LOG(ERROR) << "--" << optname
-                 << " specify the integer in the range [0, 30], inclusive";
+
+    int n;
+
+    if(parse_uint(&n, opt, optarg) != 0) {
       return -1;
     }
+
+    if(n >= 31) {
+      LOG(ERROR) << opt
+                 << ": specify the integer in the range [0, 30], inclusive";
+      return -1;
+    }
+
+    *resp = n;
 
     return 0;
   }
 
   if(util::strieq(opt, SHRPX_OPT_FRONTEND_HTTP2_CONNECTION_WINDOW_BITS) ||
      util::strieq(opt, SHRPX_OPT_BACKEND_HTTP2_CONNECTION_WINDOW_BITS)) {
+
     size_t *resp;
-    const char *optname;
+
     if(util::strieq(opt, SHRPX_OPT_FRONTEND_HTTP2_CONNECTION_WINDOW_BITS)) {
       resp = &mod_config()->http2_upstream_connection_window_bits;
-      optname = SHRPX_OPT_FRONTEND_HTTP2_CONNECTION_WINDOW_BITS;
     } else {
       resp = &mod_config()->http2_downstream_connection_window_bits;
-      optname = SHRPX_OPT_BACKEND_HTTP2_CONNECTION_WINDOW_BITS;
     }
+
     errno = 0;
-    unsigned long int n = strtoul(optarg, 0, 10);
-    if(errno == 0 && n >= 16 && n < 31) {
-      *resp = n;
-    } else {
-      LOG(ERROR) << "--" << optname
-                 << " specify the integer in the range [16, 30], inclusive";
+
+    int n;
+
+    if(parse_uint(&n, opt, optarg) != 0) {
       return -1;
     }
+
+    if(n < 16 || n >= 31) {
+      LOG(ERROR) << opt
+                 << ": specify the integer in the range [16, 30], inclusive";
+      return -1;
+    }
+
+    *resp = n;
 
     return 0;
   }
@@ -509,7 +576,7 @@ int parse_config(const char *opt, const char *optarg)
   if(util::strieq(opt, SHRPX_OPT_USER)) {
     auto pwd = getpwnam(optarg);
     if(!pwd) {
-      LOG(ERROR) << "--user: failed to get uid from " << optarg
+      LOG(ERROR) << opt << ": failed to get uid from " << optarg
                  << ": " << strerror(errno);
       return -1;
     }
@@ -528,7 +595,7 @@ int parse_config(const char *opt, const char *optarg)
   if(util::strieq(opt, SHRPX_OPT_PRIVATE_KEY_PASSWD_FILE)) {
     auto passwd = read_passwd_from_file(optarg);
     if (passwd.empty()) {
-      LOG(ERROR) << "Couldn't read key file's passwd from " << optarg;
+      LOG(ERROR) << opt << ": Couldn't read key file's passwd from " << optarg;
       return -1;
     }
     mod_config()->private_key_passwd = strcopy(passwd);
@@ -563,7 +630,7 @@ int parse_config(const char *opt, const char *optarg)
   if(util::strieq(opt, SHRPX_OPT_SYSLOG_FACILITY)) {
     int facility = int_syslog_facility(optarg);
     if(facility == -1) {
-      LOG(ERROR) << "Unknown syslog facility: " << optarg;
+      LOG(ERROR) << opt << ": Unknown syslog facility: " << optarg;
       return -1;
     }
     mod_config()->syslog_facility = facility;
@@ -572,7 +639,18 @@ int parse_config(const char *opt, const char *optarg)
   }
 
   if(util::strieq(opt, SHRPX_OPT_BACKLOG)) {
-    mod_config()->backlog = strtol(optarg, nullptr, 10);
+    int n;
+    if(parse_int(&n, opt, optarg) != 0) {
+      return -1;
+    }
+
+    if(n < -1) {
+      LOG(ERROR) << opt << ": " << optarg << " is not allowed";
+
+      return -1;
+    }
+
+    mod_config()->backlog = n;
 
     return 0;
   }
@@ -633,45 +711,67 @@ int parse_config(const char *opt, const char *optarg)
         http2::copy_url_component(val, &u, UF_HOST, optarg);
         mod_config()->downstream_http_proxy_host = strcopy(val);
       } else {
-        LOG(ERROR) << "backend-http-proxy-uri does not contain hostname";
+        LOG(ERROR) << opt << ": no hostname specified";
         return -1;
       }
       if(u.field_set & UF_PORT) {
         mod_config()->downstream_http_proxy_port = u.port;
       } else {
-        LOG(ERROR) << "backend-http-proxy-uri does not contain port";
+        LOG(ERROR) << opt << ": no port specified";
         return -1;
       }
     } else {
-      LOG(ERROR) << "Could not parse backend-http-proxy-uri";
-        return -1;
+      LOG(ERROR) << opt << ": parse error";
+      return -1;
     }
 
     return 0;
   }
 
-  if(util::strieq(opt, SHRPX_OPT_WORKER_READ_RATE)) {
-    mod_config()->worker_read_rate = strtoul(optarg, nullptr, 10);
+  if(util::strieq(opt, SHRPX_OPT_READ_RATE)) {
+    return parse_uint(&mod_config()->read_rate, opt, optarg);
+  }
+
+  if(util::strieq(opt, SHRPX_OPT_READ_BURST)) {
+    int n;
+
+    if(parse_uint(&n, opt, optarg) != 0) {
+      return -1;
+    }
+
+    if(n == 0) {
+      LOG(ERROR) << opt << ": specify integer strictly larger than 0";
+
+      return -1;
+    }
+
+    mod_config()->read_burst = n;
 
     return 0;
+  }
+
+  if(util::strieq(opt, SHRPX_OPT_WRITE_RATE)) {
+    return parse_uint(&mod_config()->write_rate, opt, optarg);
+  }
+
+  if(util::strieq(opt, SHRPX_OPT_WRITE_BURST)) {
+    return parse_uint(&mod_config()->write_burst, opt, optarg);
+  }
+
+  if(util::strieq(opt, SHRPX_OPT_WORKER_READ_RATE)) {
+    return parse_uint(&mod_config()->worker_read_rate, opt, optarg);
   }
 
   if(util::strieq(opt, SHRPX_OPT_WORKER_READ_BURST)) {
-    mod_config()->worker_read_burst = strtoul(optarg, nullptr, 10);
-
-    return 0;
+    return parse_uint(&mod_config()->worker_read_burst, opt, optarg);
   }
 
   if(util::strieq(opt, SHRPX_OPT_WORKER_WRITE_RATE)) {
-    mod_config()->worker_write_rate = strtoul(optarg, nullptr, 10);
-
-    return 0;
+    return parse_uint(&mod_config()->worker_write_rate, opt, optarg);
   }
 
   if(util::strieq(opt, SHRPX_OPT_WORKER_WRITE_BURST)) {
-    mod_config()->worker_write_burst = strtoul(optarg, nullptr, 10);
-
-    return 0;
+    return parse_uint(&mod_config()->worker_write_burst, opt, optarg);
   }
 
   if(util::strieq(opt, SHRPX_OPT_NPN_LIST)) {
@@ -715,21 +815,13 @@ int parse_config(const char *opt, const char *optarg)
   }
 
   if(util::strieq(opt, SHRPX_OPT_FRONTEND_HTTP2_DUMP_REQUEST_HEADER)) {
-    auto f = open_file_for_write(optarg);
-    if(f == nullptr) {
-      return -1;
-    }
-    mod_config()->http2_upstream_dump_request_header = f;
+    mod_config()->http2_upstream_dump_request_header_file = strcopy(optarg);
 
     return 0;
   }
 
   if(util::strieq(opt, SHRPX_OPT_FRONTEND_HTTP2_DUMP_RESPONSE_HEADER)) {
-    auto f = open_file_for_write(optarg);
-    if(f == nullptr) {
-      return -1;
-    }
-    mod_config()->http2_upstream_dump_response_header = f;
+    mod_config()->http2_upstream_dump_response_header_file = strcopy(optarg);
 
     return 0;
   }
@@ -747,9 +839,7 @@ int parse_config(const char *opt, const char *optarg)
   }
 
   if(util::strieq(opt, SHRPX_OPT_PADDING)) {
-    mod_config()->padding = strtoul(optarg, nullptr, 10);
-
-    return 0;
+    return parse_uint(&mod_config()->padding, opt, optarg);
   }
 
   if(util::strieq(opt, SHRPX_OPT_ALTSVC)) {
@@ -757,21 +847,25 @@ int parse_config(const char *opt, const char *optarg)
 
     if(tokens.size() < 2) {
       // Requires at least protocol_id and port
-      LOG(ERROR) << "altsvc: too few parameters: " << optarg;
+      LOG(ERROR) << opt << ": too few parameters: " << optarg;
       return -1;
     }
 
     if(tokens.size() > 4) {
       // We only need protocol_id, port, host and origin
-      LOG(ERROR) << "altsvc: too many parameters: " << optarg;
+      LOG(ERROR) << opt << ": too many parameters: " << optarg;
       return -1;
     }
 
-    errno = 0;
-    auto port = strtoul(tokens[1], nullptr, 10);
+    int port;
 
-    if(errno != 0 || port < 1 || port > std::numeric_limits<uint16_t>::max()) {
-      LOG(ERROR) << "altsvc: port is invalid: " << tokens[1];
+    if(parse_uint(&port, opt, tokens[1]) != 0) {
+      return -1;
+    }
+
+    if(port < 1 ||
+       port > static_cast<int>(std::numeric_limits<uint16_t>::max())) {
+      LOG(ERROR) << opt << ": port is invalid: " << tokens[1];
       return -1;
     }
 
@@ -800,8 +894,7 @@ int parse_config(const char *opt, const char *optarg)
   if(util::strieq(opt, SHRPX_OPT_ADD_RESPONSE_HEADER)) {
     auto p = parse_header(optarg);
     if(p.first.empty()) {
-      LOG(ERROR) << "add-response-header: header field name is empty: "
-                 << optarg;
+      LOG(ERROR) << opt << ": header field name is empty: " << optarg;
       return -1;
     }
     mod_config()->add_response_headers.push_back(std::move(p));
@@ -810,22 +903,40 @@ int parse_config(const char *opt, const char *optarg)
   }
 
   if(util::strieq(opt, SHRPX_OPT_WORKER_FRONTEND_CONNECTIONS)) {
-    errno = 0;
-    auto n = strtoul(optarg, nullptr, 10);
+    return parse_uint(&mod_config()->worker_frontend_connections, opt, optarg);
+  }
 
-    if(errno != 0) {
-      LOG(ERROR) << "worker-frontend-connections: invalid argument: "
-                 << optarg;
-      return -1;
-    }
-
-    mod_config()->worker_frontend_connections = n;
+  if(util::strieq(opt, SHRPX_OPT_NO_LOCATION_REWRITE)) {
+    mod_config()->no_location_rewrite = util::strieq(optarg, "yes");
 
     return 0;
   }
 
+  if(util::strieq(opt, SHRPX_OPT_BACKEND_CONNECTIONS_PER_FRONTEND)) {
+    int n;
+
+    if(parse_uint(&n, opt, optarg) != 0) {
+      return -1;
+    }
+
+    if(n < 1) {
+      LOG(ERROR) << opt << ": specify the integer more than or equal to 1";
+
+      return -1;
+    }
+
+    mod_config()->max_downstream_connections = n;
+
+    return 0;
+  }
+
+  if(util::strieq(opt, SHRPX_OPT_LISTENER_DISABLE_TIMEOUT)) {
+    return parse_timeval(&mod_config()->listener_disable_timeout,
+                         opt, optarg);
+  }
+
   if(util::strieq(opt, "conf")) {
-    LOG(WARNING) << "conf is ignored";
+    LOG(WARNING) << "conf: ignored";
 
     return 0;
   }

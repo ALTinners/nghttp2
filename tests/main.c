@@ -22,6 +22,10 @@
  * OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
+#ifdef HAVE_CONFIG_H
+#  include <config.h>
+#endif /* HAVE_CONFIG_H */
+
 #include <stdio.h>
 #include <string.h>
 #include <CUnit/Basic.h>
@@ -95,6 +99,8 @@ int main(int argc, char* argv[])
                    test_nghttp2_session_recv_unexpected_continuation) ||
       !CU_add_test(pSuite, "session_recv_settings_header_table_size",
                    test_nghttp2_session_recv_settings_header_table_size) ||
+      !CU_add_test(pSuite, "session_recv_too_large_frame_length",
+                   test_nghttp2_session_recv_too_large_frame_length) ||
       !CU_add_test(pSuite, "session_continue", test_nghttp2_session_continue) ||
       !CU_add_test(pSuite, "session_add_frame",
                    test_nghttp2_session_add_frame) ||
@@ -140,6 +146,10 @@ int main(int argc, char* argv[])
       !CU_add_test(pSuite, "session_reprioritize_stream",
                    test_nghttp2_session_reprioritize_stream) ||
       !CU_add_test(pSuite, "submit_data", test_nghttp2_submit_data) ||
+      !CU_add_test(pSuite, "submit_data_read_length_too_large",
+                   test_nghttp2_submit_data_read_length_too_large) ||
+      !CU_add_test(pSuite, "submit_data_twice",
+                   test_nghttp2_submit_data_twice) ||
       !CU_add_test(pSuite, "submit_request_with_data",
                    test_nghttp2_submit_request_with_data) ||
       !CU_add_test(pSuite, "submit_request_without_data",
@@ -231,10 +241,14 @@ int main(int argc, char* argv[])
                    test_nghttp2_session_keep_closed_stream) ||
       !CU_add_test(pSuite, "session_graceful_shutdown",
                    test_nghttp2_session_graceful_shutdown) ||
+      !CU_add_test(pSuite, "session_on_header_temporal_failure",
+                   test_nghttp2_session_on_header_temporal_failure) ||
       !CU_add_test(pSuite, "frame_pack_headers",
                    test_nghttp2_frame_pack_headers) ||
       !CU_add_test(pSuite, "frame_pack_headers_frame_too_large",
                    test_nghttp2_frame_pack_headers_frame_too_large) ||
+      !CU_add_test(pSuite, "frame_pack_headers_frame_smallest",
+                   test_nghttp2_submit_data_read_length_smallest) ||
       !CU_add_test(pSuite, "frame_pack_priority",
                    test_nghttp2_frame_pack_priority) ||
       !CU_add_test(pSuite, "frame_pack_rst_stream",
@@ -255,10 +269,6 @@ int main(int argc, char* argv[])
       !CU_add_test(pSuite, "hd_deflate", test_nghttp2_hd_deflate) ||
       !CU_add_test(pSuite, "hd_deflate_same_indexed_repr",
                    test_nghttp2_hd_deflate_same_indexed_repr) ||
-      !CU_add_test(pSuite, "hd_deflate_common_header_eviction",
-                   test_nghttp2_hd_deflate_common_header_eviction) ||
-      !CU_add_test(pSuite, "hd_deflate_clear_refset",
-                   test_nghttp2_hd_deflate_clear_refset) ||
       !CU_add_test(pSuite, "hd_inflate_indexed",
                    test_nghttp2_hd_inflate_indexed) ||
       !CU_add_test(pSuite, "hd_inflate_indname_noinc",
@@ -302,7 +312,8 @@ int main(int argc, char* argv[])
       !CU_add_test(pSuite, "bufs_seek_present",
                    test_nghttp2_bufs_seek_last_present) ||
       !CU_add_test(pSuite, "bufs_next_present",
-                   test_nghttp2_bufs_next_present)
+                   test_nghttp2_bufs_next_present) ||
+      !CU_add_test(pSuite, "bufs_realloc", test_nghttp2_bufs_realloc)
       ) {
      CU_cleanup_registry();
      return CU_get_error();

@@ -31,6 +31,7 @@
 
 #include <vector>
 #include <string>
+#include <memory>
 
 #include <event.h>
 #include <event2/bufferevent.h>
@@ -49,7 +50,7 @@ class DownstreamConnection;
 
 class Downstream {
 public:
-  Downstream(Upstream *upstream, int stream_id, int priority);
+  Downstream(Upstream *upstream, int32_t stream_id, int32_t priority);
   ~Downstream();
   void reset_upstream(Upstream *upstream);
   Upstream* get_upstream() const;
@@ -58,14 +59,21 @@ public:
   void set_priority(int32_t pri);
   int32_t get_priority() const;
   void pause_read(IOCtrlReason reason);
-  int resume_read(IOCtrlReason reason);
+  int resume_read(IOCtrlReason reason, size_t consumed);
   void force_resume_read();
   // Set stream ID for downstream HTTP2 connection.
   void set_downstream_stream_id(int32_t stream_id);
   int32_t get_downstream_stream_id() const;
 
-  void set_downstream_connection(DownstreamConnection *dconn);
+  int attach_downstream_connection
+  (std::unique_ptr<DownstreamConnection> dconn);
+  void detach_downstream_connection();
+  // Releases dconn_, without freeing it.
+  void release_downstream_connection();
   DownstreamConnection* get_downstream_connection();
+  // Returns dconn_ and nullifies dconn_.
+  std::unique_ptr<DownstreamConnection> pop_downstream_connection();
+
   // Returns true if output buffer is full. If underlying dconn_ is
   // NULL, this function always returns false.
   bool get_output_buffer_full();
@@ -99,10 +107,6 @@ public:
   // called after calling normalize_request_headers().
   Headers::const_iterator get_norm_request_header
   (const std::string& name) const;
-  // Concatenates request header fields with same name by NULL as
-  // delimiter. See http2::concat_norm_headers(). This function must
-  // be called after calling normalize_request_headers().
-  void concat_norm_request_headers();
   void add_request_header(std::string name, std::string value);
   void set_last_request_header_value(std::string value);
 
@@ -144,9 +148,13 @@ public:
   const std::string& get_request_user_agent() const;
   bool get_request_http2_expect_body() const;
   void set_request_http2_expect_body(bool f);
-  bool get_expect_100_continue() const;
   int push_upload_data_chunk(const uint8_t *data, size_t datalen);
   int end_upload_data();
+  size_t get_request_datalen() const;
+  void dec_request_datalen(size_t len);
+  void reset_request_datalen();
+  bool request_pseudo_header_allowed() const;
+  bool expect_response_body() const;
   enum {
     INITIAL,
     HEADER_COMPLETE,
@@ -162,10 +170,6 @@ public:
   const Headers& get_response_headers() const;
   // Makes key lowercase and sort headers by name using <
   void normalize_response_headers();
-  // Concatenates response header fields with same name by NULL as
-  // delimiter. See http2::concat_norm_headers(). This function must
-  // be called after calling normalize_response_headers().
-  void concat_norm_response_headers();
   // Returns iterator pointing to the response header with the name
   // |name|. If multiple header have |name| as name, return first
   // occurrence from the beginning. If no such header is found,
@@ -211,10 +215,20 @@ public:
   evbuffer* get_response_body_buf();
   void add_response_bodylen(size_t amount);
   int64_t get_response_bodylen() const;
-  nghttp2_error_code get_response_rst_stream_error_code() const;
-  void set_response_rst_stream_error_code(nghttp2_error_code error_code);
+  uint32_t get_response_rst_stream_error_code() const;
+  void set_response_rst_stream_error_code(uint32_t error_code);
   // Inspects HTTP/1 response.  This checks tranfer-encoding etc.
   void inspect_http1_response();
+  // Clears some of member variables for response.
+  void reset_response();
+  bool get_non_final_response() const;
+  void set_expect_final_response(bool f);
+  bool get_expect_final_response() const;
+  void add_response_datalen(size_t len);
+  void dec_response_datalen(size_t len);
+  size_t get_response_datalen() const;
+  void reset_response_datalen();
+  bool response_pseudo_header_allowed() const;
 
   // Call this method when there is incoming data in downstream
   // connection.
@@ -228,6 +242,33 @@ public:
 
   bool get_rst_stream_after_end_stream() const;
   void set_rst_stream_after_end_stream(bool f);
+
+  // Initializes upstream timers, but they are not pending.
+  void init_upstream_timer();
+  // Makes upstream read timer pending.  If it is already pending,
+  // timeout value is reset.  This function also resets write timer if
+  // it is already pending.
+  void reset_upstream_rtimer();
+  // Makes upstream write timer pending.  If it is already pending,
+  // timeout value is reset.  This function also resets read timer if
+  // it is already pending.
+  void reset_upstream_wtimer();
+  // Makes upstream write timer pending.  If it is already pending, do
+  // nothing.
+  void ensure_upstream_wtimer();
+  // Disables upstream read timer.
+  void disable_upstream_rtimer();
+  // Disables upstream write timer.
+  void disable_upstream_wtimer();
+
+  // Downstream timer functions.  They works in a similar way just
+  // like the upstream timer function.
+  void init_downstream_timer();
+  void reset_downstream_rtimer();
+  void reset_downstream_wtimer();
+  void ensure_downstream_wtimer();
+  void disable_downstream_rtimer();
+  void disable_downstream_wtimer();
 private:
   Headers request_headers_;
   Headers response_headers_;
@@ -246,13 +287,23 @@ private:
   int64_t response_bodylen_;
 
   Upstream *upstream_;
-  DownstreamConnection *dconn_;
+  std::unique_ptr<DownstreamConnection> dconn_;
   // This buffer is used to temporarily store downstream response
   // body. nghttp2 library reads data from this in the callback.
   evbuffer *response_body_buf_;
 
+  event *upstream_rtimerev_;
+  event *upstream_wtimerev_;
+
+  event *downstream_rtimerev_;
+  event *downstream_wtimerev_;
+
   size_t request_headers_sum_;
   size_t response_headers_sum_;
+
+  // The number of bytes not consumed by the application yet.
+  size_t request_datalen_;
+  size_t response_datalen_;
 
   int32_t stream_id_;
   int32_t priority_;
@@ -260,7 +311,7 @@ private:
   int32_t downstream_stream_id_;
 
   // RST_STREAM error_code from downstream HTTP2 connection
-  nghttp2_error_code response_rst_stream_error_code_;
+  uint32_t response_rst_stream_error_code_;
 
   int request_state_;
   int request_major_;
@@ -282,13 +333,13 @@ private:
 
   bool chunked_request_;
   bool request_connection_close_;
-  bool request_expect_100_continue_;
   bool request_header_key_prev_;
   bool request_http2_expect_body_;
 
   bool chunked_response_;
   bool response_connection_close_;
   bool response_header_key_prev_;
+  bool expect_final_response_;
 };
 
 } // namespace shrpx

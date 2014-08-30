@@ -34,6 +34,7 @@ struct WorkerConfig {
   int errorlog_fd;
   // true if errorlog_fd is referring to a terminal.
   bool errorlog_tty;
+  bool graceful_shutdown;
 
   WorkerConfig();
 };
@@ -43,7 +44,7 @@ extern
 #ifndef NOTHREADS
 thread_local
 #endif // NOTHREADS
-WorkerConfig worker_config;
+WorkerConfig *worker_config;
 
 } // namespace shrpx
 

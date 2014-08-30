@@ -17,6 +17,7 @@ Contents:
    :maxdepth: 2
 
    package_README
+   building-android-binary
    tutorial-client
    tutorial-server
    tutorial-hpack
@@ -46,5 +47,6 @@ Released Versions
 Resources
 ---------
 
-* http://tools.ietf.org/html/draft-ietf-httpbis-http2-13
-* http://tools.ietf.org/html/draft-ietf-httpbis-header-compression-08
+* http://tools.ietf.org/html/draft-ietf-httpbis-http2-14
+* http://tools.ietf.org/html/draft-ietf-httpbis-header-compression-09
+* http://tools.ietf.org/html/draft-ietf-httpbis-alt-svc-02

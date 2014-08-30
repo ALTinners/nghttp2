@@ -47,13 +47,14 @@ public:
   virtual int end_upload_data() = 0;
 
   virtual void pause_read(IOCtrlReason reason) = 0;
-  virtual int resume_read(IOCtrlReason reason) = 0;
+  virtual int resume_read(IOCtrlReason reason, size_t consumed) = 0;
   virtual void force_resume_read() = 0;
 
   virtual bool get_output_buffer_full() = 0;
 
   virtual int on_read() = 0;
   virtual int on_write() = 0;
+  virtual int on_timeout() { return 0; }
 
   virtual void on_upstream_change(Upstream *uptream) = 0;
   virtual int on_priority_change(int32_t pri) = 0;

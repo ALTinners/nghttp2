@@ -33,12 +33,11 @@ HD_ENTRY_OVERHEAD = cnghttp2.NGHTTP2_HD_ENTRY_OVERHEAD
 
 class HDTableEntry:
 
-    def __init__(self, name, namelen, value, valuelen, ref):
+    def __init__(self, name, namelen, value, valuelen):
         self.name = name
         self.namelen = namelen
         self.value = value
         self.valuelen = valuelen
-        self.ref = ref
 
     def space(self):
         return self.namelen + self.valuelen + HD_ENTRY_OVERHEAD
@@ -52,8 +51,7 @@ cdef _get_hd_table(cnghttp2.nghttp2_hd_context *ctx):
         k = _get_pybytes(entry.nv.name, entry.nv.namelen)
         v = _get_pybytes(entry.nv.value, entry.nv.valuelen)
         res.append(HDTableEntry(k, entry.nv.namelen,
-                                v, entry.nv.valuelen,
-                                (entry.flags & cnghttp2.NGHTTP2_HD_FLAG_REFSET) != 0))
+                                v, entry.nv.valuelen))
     return res
 
 cdef _get_pybytes(uint8_t *b, uint16_t blen):
@@ -142,15 +140,6 @@ cdef class HDDeflater:
             free(out)
 
         return res
-
-    def set_no_refset(self, no_refset):
-        '''Tells the compressor not to use reference set if |no_refset| is
-        nonzero. If |no_refset| is nonzero, on each invocation of
-        deflate(), compressor first emits index=0 to clear up
-        reference set.
-
-        '''
-        cnghttp2.nghttp2_hd_deflate_set_no_refset(self._deflater, no_refset)
 
     def change_table_size(self, hd_table_bufsize_max):
         '''Changes header table size to |hd_table_bufsize_max| byte.
@@ -243,16 +232,14 @@ def print_hd_table(hdtable):
     function does not work if header name/value cannot be decoded using
     UTF-8 encoding.
 
-    s=N means the entry occupies N bytes in header table. if r=y, then
-    the entry is in the reference set.
+    s=N means the entry occupies N bytes in header table.
 
     '''
     idx = 0
     for entry in hdtable:
         idx += 1
-        print('[{}] (s={}) (r={}) {}: {}'\
+        print('[{}] (s={}) {}: {}'\
               .format(idx, entry.space(),
-                      'y' if entry.ref else 'n',
                       entry.name.decode('utf-8'),
                       entry.value.decode('utf-8')))
 
@@ -443,7 +430,7 @@ cdef int server_on_frame_not_send(cnghttp2.nghttp2_session *session,
 
 cdef int server_on_stream_close(cnghttp2.nghttp2_session *session,
                                 int32_t stream_id,
-                                cnghttp2.nghttp2_error_code error_code,
+                                uint32_t error_code,
                                 void *user_data):
     cdef http2 = <_HTTP2SessionCore>user_data
 
@@ -492,7 +479,7 @@ cdef class _HTTP2SessionCore:
     cdef settings_timer
 
     def __cinit__(self, transport, handler_class):
-        cdef cnghttp2.nghttp2_session_callbacks callbacks
+        cdef cnghttp2.nghttp2_session_callbacks *callbacks
         cdef cnghttp2.nghttp2_settings_entry iv[2]
         cdef int rv
 
@@ -503,17 +490,32 @@ cdef class _HTTP2SessionCore:
         self.handlers = set()
         self.settings_timer = None
 
-        memset(&callbacks, 0, sizeof(callbacks))
-        callbacks.on_header_callback = server_on_header
-        callbacks.on_begin_headers_callback = server_on_begin_headers
-        callbacks.on_frame_recv_callback = server_on_frame_recv
-        callbacks.on_stream_close_callback = server_on_stream_close
-        callbacks.on_frame_send_callback = server_on_frame_send
-        callbacks.on_frame_not_send_callback = server_on_frame_not_send
-        callbacks.on_data_chunk_recv_callback = server_on_data_chunk_recv
+        rv = cnghttp2.nghttp2_session_callbacks_new(&callbacks)
 
-        rv = cnghttp2.nghttp2_session_server_new(&self.session, &callbacks,
+        if rv != 0:
+            raise Exception('nghttp2_session_callbacks_new failed: {}'.format\
+                            (_strerror(rv)))
+
+        cnghttp2.nghttp2_session_callbacks_set_on_header_callback(
+            callbacks, server_on_header)
+        cnghttp2.nghttp2_session_callbacks_set_on_begin_headers_callback(
+            callbacks, server_on_begin_headers)
+        cnghttp2.nghttp2_session_callbacks_set_on_frame_recv_callback(
+            callbacks, server_on_frame_recv)
+        cnghttp2.nghttp2_session_callbacks_set_on_stream_close_callback(
+            callbacks, server_on_stream_close)
+        cnghttp2.nghttp2_session_callbacks_set_on_frame_send_callback(
+            callbacks, server_on_frame_send)
+        cnghttp2.nghttp2_session_callbacks_set_on_frame_not_send_callback(
+            callbacks, server_on_frame_not_send)
+        cnghttp2.nghttp2_session_callbacks_set_on_data_chunk_recv_callback(
+            callbacks, server_on_data_chunk_recv)
+
+        rv = cnghttp2.nghttp2_session_server_new(&self.session, callbacks,
                                                  <void*>self)
+
+        cnghttp2.nghttp2_session_callbacks_del(callbacks)
+
         if rv != 0:
             raise Exception('nghttp2_session_server_new failed: {}'.format\
                             (_strerror(rv)))

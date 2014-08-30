@@ -94,9 +94,9 @@ namespace {
 void append_nv(Stream *stream, const std::vector<nghttp2_nv>& nva)
 {
   for(auto& nv : nva) {
-    http2::split_add_header(stream->headers,
-                            nv.name, nv.namelen, nv.value, nv.valuelen,
-                            nv.flags & NGHTTP2_NV_FLAG_NO_INDEX);
+    http2::add_header(stream->headers,
+                      nv.name, nv.namelen, nv.value, nv.valuelen,
+                      nv.flags & NGHTTP2_NV_FLAG_NO_INDEX);
   }
 }
 } // namespace
@@ -213,19 +213,29 @@ void remove_stream_write_timeout(Stream *stream)
 }
 } // namespace
 
+namespace {
+void fill_callback(nghttp2_session_callbacks *callbacks, const Config *config);
+} // namespace
+
 class Sessions {
 public:
   Sessions(event_base *evbase, const Config *config, SSL_CTX *ssl_ctx)
     : evbase_(evbase),
       config_(config),
       ssl_ctx_(ssl_ctx),
+      callbacks_(nullptr),
       next_session_id_(1)
-  {}
+  {
+    nghttp2_session_callbacks_new(&callbacks_);
+
+    fill_callback(callbacks_, config_);
+  }
   ~Sessions()
   {
     for(auto handler : handlers_) {
       delete handler;
     }
+    nghttp2_session_callbacks_del(callbacks_);
   }
   void add_handler(Http2Handler *handler)
   {
@@ -269,6 +279,10 @@ public:
     }
     return session_id;
   }
+  const nghttp2_session_callbacks* get_callbacks() const
+  {
+    return callbacks_;
+  }
   void accept_connection(int fd)
   {
     int val = 1;
@@ -297,6 +311,7 @@ private:
   event_base *evbase_;
   const Config *config_;
   SSL_CTX *ssl_ctx_;
+  nghttp2_session_callbacks *callbacks_;
   int64_t next_session_id_;
 };
 
@@ -309,10 +324,6 @@ void on_session_closed(Http2Handler *hd, int64_t session_id)
     std::cout << " closed" << std::endl;
   }
 }
-} // namespace
-
-namespace {
-void fill_callback(nghttp2_session_callbacks& callbacks, const Config *config);
 } // namespace
 
 Http2Handler::Http2Handler(Sessions *sessions,
@@ -724,9 +735,8 @@ void settings_timeout_cb(evutil_socket_t fd, short what, void *arg)
 int Http2Handler::on_connect()
 {
   int r;
-  nghttp2_session_callbacks callbacks;
-  fill_callback(callbacks, sessions_->get_config());
-  r = nghttp2_session_server_new(&session_, &callbacks, this);
+
+  r = nghttp2_session_server_new(&session_, sessions_->get_callbacks(), this);
   if(r != 0) {
     return r;
   }
@@ -843,6 +853,16 @@ int Http2Handler::submit_response(const std::string& status,
                                  data_prd);
 }
 
+int Http2Handler::submit_non_final_response(const std::string& status,
+                                            int32_t stream_id)
+{
+  auto nva = std::vector<nghttp2_nv>{
+    http2::make_nv_ls(":status", status)
+  };
+  return nghttp2_submit_headers(session_, NGHTTP2_FLAG_NONE, stream_id,
+                                nullptr, nva.data(), nva.size(), nullptr);
+}
+
 int Http2Handler::submit_push_promise(Stream *stream,
                                       const std::string& push_path)
 {
@@ -877,14 +897,13 @@ int Http2Handler::submit_push_promise(Stream *stream,
 
   auto promised_stream = util::make_unique<Stream>(this, promised_stream_id);
 
-  append_nv(promised_stream.get(), http2::sort_nva(nva.data(), nva.size()));
+  append_nv(promised_stream.get(), nva);
   add_stream(promised_stream_id, std::move(promised_stream));
 
   return 0;
 }
 
-int Http2Handler::submit_rst_stream(Stream *stream,
-                                    nghttp2_error_code error_code)
+int Http2Handler::submit_rst_stream(Stream *stream, uint32_t error_code)
 {
   remove_stream_read_timeout(stream);
   remove_stream_write_timeout(stream);
@@ -947,7 +966,7 @@ void Http2Handler::remove_settings_timer()
   }
 }
 
-void Http2Handler::terminate_session(nghttp2_error_code error_code)
+void Http2Handler::terminate_session(uint32_t error_code)
 {
   nghttp2_session_terminate_session(session_, error_code);
 }
@@ -1158,8 +1177,20 @@ int on_header_callback(nghttp2_session *session,
   if(!http2::check_nv(name, namelen, value, valuelen)) {
     return 0;
   }
-  http2::split_add_header(stream->headers, name, namelen, value, valuelen,
-                          flags & NGHTTP2_NV_FLAG_NO_INDEX);
+
+  if(namelen > 0 && name[0] == ':') {
+    if((!stream->headers.empty() &&
+        stream->headers.back().name.c_str()[0] != ':') ||
+     !http2::check_http2_request_pseudo_header(name, namelen)) {
+
+      nghttp2_submit_rst_stream(session, NGHTTP2_FLAG_NONE, frame->hd.stream_id,
+                                NGHTTP2_PROTOCOL_ERROR);
+      return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
+    }
+  }
+
+  http2::add_header(stream->headers, name, namelen, value, valuelen,
+                    flags & NGHTTP2_NV_FLAG_NO_INDEX);
   return 0;
 }
 } // namespace
@@ -1247,7 +1278,7 @@ int hd_on_frame_recv_callback
     if(frame->headers.cat == NGHTTP2_HCAT_REQUEST) {
 
       http2::normalize_headers(stream->headers);
-      if(!http2::check_http2_headers(stream->headers)) {
+      if(!http2::check_http2_request_headers(stream->headers)) {
         hd->submit_rst_stream(stream, NGHTTP2_PROTOCOL_ERROR);
         return 0;
       }
@@ -1264,6 +1295,12 @@ int hd_on_frame_recv_callback
          !http2::get_unique_header(stream->headers, "host")) {
         hd->submit_rst_stream(stream, NGHTTP2_PROTOCOL_ERROR);
         return 0;
+      }
+
+      auto expect100 = http2::get_header(stream->headers, "expect");
+
+      if(expect100 && util::strieq("100-continue", expect100->value.c_str())) {
+        hd->submit_non_final_response("100", frame->hd.stream_id);
       }
 
       if(hd->get_config()->early_response) {
@@ -1322,8 +1359,9 @@ int hd_on_frame_send_callback
 
     if(frame->hd.flags & NGHTTP2_FLAG_END_STREAM) {
       remove_stream_write_timeout(stream);
-    } else if(nghttp2_session_get_stream_remote_window_size
-              (session, frame->hd.stream_id) == 0) {
+    } else if(std::min(nghttp2_session_get_stream_remote_window_size
+                       (session, frame->hd.stream_id),
+                       nghttp2_session_get_remote_window_size(session)) <= 0) {
       // If stream is blocked by flow control, enable write timeout.
       add_stream_read_timeout_if_pending(stream);
       add_stream_write_timeout(stream);
@@ -1392,7 +1430,7 @@ int on_data_chunk_recv_callback
 
 namespace {
 int on_stream_close_callback
-(nghttp2_session *session, int32_t stream_id, nghttp2_error_code error_code,
+(nghttp2_session *session, int32_t stream_id, uint32_t error_code,
  void *user_data)
 {
   auto hd = static_cast<Http2Handler*>(user_data);
@@ -1408,23 +1446,34 @@ int on_stream_close_callback
 } // namespace
 
 namespace {
-void fill_callback(nghttp2_session_callbacks& callbacks, const Config *config)
+void fill_callback(nghttp2_session_callbacks *callbacks, const Config *config)
 {
-  memset(&callbacks, 0, sizeof(nghttp2_session_callbacks));
-  callbacks.on_stream_close_callback = on_stream_close_callback;
-  callbacks.on_frame_recv_callback = hd_on_frame_recv_callback;
-  callbacks.on_frame_send_callback = hd_on_frame_send_callback;
+  nghttp2_session_callbacks_set_on_stream_close_callback
+    (callbacks, on_stream_close_callback);
+
+  nghttp2_session_callbacks_set_on_frame_recv_callback
+    (callbacks, hd_on_frame_recv_callback);
+
+  nghttp2_session_callbacks_set_on_frame_send_callback
+    (callbacks, hd_on_frame_send_callback);
+
   if(config->verbose) {
-    callbacks.on_invalid_frame_recv_callback =
-      verbose_on_invalid_frame_recv_callback;
-    callbacks.on_unknown_frame_recv_callback =
-      verbose_on_unknown_frame_recv_callback;
+    nghttp2_session_callbacks_set_on_invalid_frame_recv_callback
+      (callbacks, verbose_on_invalid_frame_recv_callback);
   }
-  callbacks.on_data_chunk_recv_callback = on_data_chunk_recv_callback;
-  callbacks.on_header_callback = on_header_callback;
-  callbacks.on_begin_headers_callback = on_begin_headers_callback;
+
+  nghttp2_session_callbacks_set_on_data_chunk_recv_callback
+    (callbacks, on_data_chunk_recv_callback);
+
+  nghttp2_session_callbacks_set_on_header_callback
+    (callbacks, on_header_callback);
+
+  nghttp2_session_callbacks_set_on_begin_headers_callback
+    (callbacks, on_begin_headers_callback);
+
   if(config->padding) {
-    callbacks.select_padding_callback = select_padding_callback;
+    nghttp2_session_callbacks_set_select_padding_callback
+      (callbacks, select_padding_callback);
   }
 }
 } // namespace

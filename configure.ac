@@ -21,13 +21,13 @@ dnl LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 dnl OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 dnl WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 AC_PREREQ(2.61)
-AC_INIT([nghttp2], [0.5.1], [t-tujikawa@users.sourceforge.net])
+AC_INIT([nghttp2], [0.6.0], [t-tujikawa@users.sourceforge.net])
 LT_PREREQ([2.2.6])
 LT_INIT()
 dnl See versioning rule:
 dnl  http://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
-AC_SUBST(LT_CURRENT, 4)
-AC_SUBST(LT_REVISION, 1)
+AC_SUBST(LT_CURRENT, 5)
+AC_SUBST(LT_REVISION, 0)
 AC_SUBST(LT_AGE, 0)
 
 major=`echo $PACKAGE_VERSION |cut -d. -f1 | sed -e "s/[^0-9]//g"`
@@ -205,7 +205,8 @@ case "$host" in
     SRC_LIBS="$SRC_LIBS -lstdc++ -lsupc++"
     ;;
   *)
-    SRC_LIBS="$SRC_LIBS -pthread"
+    PTHREAD_LDFLAGS="-pthread"
+    SRC_LIBS="$SRC_LIBS $PTHREAD_LDFLAGS"
     ;;
 esac
 
@@ -293,7 +294,8 @@ AM_CONDITIONAL([HAVE_LIBXML2], [ test "x${have_libxml2}" = "xyes" ])
 have_jemalloc=no
 if test "x${request_jemalloc}" != "xno"; then
   LIBS_OLD=$LIBS
-  AC_SEARCH_LIBS([malloc_stats_print], [jemalloc], [have_jemalloc=yes])
+  AC_SEARCH_LIBS([malloc_stats_print], [jemalloc], [have_jemalloc=yes], [],
+                 [$PTHREAD_LDFLAGS])
   LIBS=$LIBS_OLD
   if test "x${have_jemalloc}" = "xyes" &&
      test "x${ac_cv_search_malloc_stats_print}" != "xnone required"; then
@@ -310,7 +312,7 @@ fi
 # spdylay (for src/nghttpx and src/h2load)
 have_spdylay=no
 if test "x${request_spdylay}" != "xno"; then
-  PKG_CHECK_MODULES([LIBSPDYLAY], [libspdylay >= 1.2.3],
+  PKG_CHECK_MODULES([LIBSPDYLAY], [libspdylay >= 1.3.0],
                     [have_spdylay=yes], [have_spdylay=no])
   if test "x${have_spdylay}" = "xyes"; then
     AC_DEFINE([HAVE_SPDYLAY], [1], [Define to 1 if you have `spdylay` library.])
@@ -515,6 +517,7 @@ AC_CONFIG_FILES([
   doc/nghttpx-howto.rst
   doc/h2load-howto.rst
   doc/python-apiref.rst
+  doc/building-android-binary.rst
   doc/nghttp2.h.rst
   doc/nghttp2ver.h.rst
 ])

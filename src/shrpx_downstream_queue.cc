@@ -34,30 +34,101 @@ DownstreamQueue::DownstreamQueue()
 {}
 
 DownstreamQueue::~DownstreamQueue()
+{}
+
+void DownstreamQueue::add_pending(std::unique_ptr<Downstream> downstream)
 {
-  for(auto& kv : downstreams_) {
-    delete kv.second;
+  auto stream_id = downstream->get_stream_id();
+  pending_downstreams_[stream_id] = std::move(downstream);
+}
+
+void DownstreamQueue::add_failure(std::unique_ptr<Downstream> downstream)
+{
+  auto stream_id = downstream->get_stream_id();
+  failure_downstreams_[stream_id] = std::move(downstream);
+}
+
+void DownstreamQueue::add_active(std::unique_ptr<Downstream> downstream)
+{
+  auto stream_id = downstream->get_stream_id();
+  active_downstreams_[stream_id] = std::move(downstream);
+}
+
+std::unique_ptr<Downstream> DownstreamQueue::remove(int32_t stream_id)
+{
+  auto kv = pending_downstreams_.find(stream_id);
+
+  if(kv != std::end(pending_downstreams_)) {
+    auto downstream = std::move((*kv).second);
+    pending_downstreams_.erase(kv);
+    return downstream;
   }
-}
 
-void DownstreamQueue::add(Downstream *downstream)
-{
-  downstreams_[downstream->get_stream_id()] = downstream;
-}
+  kv = active_downstreams_.find(stream_id);
 
-void DownstreamQueue::remove(Downstream *downstream)
-{
-  downstreams_.erase(downstream->get_stream_id());
+  if(kv != std::end(active_downstreams_)) {
+    auto downstream = std::move((*kv).second);
+    active_downstreams_.erase(kv);
+    return downstream;
+  }
+
+  kv = failure_downstreams_.find(stream_id);
+
+  if(kv != std::end(failure_downstreams_)) {
+    auto downstream = std::move((*kv).second);
+    failure_downstreams_.erase(kv);
+    return downstream;
+  }
+
+  return nullptr;
 }
 
 Downstream* DownstreamQueue::find(int32_t stream_id)
 {
-  auto kv = downstreams_.find(stream_id);
-  if(kv == std::end(downstreams_)) {
-    return nullptr;
-  } else {
-    return (*kv).second;
+  auto kv = pending_downstreams_.find(stream_id);
+
+  if(kv != std::end(pending_downstreams_)) {
+    return (*kv).second.get();
   }
+
+  kv = active_downstreams_.find(stream_id);
+
+  if(kv != std::end(active_downstreams_)) {
+    return (*kv).second.get();
+  }
+
+  kv = failure_downstreams_.find(stream_id);
+
+  if(kv != std::end(failure_downstreams_)) {
+    return (*kv).second.get();
+  }
+
+  return nullptr;
+}
+
+std::unique_ptr<Downstream> DownstreamQueue::pop_pending()
+{
+  auto i = std::begin(pending_downstreams_);
+
+  if(i == std::end(pending_downstreams_)) {
+    return nullptr;
+  }
+
+  auto downstream = std::move((*i).second);
+
+  pending_downstreams_.erase(i);
+
+  return downstream;
+}
+
+size_t DownstreamQueue::num_active() const
+{
+  return active_downstreams_.size();
+}
+
+bool DownstreamQueue::pending_empty() const
+{
+  return pending_downstreams_.empty();
 }
 
 } // namespace shrpx

@@ -71,6 +71,8 @@ extern const char SHRPX_OPT_FRONTEND_READ_TIMEOUT[];
 extern const char SHRPX_OPT_FRONTEND_WRITE_TIMEOUT[];
 extern const char SHRPX_OPT_BACKEND_READ_TIMEOUT[];
 extern const char SHRPX_OPT_BACKEND_WRITE_TIMEOUT[];
+extern const char SHRPX_OPT_STREAM_READ_TIMEOUT[];
+extern const char SHRPX_OPT_STREAM_WRITE_TIMEOUT[];
 extern const char SHRPX_OPT_ACCESSLOG_FILE[];
 extern const char SHRPX_OPT_ACCESSLOG_SYSLOG[];
 extern const char SHRPX_OPT_ERRORLOG_FILE[];
@@ -94,6 +96,10 @@ extern const char SHRPX_OPT_BACKEND_IPV4[];
 extern const char SHRPX_OPT_BACKEND_IPV6[];
 extern const char SHRPX_OPT_BACKEND_HTTP_PROXY_URI[];
 extern const char SHRPX_OPT_BACKEND_TLS_SNI_FIELD[];
+extern const char SHRPX_OPT_READ_RATE[];
+extern const char SHRPX_OPT_READ_BURST[];
+extern const char SHRPX_OPT_WRITE_RATE[];
+extern const char SHRPX_OPT_WRITE_BURST[];
 extern const char SHRPX_OPT_WORKER_READ_RATE[];
 extern const char SHRPX_OPT_WORKER_READ_BURST[];
 extern const char SHRPX_OPT_WORKER_WRITE_RATE[];
@@ -112,6 +118,9 @@ extern const char SHRPX_OPT_PADDING[];
 extern const char SHRPX_OPT_ALTSVC[];
 extern const char SHRPX_OPT_ADD_RESPONSE_HEADER[];
 extern const char SHRPX_OPT_WORKER_FRONTEND_CONNECTIONS[];
+extern const char SHRPX_OPT_NO_LOCATION_REWRITE[];
+extern const char SHRPX_OPT_BACKEND_CONNECTIONS_PER_FRONTEND[];
+extern const char SHRPX_OPT_LISTENER_DISABLE_TIMEOUT[];
 
 union sockaddr_union {
   sockaddr sa;
@@ -162,7 +171,10 @@ struct Config {
   timeval upstream_write_timeout;
   timeval downstream_read_timeout;
   timeval downstream_write_timeout;
+  timeval stream_read_timeout;
+  timeval stream_write_timeout;
   timeval downstream_idle_read_timeout;
+  timeval listener_disable_timeout;
   std::unique_ptr<char[]> host;
   std::unique_ptr<char[]> private_key_file;
   std::unique_ptr<char[]> private_key_passwd;
@@ -182,6 +194,10 @@ struct Config {
   std::unique_ptr<char[]> downstream_http_proxy_userinfo;
   // host in http proxy URI
   std::unique_ptr<char[]> downstream_http_proxy_host;
+  std::unique_ptr<char[]> http2_upstream_dump_request_header_file;
+  std::unique_ptr<char[]> http2_upstream_dump_response_header_file;
+  // Rate limit configuration per connection
+  ev_token_bucket_cfg *rate_limit_cfg;
   // Rate limit configuration per worker (thread)
   ev_token_bucket_cfg *worker_rate_limit_cfg;
   // list of supported NPN/ALPN protocol strings in the order of
@@ -201,6 +217,8 @@ struct Config {
   FILE *http2_upstream_dump_request_header;
   FILE *http2_upstream_dump_response_header;
   nghttp2_option *http2_option;
+  char **argv;
+  char *cwd;
   size_t downstream_addrlen;
   size_t num_worker;
   size_t http2_max_concurrent_streams;
@@ -208,6 +226,7 @@ struct Config {
   size_t http2_downstream_window_bits;
   size_t http2_upstream_connection_window_bits;
   size_t http2_downstream_connection_window_bits;
+  size_t max_downstream_connections;
   // actual size of downstream_http_proxy_addr
   size_t downstream_http_proxy_addrlen;
   size_t read_rate;
@@ -227,6 +246,7 @@ struct Config {
   shrpx_proto downstream_proto;
   int syslog_facility;
   int backlog;
+  int argc;
   uid_t uid;
   gid_t gid;
   uint16_t port;
@@ -255,6 +275,7 @@ struct Config {
   bool backend_ipv6;
   bool http2_no_cookie_crumbling;
   bool upstream_frame_debug;
+  bool no_location_rewrite;
 };
 
 const Config* get_config();
@@ -306,6 +327,8 @@ const char* str_syslog_facility(int facility);
 
 // Returns integer value of syslog |facility| string.
 int int_syslog_facility(const char *strfacility);
+
+FILE* open_file_for_write(const char *filename);
 
 } // namespace shrpx
 

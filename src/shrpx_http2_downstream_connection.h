@@ -50,13 +50,14 @@ public:
   virtual int end_upload_data();
 
   virtual void pause_read(IOCtrlReason reason) {}
-  virtual int resume_read(IOCtrlReason reason);
+  virtual int resume_read(IOCtrlReason reason, size_t consumed);
   virtual void force_resume_read() {}
 
   virtual bool get_output_buffer_full();
 
   virtual int on_read();
   virtual int on_write();
+  virtual int on_timeout();
 
   virtual void on_upstream_change(Upstream *upstream) {}
   virtual int on_priority_change(int32_t pri);
@@ -69,7 +70,8 @@ public:
   void attach_stream_data(StreamData *sd);
   StreamData* detach_stream_data();
 
-  int submit_rst_stream(Downstream *downstream);
+  int submit_rst_stream
+  (Downstream *downstream, uint32_t error_code = NGHTTP2_INTERNAL_ERROR);
 private:
   Http2Session *http2session_;
   evbuffer *request_body_buf_;

@@ -22,6 +22,10 @@
  * OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
+#ifdef HAVE_CONFIG_H
+#  include <config.h>
+#endif /* HAVE_CONFIG_H */
+
 #include <stdio.h>
 #include <string.h>
 #include <CUnit/Basic.h>
@@ -71,9 +75,7 @@ int main(int argc, char* argv[])
                    shrpx::test_shrpx_ssl_create_lookup_tree) ||
       !CU_add_test(pSuite, "ssl_cert_lookup_tree_add_cert_from_file",
                    shrpx::test_shrpx_ssl_cert_lookup_tree_add_cert_from_file) ||
-      !CU_add_test(pSuite, "http2_split_add_header",
-                   shrpx::test_http2_split_add_header) ||
-      !CU_add_test(pSuite, "http2_sort_nva", shrpx::test_http2_sort_nva) ||
+      !CU_add_test(pSuite, "http2_add_header", shrpx::test_http2_add_header) ||
       !CU_add_test(pSuite, "http2_check_http2_headers",
                    shrpx::test_http2_check_http2_headers) ||
       !CU_add_test(pSuite, "http2_get_unique_header",
@@ -82,8 +84,6 @@ int main(int argc, char* argv[])
                    shrpx::test_http2_get_header) ||
       !CU_add_test(pSuite, "http2_value_lws",
                    shrpx::test_http2_value_lws) ||
-      !CU_add_test(pSuite, "http2_concat_norm_headers",
-                   shrpx::test_http2_concat_norm_headers) ||
       !CU_add_test(pSuite, "http2_copy_norm_headers_to_nva",
                    shrpx::test_http2_copy_norm_headers_to_nva) ||
       !CU_add_test(pSuite, "http2_build_http1_headers_from_norm_headers",
@@ -92,6 +92,8 @@ int main(int argc, char* argv[])
                    shrpx::test_http2_lws) ||
       !CU_add_test(pSuite, "http2_rewrite_location_uri",
                    shrpx::test_http2_rewrite_location_uri) ||
+      !CU_add_test(pSuite, "http2_parse_http_status_code",
+                   shrpx::test_http2_parse_http_status_code) ||
       !CU_add_test(pSuite, "downstream_normalize_request_headers",
                    shrpx::test_downstream_normalize_request_headers) ||
       !CU_add_test(pSuite, "downstream_normalize_response_headers",

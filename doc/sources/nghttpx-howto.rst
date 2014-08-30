@@ -197,9 +197,9 @@ connection, so the connection gets insecure.  To disable SSL/TLS in
 backend connection, use ``--backend-no-tls`` option.
 
 The backend server is supporsed to be a HTTP/2 web server or HTTP/2
-proxy.  Since HTTP/2 requests opaque between proxied and non-proxied
-request, the backend server may be proxy or just web server depending
-on the context of incoming requests.
+proxy.  If backend server is HTTP/2 proxy, use
+``--no-location-rewrite`` option to disable rewriting location header
+field.
 
 The use-case of this mode is aggregate the incoming connections to one
 HTTP/2 connection.  One backend HTTP/2 connection is created per
@@ -235,19 +235,12 @@ Read/write rate limit
 ---------------------
 
 nghttpx supports transfer rate limiting on frontend connections.  You
-can do rate limit per connection or per worker (thread) for reading
-and writeing individually.
-
-To rate limit per connection for reading, use ``--read-rate`` and
-``--read-burst`` options.  For writing, use ``--write-rate`` and
-``--write-burst`` options.
+can do rate limit per worker (thread) for reading and writeing
+individually.
 
 To rate limit per worker (thread), use ``--worker-read-rate`` and
 ``--worker-read-burst`` options.  For writing, use
 ``--worker-write-rate`` and ``--worker-write-burst``.
-
-If both per connection and per worker rate limit configurations are
-specified, the lower rate is used.
 
 Please note that rate limit is performed on top of TCP and nothing to
 do with HTTP/2 flow control.
@@ -269,3 +262,25 @@ used in frontend, and host is replaced with which appears in
 precedence.  If the above conditions are not met with the host value
 in :authority header field, rewrite is retried with the value in host
 header field.
+
+Hot deploy
+----------
+
+nghttpx supports hot deploy feature using signals.  The hot deploy in
+nghttpx is multi step process.  First send USR2 signal to nghttpx
+process.  It will do fork and execute new executable, using same
+command-line arguments and environment variables.  At this point, both
+current and new processes can accept requests.  To gracefully shutdown
+current process, send QUIT signal to current nghttpx process.  When
+all existing frontend connections are done, the current process will
+exit.  At this point, only new nghttpx process exists and serves
+incoming requests.
+
+Re-opening log files
+--------------------
+
+When rotating log files, it is desirable to re-open log files after
+log rotation daemon renamed existing log files.  To tell nghttpx to
+re-open log files, send USR1 signal to nghttpx process.  It will
+re-open files specified by ``--accesslog-file`` and
+``--errorlog-file`` options.
