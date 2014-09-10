@@ -5,7 +5,7 @@ Source: https://github.com/tatsuhiro-t/nghttp2
 
 Files: *
 Copyright: 2012, 2013, 2014 Tatsuhiro Tsujikawa
-License: MIT License
+License: Expat
  The MIT License
  .
  Copyright (c) 2012 Tatsuhiro Tsujikawa
@@ -103,7 +103,7 @@ Files: m4/ax_cxx_compile_stdcxx_11.m4
 Copyright: 2008, Benjamin Kosnik <bkoz@redhat.com>,
            2012, Zack Weinberg <zackw@panix.com>,
            2013, Roy Stogner <roystgnr@ices.utexas.edu>
-License: Copying permitted with no warrantyy
+License:
  Copying and distribution of this file, with or without modification, are
  permitted in any medium without royalty provided the copyright notice
  and this notice are preserved. This file is offered as-is, without any
@@ -179,7 +179,7 @@ License: MIT
 
 Files: doc/_themes/sphinx_rtd_theme/layout_old.html doc/_themes/sphinx_rtd_theme/search.html
 Copyright: 2007-2013 by the Sphinx team
-License: BSD
+License: BSD-2-clause
  License details from https://bitbucket.org/birkenfeld/sphinx/src file LICENSE
  .
  Copyright (c) 2007-2013 by the Sphinx team (see AUTHORS file).
@@ -210,7 +210,9 @@ License: BSD
 
 Files: doc/_themes/sphinx_rtd_theme/static/fonts/FontAwesome.otf
 Copyright: Font Awesome by Dave Gandy - http://fontawesome.io
-License: SIL Open Font License 1.1
+License: 
+ SIL Open Font License 1.1
+ .
  License details from http://fortawesome.github.io/Font-Awesome/
  .
  This Font Software is licensed under the SIL Open Font License, Version 1.1.

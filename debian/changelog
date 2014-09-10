@@ -1,3 +1,10 @@
+nghttp2 (0.6.1-1) unstable; urgency=medium
+
+  * New upstream release
+  * debian/copyright: Fix some lintian deb5 warnings
+
+ -- Dave Beckett <dajobe@debian.org>  Wed, 10 Sep 2014 13:30:14 -0700
+
 nghttp2 (0.6.0-1) unstable; urgency=medium
 
   * New upstream release
