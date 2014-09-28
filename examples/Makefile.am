@@ -27,6 +27,7 @@ AM_CPPFLAGS = \
 	-Wall \
 	-I$(top_srcdir)/lib/includes \
 	-I$(top_builddir)/lib/includes \
+	-I$(top_srcdir)/src/includes \
 	-I$(top_srcdir)/third-party \
 	@LIBEVENT_OPENSSL_CFLAGS@ \
 	@OPENSSL_CFLAGS@ \
@@ -47,5 +48,38 @@ libevent_client_SOURCES = libevent-client.c
 libevent_server_SOURCES = libevent-server.c
 
 deflate_SOURCES = deflate.c
+
+if HAVE_EPOLL
+
+noinst_PROGRAMS += tiny-nghttpd
+
+tiny_nghttpd_SOURCES = tiny-nghttpd.c
+
+endif # HAVE_EPOLL
+
+if ENABLE_ASIO_LIB
+
+noinst_PROGRAMS += asio-sv asio-sv2 asio-sv3
+
+ASIOCPPFLAGS = ${BOOST_CPPFLAGS} ${AM_CPPFLAGS}
+ASIOLDFLAGS = @JEMALLOC_LIBS@
+ASIOLDADD = $(top_builddir)/src/libnghttp2_asio.la
+
+asio_sv_SOURCES = asio-sv.cc
+asio_sv_CPPFLAGS = ${ASIOCPPFLAGS}
+asio_sv_LDFLAGS = ${ASIOLDFLAGS}
+asio_sv_LDADD = ${ASIOLDADD}
+
+asio_sv2_SOURCES = asio-sv2.cc
+asio_sv2_CPPFLAGS = ${ASIOCPPFLAGS}
+asio_sv2_LDFLAGS = ${ASIOLDFLAGS}
+asio_sv2_LDADD = ${ASIOLDADD}
+
+asio_sv3_SOURCES = asio-sv3.cc
+asio_sv3_CPPFLAGS = ${ASIOCPPFLAGS}
+asio_sv3_LDFLAGS = ${ASIOLDFLAGS}
+asio_sv3_LDADD = ${ASIOLDADD}
+
+endif # ENABLE_ASIO_LIB
 
 endif # ENABLE_EXAMPLES

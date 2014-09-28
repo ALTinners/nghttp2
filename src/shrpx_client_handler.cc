@@ -40,6 +40,7 @@
 #include "shrpx_spdy_upstream.h"
 #endif // HAVE_SPDYLAY
 #include "util.h"
+#include "libevent_util.h"
 
 using namespace nghttp2;
 
@@ -49,6 +50,10 @@ namespace {
 void upstream_readcb(bufferevent *bev, void *arg)
 {
   auto handler = static_cast<ClientHandler*>(arg);
+  auto upstream = handler->get_upstream();
+  if(upstream) {
+    upstream->reset_timeouts();
+  }
   int rv = handler->on_read();
   if(rv != 0) {
     delete handler;
@@ -60,6 +65,10 @@ namespace {
 void upstream_writecb(bufferevent *bev, void *arg)
 {
   auto handler = static_cast<ClientHandler*>(arg);
+  auto upstream = handler->get_upstream();
+  if(upstream) {
+    upstream->reset_timeouts();
+  }
 
   // We actually depend on write low-water mark == 0.
   if(handler->get_outbuf_length() > 0) {
@@ -71,7 +80,7 @@ void upstream_writecb(bufferevent *bev, void *arg)
     delete handler;
     return;
   }
-  auto upstream = handler->get_upstream();
+
   if(!upstream) {
     return;
   }
@@ -248,7 +257,7 @@ ClientHandler::ClientHandler(bufferevent *bev,
     CLOG(FATAL, this) << "bufferevent_add_to_rate_limit_group() failed";
   }
 
-  bufferevent_enable(bev_, EV_READ | EV_WRITE);
+  util::bev_enable_unless(bev_, EV_READ | EV_WRITE);
   bufferevent_setwatermark(bev_, EV_READ, 0, SHRPX_READ_WATERMARK);
   set_upstream_timeouts(&get_config()->upstream_read_timeout,
                         &get_config()->upstream_write_timeout);
@@ -290,7 +299,7 @@ ClientHandler::~ClientHandler()
 
   bufferevent_remove_from_rate_limit_group(bev_);
 
-  bufferevent_disable(bev_, EV_READ | EV_WRITE);
+  util::bev_disable_unless(bev_, EV_READ | EV_WRITE);
   bufferevent_free(bev_);
 
   if(ssl_) {

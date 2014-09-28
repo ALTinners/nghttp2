@@ -34,6 +34,7 @@
 #include "shrpx_connect_blocker.h"
 #include "http2.h"
 #include "util.h"
+#include "libevent_util.h"
 
 using namespace nghttp2;
 
@@ -41,12 +42,6 @@ namespace shrpx {
 
 namespace {
 const size_t OUTBUF_MAX_THRES = 64*1024;
-} // namespace
-
-// Workaround for the inability for Bufferevent to remove timeout from
-// bufferevent. Specify this long timeout instead of removing.
-namespace {
-timeval max_timeout = { 86400, 0 };
 } // namespace
 
 HttpDownstreamConnection::HttpDownstreamConnection
@@ -60,7 +55,7 @@ HttpDownstreamConnection::HttpDownstreamConnection
 HttpDownstreamConnection::~HttpDownstreamConnection()
 {
   if(bev_) {
-    bufferevent_disable(bev_, EV_READ | EV_WRITE);
+    util::bev_disable_unless(bev_, EV_READ | EV_WRITE);
     bufferevent_free(bev_);
   }
   // Downstream and DownstreamConnection may be deleted
@@ -133,16 +128,14 @@ int HttpDownstreamConnection::attach_downstream(Downstream *downstream)
   response_htp_.data = downstream_;
 
   bufferevent_setwatermark(bev_, EV_READ, 0, SHRPX_READ_WATERMARK);
-  bufferevent_enable(bev_, EV_READ);
+  util::bev_enable_unless(bev_, EV_READ);
   bufferevent_setcb(bev_,
                     upstream->get_downstream_readcb(),
                     upstream->get_downstream_writecb(),
                     upstream->get_downstream_eventcb(), this);
-  // HTTP request/response model, we first issue request to downstream
-  // server, so just enable write timeout here.
-  bufferevent_set_timeouts(bev_,
-                           &max_timeout,
-                           &get_config()->downstream_write_timeout);
+
+  reset_timeouts();
+
   return 0;
 }
 
@@ -228,7 +221,8 @@ int HttpDownstreamConnection::push_request_headers()
     http2::sanitize_header_value(hdrs, hdrs.size() - (*xff).value.size());
     hdrs += "\r\n";
   }
-  if(downstream_->get_request_method() != "CONNECT") {
+  if(!get_config()->http2_proxy && !get_config()->client_proxy &&
+     downstream_->get_request_method() != "CONNECT") {
     hdrs += "X-Forwarded-Proto: ";
     if(!downstream_->get_request_http2_scheme().empty()) {
       hdrs += downstream_->get_request_http2_scheme();
@@ -286,16 +280,6 @@ int HttpDownstreamConnection::push_request_headers()
   if(rv != 0) {
     return -1;
   }
-
-  // When downstream request is issued, set read timeout. We don't
-  // know when the request is completely received by the downstream
-  // server. This function may be called before that happens. Overall
-  // it does not cause problem for most of the time.  If the
-  // downstream server is too slow to recv/send, the connection will
-  // be dropped by read timeout.
-  bufferevent_set_timeouts(bev_,
-                           &get_config()->downstream_read_timeout,
-                           &get_config()->downstream_write_timeout);
 
   return 0;
 }
@@ -387,7 +371,7 @@ void HttpDownstreamConnection::detach_downstream(Downstream *downstream)
   }
   downstream_ = nullptr;
   ioctrl_.force_resume_read();
-  bufferevent_enable(bev_, EV_READ);
+  util::bev_enable_unless(bev_, EV_READ);
   bufferevent_setcb(bev_, 0, 0, idle_eventcb, this);
   // On idle state, just enable read timeout. Normally idle downstream
   // connection will get EOF from the downstream server and closed.
@@ -586,6 +570,8 @@ http_parser_settings htp_hooks = {
 
 int HttpDownstreamConnection::on_read()
 {
+  reset_timeouts();
+
   auto input = bufferevent_get_input(bev_);
 
   if(downstream_->get_upgraded()) {
@@ -650,6 +636,8 @@ int HttpDownstreamConnection::on_read()
 
 int HttpDownstreamConnection::on_write()
 {
+  reset_timeouts();
+
   auto upstream = downstream_->get_upstream();
   upstream->resume_read(SHRPX_NO_BUFFER, downstream_,
                         downstream_->get_request_datalen());
@@ -662,6 +650,13 @@ void HttpDownstreamConnection::on_upstream_change(Upstream *upstream)
                     upstream->get_downstream_readcb(),
                     upstream->get_downstream_writecb(),
                     upstream->get_downstream_eventcb(), this);
+}
+
+void HttpDownstreamConnection::reset_timeouts()
+{
+  bufferevent_set_timeouts(bev_,
+                           &get_config()->downstream_read_timeout,
+                           &get_config()->downstream_write_timeout);
 }
 
 } // namespace shrpx

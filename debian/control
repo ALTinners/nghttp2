@@ -5,7 +5,7 @@ Priority: optional
 Build-Depends: debhelper (>= 9), cdbs (>= 0.4.93~),
   autotools-dev, libtool, pkg-config,
   zlib1g-dev (>= 1.2.3), libssl-dev (>= 1.0.1), libxml2-dev (>= 2.7.7),
-  libevent-dev (>= 2.0.8), libpython-dev,
+  libevent-dev (>= 2.0.8), libpython-dev, libjemalloc-dev,
   python-sphinx
 Standards-Version: 3.9.5
 Homepage: http://tatsuhiro-t.github.io/nghttp2/

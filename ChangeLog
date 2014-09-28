@@ -1,31 +1,420 @@
-commit 0da0140026bf56937a02071af95cdf026c32bcd3
+commit 4e71e9e2e8e17cad3442e0926c003b2de988c9f2
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-09-11
+AuthorDate: 2014-09-28
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-09-11
+CommitDate: 2014-09-28
 
     Update man pages
 
-commit 207b1db6af1c8b02c061877550bcb68980fdfac2
+commit 521450c7ad6a61becee7759684e6e97acebe9688
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-28
+
+    Bump up version number to 0.6.2, LT revision to 6:0:1
+
+commit aa57e91e851230b7341f733f5c8e9a92cff9f08c
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-28
+
+    Fix `make distcheck`
+
+commit 4023c26cf1a721d48fe9eb8191637e2a6c0d85e3
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-28
+
+    Update doc
+
+commit a0f558ee3c2b2004253c784dd72ab4dfa611a7af
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-28
+
+    doc: Add example to use nghttp2::asio_http2::server::request::run_task
+
+commit 4f0d03b4b95857a919028f5cef8a0978400584fd
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-28
+
+    libnghttp2_asio: Move common types and functions to nghttp2::asio_http2 ns
+
+commit 88d7abcc2335651a8fe1ba811852c983cd2b4966
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-28
+
+    libnghttp2_asio: Add request::run_task to execute task in separate thread
+
+commit 409316018def52e45fa7abae12d6f7c771593de4
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-28
+
+    examples: Fix travis error: unreachable-code
+
+commit d25b9da9f6bc2becc91221e985c63b2e0313f7a2
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-27
+
+    Check Boost library only when it is requested
+
+commit b48ceac56c9bf5283ea17f48edf86f7ed7fe1106
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-27
+
+    nghttp2_hd: Search dynamic table first
+    
+    Since recently used headers are in dynamic header table, it is
+    advantageous to search dynamic table first, saving time to search
+    through static table.
+
+commit 34413d8d7caab10ab13d96e7afe4b227932c1dd1
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-27
+
+    examples: Build tiny-nghttpd only when epoll is available
+
+commit b7ccca4c471f19b3eab2570b0d8f1ce9e5f65e71
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-27
+
+    examples: Add tiny-nghttpd
+    
+    tiny-nghttpd is HTTP/2 server and its purpose is measure the
+    performance of nghttp2 library code.  Currently it only accepts direct
+    HTTP/2 connection only.
+
+commit e887b2516f8933728855d2218922a0c94f86bdbd
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-26
+
+    Remove boost LDFLAGS from examples
+
+commit be0f6dcaafaabdbe1eaefc0ee2d1d761059945a3
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-26
+
+    Clear 2 types of stream deferred flag indenpendently
+    
+    Previously when nghttp2_stream_resume_deferred_data() is called,
+    deferred flags in stream->flags are all cleared.  This is not ideal
+    because if application returned NGHTTP2_ERR_DEFERRED, and also that
+    stream is deferred by flow control, then all flags are cleared and
+    read callback will be invoked again.  This commit fixes this issue.
+    This changes error condition of nghttp2_session_resume_data().
+    Previously we return error if stream was deferred by flow control.
+    Now we don't return error in this case.  We just clear
+    NGHTTP2_FLAG_DEFERRED_USER and if still
+    NGHTTP2_FLAG_DEFERRED_FLOW_CONTROL is set, just return 0.
+
+commit 937bb9f768d8ff800cd9c907f36ab1142d328cc4
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-26
+
+    Update doc
+
+commit a11fbf6e2f207157755c2f7565a45a3ef3c745b4
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-26
+
+    Optimize connection level remote flow control
+    
+    Previously when connection level remote flow control window gets 0, we
+    mark the stream having DATA frame with
+    NGHTTP2_STREAM_FLAG_DEFERRED_FLOW_CONTROL.  When connection level
+    WINDOW_UPDATE is received, we checks all existing streams, including
+    closed ones, and call nghttp2_stream_resume_deferred_data().  The
+    profiler shows this is expensive.
+    
+    Now we prepare dedicated priority queue for DATA frames.  And we don't
+    mark stream with NGHTTP2_STREAM_FLAG_DEFERRED_FLOW_CONTROL when DATA
+    cannot be sent solely due to connection level flow control.  Instead,
+    we just queue DATA item to queue.  We won't pop DATA item from queue
+    when connection level remote window size is 0.  This way, we avoid the
+    expensive operation for all streams when WINDOW_UPDATE is arrived.
+
+commit 9aa914c756a4a752387f1a4f1b7bef4057e9fbc0
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-25
+
+    Update README.rst
+
+commit e20d2ba9c1e48a1cb2326f2ec9b66abe8800bdcb
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-25
+
+    nghttpx: Don't send x-forwarded-proto if -s or -p is used
+
+commit c1be28684ac38d6bad550212446df75df3ced66a
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-25
+
+    libnghttp2_asio: Add request::closed() to indicate that stream has been closed
+
+commit fd07f5e142b695627d60552ac77c19a957a9d74d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-24
+
+    src: Add utility APIs to asio_http2.h; add asio-sv2 example to serve files
+
+commit 99ca15cae0e8225cef425665d688e8e4580ac0c4
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-24
+
+    Lower boost version requirement to 1.54.0
+
+commit 3651467c71f520553edefcc1b31948adcf3c4cca
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-24
+
+    src: Silence compiler warning
+
+commit c27ec6f57b7d8844456c14a5721489071f5ec1a3
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-24
+
+    doc: Add doc how to enable multi threading in libnghttp2_asio
+
+commit 485d04851cfc3fb47937133fe22c62a7d0e9917a
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-24
+
+    Add libnghttp2_asio.pc to .gitignore
+
+commit 83728219db071cf765bf73823d5431b2ac093858
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-24
+
+    Update doc
+
+commit 5d0bf4cc8481ad8372993ea9f43c517071bbe9f5
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-24
+
+    Add C++ library libnghttp2_asio on top of libnghttp2
+    
+    The libnghttp2_asio library is C++ library built on top of libnghttp2.
+    Currently, it has server API and easily create HTTP/2 server using
+    node.js like API calls.  See the example server source code in
+    examples/asio-sv.cc.  The library depends on Boost::ASIO library.
+
+commit 446f8f13aab12de0f72764743e2ddd968350c6b8
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-24
+
+    src: Move libevent related helper functions to libevent_util
+
+commit 96bb9c2018ce1bdcce2abdf80cf6ca08e70e7055
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-24
+
+    Move Makefile.msvc under lib
+
+commit a9b74261b64b207bee0148e1b4e37f3959253154
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-19
+
+    nghttpd: Rewrite using bufferevent (again) for simplicity
+
+commit 89c3c085908440b1190463a6642d90c40f90add7
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-19
+
+    tests: Fix compiler warning
+
+commit 83309b6391450e3803de0c2541b92e5547096f94
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-18
+
+    nghttpx: Reduce epoll_ctl call
+
+commit 23dd428d65361ad2240d92de0b222ee283e8d08d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-18
+
+    nghttpx: Reset timeouts when either read or write succeeds
+    
+    See previous commit message why we need this.
+
+commit b305495a75ab112b7a3ca3f0662c59f00c589dbc
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-18
+
+    nghttpx: Reset both timeouts when either read or write succeeds
+    
+    Previously read and write timeouts work independently.  When we are
+    writing response to the client, read timeout still ticks (e.g., HTTP/2
+    or tunneled HTTPS connection).  So read timeout may occur during long
+    download.  This commit fixes this issue.  This commit only fixes the
+    upstream part.  We need similar fix for the downstream.
+
+commit 727662257c142efe644d0b673fbd4861054ccde3
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-17
+
+    Add missing NGHTTP2_ERR_BAD_PREFACE to nghttp2_strerror
+
+commit b2f88f8fe3d20bcc895a0a1f578a8c242f3882ff
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-17
+
+    Fix memory leak around stream->data_item
+    
+    Previously we missed the case where stream->data_item is not deleted
+    and it caused leak.  Now stream->data_item is properly deleted when
+    session is deleted.  We decided not to delete data_item in
+    nghttp2_stream_free() since we need nghttp2_session to decide whether
+    data_item should be deleted or not there.
+
+commit 44ac5710372f62d1b74c55ed5939f2076942e633
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-17
+
+    nghttpx: Add more handling situation where response ends before request
+
+commit 5bff48a15a0bf6f2d6f48eb10cb6839e5fcc662d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-17
+
+    nghttpx: Call upstream resume_read after sending pending request to backend
+    
+    With the combination of HTTP/1 upstream and HTTP/2 downstream,
+    downstream tells SHRPX_NO_BUFFER while connecting to the backend
+    server.  Previously, we did not call upstream resume_read and upload
+    was blocked.  This commit now calls upstream resume_read to unblock.
+    This commit also remove pending output buffer size of Http2Session
+    when calculating downstream connection's buffer is full.  This is
+    desirable since we only operate resume_read by stream basis.
+
+commit e4751a798a6aad9e73a610a15758103c23293858
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-16
+
+    Replace auto_delete* with defer
+
+commit 6fc12caa6d11f19b6d0e94890232cb74b6664343
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-14
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-14
+
+    Just link to github releases page for released versions
+
+commit d00d4d647d036371e9ac4f5ea2f9250a3cea544e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-14
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-14
+
+    Compile with android NDK r10b 32bit target
+    
+    Android does not have _Exit.  We detect this and use _exit instead.
+    clang-3.4 has an issue around undefined reference to
+    __atomic_fetch_add_4, so we stick to gcc-4.8 for now.
+
+commit 5ff73de1959e07ad29ecc035b8cc26e605adcf55
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-13
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-13
+
+    libevent-server: Use nghttp2_option_set_recv_client_preface()
+
+commit 901de5fbcea3ad1cbde9587011cc3d9da627bddd
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-09-13
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-09-13
+
+    Add nghttp2_option_set_recv_client_preface()
+    
+    By default, nghttp2 library only handles HTTP/2 frames and does not
+    recognize first 24 bytes of client connection preface. This design
+    choice is done due to the fact that server may want to detect the
+    application protocol based on first few bytes on clear text
+    communication. But for simple servers which only speak HTTP/2, it is
+    easier for developers if nghttp2 library takes care of client
+    connection preface.
+    
+    If this option is used with nonzero val, nghttp2 library checks first
+    24 bytes client connection preface. If it is not a valid one,
+    nghttp2_session_recv() and nghttp2_session_mem_recv() will return
+    error NGHTTP2_ERR_BAD_PREFACE, which is fatal error.
+
+commit 5847a56c402d2d96ac36f579829cce66b6ab3314
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
 AuthorDate: 2014-09-11
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
 CommitDate: 2014-09-11
 
-    Bump up version number to 0.6.1
-
-commit 85f605f20d6ba5ec51b1b2aae8d3c43d2445afa4
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-09-02
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-09-02
-
-    src: Check availability of ENONET
-
-commit 5cf07f5c2180d80e4e37b88e82f8f1a5150ca897
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-08-30
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-08-30
-
-    Bump up version number to 0.6.1-DEV
+    Bump up version number to 0.6.2-DEV

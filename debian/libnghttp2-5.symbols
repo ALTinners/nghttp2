@@ -139,6 +139,7 @@ libnghttp2.so.5 libnghttp2-5 #MINVER#
  nghttp2_option_new@libnghttp2.so.5 0.6.0
  nghttp2_option_set_no_auto_window_update@libnghttp2.so.5 0.6.0
  nghttp2_option_set_peer_max_concurrent_streams@libnghttp2.so.5 0.6.0
+ nghttp2_option_set_recv_client_preface@libnghttp2.so.5 0.6.2
  nghttp2_outbound_item_free@libnghttp2.so.5 0.6.0
  nghttp2_pack_settings_payload@libnghttp2.so.5 0.6.0
  nghttp2_pq_empty@libnghttp2.so.5 0.6.0

@@ -67,6 +67,7 @@
 #include "app_helper.h"
 #include "HtmlParser.h"
 #include "util.h"
+#include "libevent_util.h"
 #include "base64.h"
 #include "http2.h"
 #include "nghttp2_gzip.h"
@@ -1832,8 +1833,7 @@ int run(char **uris, int n)
   nghttp2_session_callbacks *callbacks;
 
   nghttp2_session_callbacks_new(&callbacks);
-  util::auto_delete<nghttp2_session_callbacks*> cbsdel
-    (callbacks, nghttp2_session_callbacks_del);
+  auto cbsdel = util::defer(callbacks, nghttp2_session_callbacks_del);
 
   nghttp2_session_callbacks_set_on_stream_close_callback
     (callbacks, on_stream_close_callback);

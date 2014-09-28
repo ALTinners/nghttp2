@@ -9,6 +9,18 @@
 /* Define to 1 if you have the <arpa/inet.h> header file. */
 #undef HAVE_ARPA_INET_H
 
+/* define if the Boost library is available */
+#undef HAVE_BOOST
+
+/* define if the Boost::ASIO library is available */
+#undef HAVE_BOOST_ASIO
+
+/* define if the Boost::System library is available */
+#undef HAVE_BOOST_SYSTEM
+
+/* define if the Boost::Thread library is available */
+#undef HAVE_BOOST_THREAD
+
 /* Define to 1 if you have the `clock_gettime`. */
 #undef HAVE_CLOCK_GETTIME
 
@@ -93,6 +105,9 @@
 
 /* Define to 1 if you have the <winsock2.h> header file. */
 #undef HAVE_WINSOCK2_H
+
+/* Define to 1 if you have the `_Exit' function. */
+#undef HAVE__EXIT
 
 /* Define to the sub-directory in which libtool stores uninstalled libraries.
    */

@@ -39,6 +39,7 @@
 #include "shrpx_worker_config.h"
 #include "shrpx_connect_blocker.h"
 #include "util.h"
+#include "libevent_util.h"
 
 using namespace nghttp2;
 
@@ -113,7 +114,7 @@ void Worker::run()
      http2session.get(),
      http1_connect_blocker.get());
 
-  bufferevent_enable(bev.get(), EV_READ);
+  util::bev_enable_unless(bev.get(), EV_READ);
   bufferevent_setcb(bev.get(), readcb, nullptr, eventcb, receiver.get());
 
   event_base_loop(evbase.get(), 0);

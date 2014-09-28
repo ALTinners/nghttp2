@@ -105,13 +105,21 @@ target_triplet = @target@
 @ENABLE_EXAMPLES_TRUE@noinst_PROGRAMS = client$(EXEEXT) \
 @ENABLE_EXAMPLES_TRUE@	libevent-client$(EXEEXT) \
 @ENABLE_EXAMPLES_TRUE@	libevent-server$(EXEEXT) \
-@ENABLE_EXAMPLES_TRUE@	deflate$(EXEEXT)
+@ENABLE_EXAMPLES_TRUE@	deflate$(EXEEXT) $(am__EXEEXT_1) \
+@ENABLE_EXAMPLES_TRUE@	$(am__EXEEXT_2)
+@ENABLE_EXAMPLES_TRUE@@HAVE_EPOLL_TRUE@am__append_1 = tiny-nghttpd
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@am__append_2 = asio-sv asio-sv2 asio-sv3
 subdir = examples
 DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/Makefile.am \
 	$(top_srcdir)/depcomp
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/m4/ax_check_compile_flag.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/m4/ax_boost_asio.m4 \
+	$(top_srcdir)/m4/ax_boost_base.m4 \
+	$(top_srcdir)/m4/ax_boost_system.m4 \
+	$(top_srcdir)/m4/ax_boost_thread.m4 \
+	$(top_srcdir)/m4/ax_check_compile_flag.m4 \
 	$(top_srcdir)/m4/ax_cxx_compile_stdcxx_11.m4 \
+	$(top_srcdir)/m4/ax_have_epoll.m4 \
 	$(top_srcdir)/m4/ax_python_devel.m4 \
 	$(top_srcdir)/m4/libtool.m4 $(top_srcdir)/m4/ltoptions.m4 \
 	$(top_srcdir)/m4/ltsugar.m4 $(top_srcdir)/m4/ltversion.m4 \
@@ -122,7 +130,41 @@ mkinstalldirs = $(install_sh) -d
 CONFIG_HEADER = $(top_builddir)/config.h
 CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
+@ENABLE_EXAMPLES_TRUE@@HAVE_EPOLL_TRUE@am__EXEEXT_1 =  \
+@ENABLE_EXAMPLES_TRUE@@HAVE_EPOLL_TRUE@	tiny-nghttpd$(EXEEXT)
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@am__EXEEXT_2 =  \
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@	asio-sv$(EXEEXT) \
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@	asio-sv2$(EXEEXT) \
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@	asio-sv3$(EXEEXT)
 PROGRAMS = $(noinst_PROGRAMS)
+am__asio_sv_SOURCES_DIST = asio-sv.cc
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@am_asio_sv_OBJECTS = asio_sv-asio-sv.$(OBJEXT)
+asio_sv_OBJECTS = $(am_asio_sv_OBJECTS)
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@asio_sv_DEPENDENCIES =  \
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@	$(ASIOLDADD)
+AM_V_lt = $(am__v_lt_@AM_V@)
+am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
+am__v_lt_0 = --silent
+am__v_lt_1 = 
+asio_sv_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) \
+	$(LIBTOOLFLAGS) --mode=link $(CXXLD) $(AM_CXXFLAGS) \
+	$(CXXFLAGS) $(asio_sv_LDFLAGS) $(LDFLAGS) -o $@
+am__asio_sv2_SOURCES_DIST = asio-sv2.cc
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@am_asio_sv2_OBJECTS = asio_sv2-asio-sv2.$(OBJEXT)
+asio_sv2_OBJECTS = $(am_asio_sv2_OBJECTS)
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@asio_sv2_DEPENDENCIES =  \
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@	$(ASIOLDADD)
+asio_sv2_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) \
+	$(LIBTOOLFLAGS) --mode=link $(CXXLD) $(AM_CXXFLAGS) \
+	$(CXXFLAGS) $(asio_sv2_LDFLAGS) $(LDFLAGS) -o $@
+am__asio_sv3_SOURCES_DIST = asio-sv3.cc
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@am_asio_sv3_OBJECTS = asio_sv3-asio-sv3.$(OBJEXT)
+asio_sv3_OBJECTS = $(am_asio_sv3_OBJECTS)
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@asio_sv3_DEPENDENCIES =  \
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@	$(ASIOLDADD)
+asio_sv3_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) \
+	$(LIBTOOLFLAGS) --mode=link $(CXXLD) $(AM_CXXFLAGS) \
+	$(CXXFLAGS) $(asio_sv3_LDFLAGS) $(LDFLAGS) -o $@
 am__client_SOURCES_DIST = client.c
 @ENABLE_EXAMPLES_TRUE@am_client_OBJECTS = client.$(OBJEXT)
 client_OBJECTS = $(am_client_OBJECTS)
@@ -130,10 +172,6 @@ client_LDADD = $(LDADD)
 @ENABLE_EXAMPLES_TRUE@client_DEPENDENCIES =  \
 @ENABLE_EXAMPLES_TRUE@	$(top_builddir)/lib/libnghttp2.la \
 @ENABLE_EXAMPLES_TRUE@	$(top_builddir)/third-party/libhttp-parser.la
-AM_V_lt = $(am__v_lt_@AM_V@)
-am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
-am__v_lt_0 = --silent
-am__v_lt_1 = 
 am__deflate_SOURCES_DIST = deflate.c
 @ENABLE_EXAMPLES_TRUE@am_deflate_OBJECTS = deflate.$(OBJEXT)
 deflate_OBJECTS = $(am_deflate_OBJECTS)
@@ -155,6 +193,14 @@ am__libevent_server_SOURCES_DIST = libevent-server.c
 libevent_server_OBJECTS = $(am_libevent_server_OBJECTS)
 libevent_server_LDADD = $(LDADD)
 @ENABLE_EXAMPLES_TRUE@libevent_server_DEPENDENCIES =  \
+@ENABLE_EXAMPLES_TRUE@	$(top_builddir)/lib/libnghttp2.la \
+@ENABLE_EXAMPLES_TRUE@	$(top_builddir)/third-party/libhttp-parser.la
+am__tiny_nghttpd_SOURCES_DIST = tiny-nghttpd.c
+@ENABLE_EXAMPLES_TRUE@@HAVE_EPOLL_TRUE@am_tiny_nghttpd_OBJECTS =  \
+@ENABLE_EXAMPLES_TRUE@@HAVE_EPOLL_TRUE@	tiny-nghttpd.$(OBJEXT)
+tiny_nghttpd_OBJECTS = $(am_tiny_nghttpd_OBJECTS)
+tiny_nghttpd_LDADD = $(LDADD)
+@ENABLE_EXAMPLES_TRUE@tiny_nghttpd_DEPENDENCIES =  \
 @ENABLE_EXAMPLES_TRUE@	$(top_builddir)/lib/libnghttp2.la \
 @ENABLE_EXAMPLES_TRUE@	$(top_builddir)/third-party/libhttp-parser.la
 AM_V_P = $(am__v_P_@AM_V@)
@@ -191,11 +237,34 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
-SOURCES = $(client_SOURCES) $(deflate_SOURCES) \
-	$(libevent_client_SOURCES) $(libevent_server_SOURCES)
-DIST_SOURCES = $(am__client_SOURCES_DIST) $(am__deflate_SOURCES_DIST) \
+CXXCOMPILE = $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) \
+	$(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS)
+LTCXXCOMPILE = $(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) \
+	$(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) \
+	$(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) \
+	$(AM_CXXFLAGS) $(CXXFLAGS)
+AM_V_CXX = $(am__v_CXX_@AM_V@)
+am__v_CXX_ = $(am__v_CXX_@AM_DEFAULT_V@)
+am__v_CXX_0 = @echo "  CXX     " $@;
+am__v_CXX_1 = 
+CXXLD = $(CXX)
+CXXLINK = $(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) \
+	$(LIBTOOLFLAGS) --mode=link $(CXXLD) $(AM_CXXFLAGS) \
+	$(CXXFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o $@
+AM_V_CXXLD = $(am__v_CXXLD_@AM_V@)
+am__v_CXXLD_ = $(am__v_CXXLD_@AM_DEFAULT_V@)
+am__v_CXXLD_0 = @echo "  CXXLD   " $@;
+am__v_CXXLD_1 = 
+SOURCES = $(asio_sv_SOURCES) $(asio_sv2_SOURCES) $(asio_sv3_SOURCES) \
+	$(client_SOURCES) $(deflate_SOURCES) \
+	$(libevent_client_SOURCES) $(libevent_server_SOURCES) \
+	$(tiny_nghttpd_SOURCES)
+DIST_SOURCES = $(am__asio_sv_SOURCES_DIST) \
+	$(am__asio_sv2_SOURCES_DIST) $(am__asio_sv3_SOURCES_DIST) \
+	$(am__client_SOURCES_DIST) $(am__deflate_SOURCES_DIST) \
 	$(am__libevent_client_SOURCES_DIST) \
-	$(am__libevent_server_SOURCES_DIST)
+	$(am__libevent_server_SOURCES_DIST) \
+	$(am__tiny_nghttpd_SOURCES_DIST)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -229,6 +298,11 @@ AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
 AWK = @AWK@
+BOOST_ASIO_LIB = @BOOST_ASIO_LIB@
+BOOST_CPPFLAGS = @BOOST_CPPFLAGS@
+BOOST_LDFLAGS = @BOOST_LDFLAGS@
+BOOST_SYSTEM_LIB = @BOOST_SYSTEM_LIB@
+BOOST_THREAD_LIB = @BOOST_THREAD_LIB@
 CC = @CC@
 CCDEPMODE = @CCDEPMODE@
 CFLAGS = @CFLAGS@
@@ -389,6 +463,7 @@ top_srcdir = @top_srcdir@
 @ENABLE_EXAMPLES_TRUE@	-Wall \
 @ENABLE_EXAMPLES_TRUE@	-I$(top_srcdir)/lib/includes \
 @ENABLE_EXAMPLES_TRUE@	-I$(top_builddir)/lib/includes \
+@ENABLE_EXAMPLES_TRUE@	-I$(top_srcdir)/src/includes \
 @ENABLE_EXAMPLES_TRUE@	-I$(top_srcdir)/third-party \
 @ENABLE_EXAMPLES_TRUE@	@LIBEVENT_OPENSSL_CFLAGS@ \
 @ENABLE_EXAMPLES_TRUE@	@OPENSSL_CFLAGS@ \
@@ -406,10 +481,26 @@ top_srcdir = @top_srcdir@
 @ENABLE_EXAMPLES_TRUE@libevent_client_SOURCES = libevent-client.c
 @ENABLE_EXAMPLES_TRUE@libevent_server_SOURCES = libevent-server.c
 @ENABLE_EXAMPLES_TRUE@deflate_SOURCES = deflate.c
+@ENABLE_EXAMPLES_TRUE@@HAVE_EPOLL_TRUE@tiny_nghttpd_SOURCES = tiny-nghttpd.c
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@ASIOCPPFLAGS = ${BOOST_CPPFLAGS} ${AM_CPPFLAGS}
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@ASIOLDFLAGS = @JEMALLOC_LIBS@
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@ASIOLDADD = $(top_builddir)/src/libnghttp2_asio.la
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@asio_sv_SOURCES = asio-sv.cc
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@asio_sv_CPPFLAGS = ${ASIOCPPFLAGS}
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@asio_sv_LDFLAGS = ${ASIOLDFLAGS}
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@asio_sv_LDADD = ${ASIOLDADD}
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@asio_sv2_SOURCES = asio-sv2.cc
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@asio_sv2_CPPFLAGS = ${ASIOCPPFLAGS}
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@asio_sv2_LDFLAGS = ${ASIOLDFLAGS}
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@asio_sv2_LDADD = ${ASIOLDADD}
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@asio_sv3_SOURCES = asio-sv3.cc
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@asio_sv3_CPPFLAGS = ${ASIOCPPFLAGS}
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@asio_sv3_LDFLAGS = ${ASIOLDFLAGS}
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@asio_sv3_LDADD = ${ASIOLDADD}
 all: all-am
 
 .SUFFIXES:
-.SUFFIXES: .c .lo .o .obj
+.SUFFIXES: .c .cc .lo .o .obj
 $(srcdir)/Makefile.in:  $(srcdir)/Makefile.am  $(am__configure_deps)
 	@for dep in $?; do \
 	  case '$(am__configure_deps)' in \
@@ -450,6 +541,18 @@ clean-noinstPROGRAMS:
 	echo " rm -f" $$list; \
 	rm -f $$list
 
+asio-sv$(EXEEXT): $(asio_sv_OBJECTS) $(asio_sv_DEPENDENCIES) $(EXTRA_asio_sv_DEPENDENCIES) 
+	@rm -f asio-sv$(EXEEXT)
+	$(AM_V_CXXLD)$(asio_sv_LINK) $(asio_sv_OBJECTS) $(asio_sv_LDADD) $(LIBS)
+
+asio-sv2$(EXEEXT): $(asio_sv2_OBJECTS) $(asio_sv2_DEPENDENCIES) $(EXTRA_asio_sv2_DEPENDENCIES) 
+	@rm -f asio-sv2$(EXEEXT)
+	$(AM_V_CXXLD)$(asio_sv2_LINK) $(asio_sv2_OBJECTS) $(asio_sv2_LDADD) $(LIBS)
+
+asio-sv3$(EXEEXT): $(asio_sv3_OBJECTS) $(asio_sv3_DEPENDENCIES) $(EXTRA_asio_sv3_DEPENDENCIES) 
+	@rm -f asio-sv3$(EXEEXT)
+	$(AM_V_CXXLD)$(asio_sv3_LINK) $(asio_sv3_OBJECTS) $(asio_sv3_LDADD) $(LIBS)
+
 client$(EXEEXT): $(client_OBJECTS) $(client_DEPENDENCIES) $(EXTRA_client_DEPENDENCIES) 
 	@rm -f client$(EXEEXT)
 	$(AM_V_CCLD)$(LINK) $(client_OBJECTS) $(client_LDADD) $(LIBS)
@@ -466,16 +569,24 @@ libevent-server$(EXEEXT): $(libevent_server_OBJECTS) $(libevent_server_DEPENDENC
 	@rm -f libevent-server$(EXEEXT)
 	$(AM_V_CCLD)$(LINK) $(libevent_server_OBJECTS) $(libevent_server_LDADD) $(LIBS)
 
+tiny-nghttpd$(EXEEXT): $(tiny_nghttpd_OBJECTS) $(tiny_nghttpd_DEPENDENCIES) $(EXTRA_tiny_nghttpd_DEPENDENCIES) 
+	@rm -f tiny-nghttpd$(EXEEXT)
+	$(AM_V_CCLD)$(LINK) $(tiny_nghttpd_OBJECTS) $(tiny_nghttpd_LDADD) $(LIBS)
+
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
 
 distclean-compile:
 	-rm -f *.tab.c
 
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/asio_sv-asio-sv.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/asio_sv2-asio-sv2.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/asio_sv3-asio-sv3.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/client.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/deflate.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libevent-client.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libevent-server.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/tiny-nghttpd.Po@am__quote@
 
 .c.o:
 @am__fastdepCC_TRUE@	$(AM_V_CC)depbase=`echo $@ | sed 's|[^/]*$$|$(DEPDIR)/&|;s|\.o$$||'`;\
@@ -500,6 +611,72 @@ distclean-compile:
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='$<' object='$@' libtool=yes @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LTCOMPILE) -c -o $@ $<
+
+.cc.o:
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)depbase=`echo $@ | sed 's|[^/]*$$|$(DEPDIR)/&|;s|\.o$$||'`;\
+@am__fastdepCXX_TRUE@	$(CXXCOMPILE) -MT $@ -MD -MP -MF $$depbase.Tpo -c -o $@ $< &&\
+@am__fastdepCXX_TRUE@	$(am__mv) $$depbase.Tpo $$depbase.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='$<' object='$@' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXXCOMPILE) -c -o $@ $<
+
+.cc.obj:
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)depbase=`echo $@ | sed 's|[^/]*$$|$(DEPDIR)/&|;s|\.obj$$||'`;\
+@am__fastdepCXX_TRUE@	$(CXXCOMPILE) -MT $@ -MD -MP -MF $$depbase.Tpo -c -o $@ `$(CYGPATH_W) '$<'` &&\
+@am__fastdepCXX_TRUE@	$(am__mv) $$depbase.Tpo $$depbase.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='$<' object='$@' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXXCOMPILE) -c -o $@ `$(CYGPATH_W) '$<'`
+
+.cc.lo:
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)depbase=`echo $@ | sed 's|[^/]*$$|$(DEPDIR)/&|;s|\.lo$$||'`;\
+@am__fastdepCXX_TRUE@	$(LTCXXCOMPILE) -MT $@ -MD -MP -MF $$depbase.Tpo -c -o $@ $< &&\
+@am__fastdepCXX_TRUE@	$(am__mv) $$depbase.Tpo $$depbase.Plo
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='$<' object='$@' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(LTCXXCOMPILE) -c -o $@ $<
+
+asio_sv-asio-sv.o: asio-sv.cc
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(asio_sv_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT asio_sv-asio-sv.o -MD -MP -MF $(DEPDIR)/asio_sv-asio-sv.Tpo -c -o asio_sv-asio-sv.o `test -f 'asio-sv.cc' || echo '$(srcdir)/'`asio-sv.cc
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/asio_sv-asio-sv.Tpo $(DEPDIR)/asio_sv-asio-sv.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='asio-sv.cc' object='asio_sv-asio-sv.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(asio_sv_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o asio_sv-asio-sv.o `test -f 'asio-sv.cc' || echo '$(srcdir)/'`asio-sv.cc
+
+asio_sv-asio-sv.obj: asio-sv.cc
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(asio_sv_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT asio_sv-asio-sv.obj -MD -MP -MF $(DEPDIR)/asio_sv-asio-sv.Tpo -c -o asio_sv-asio-sv.obj `if test -f 'asio-sv.cc'; then $(CYGPATH_W) 'asio-sv.cc'; else $(CYGPATH_W) '$(srcdir)/asio-sv.cc'; fi`
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/asio_sv-asio-sv.Tpo $(DEPDIR)/asio_sv-asio-sv.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='asio-sv.cc' object='asio_sv-asio-sv.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(asio_sv_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o asio_sv-asio-sv.obj `if test -f 'asio-sv.cc'; then $(CYGPATH_W) 'asio-sv.cc'; else $(CYGPATH_W) '$(srcdir)/asio-sv.cc'; fi`
+
+asio_sv2-asio-sv2.o: asio-sv2.cc
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(asio_sv2_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT asio_sv2-asio-sv2.o -MD -MP -MF $(DEPDIR)/asio_sv2-asio-sv2.Tpo -c -o asio_sv2-asio-sv2.o `test -f 'asio-sv2.cc' || echo '$(srcdir)/'`asio-sv2.cc
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/asio_sv2-asio-sv2.Tpo $(DEPDIR)/asio_sv2-asio-sv2.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='asio-sv2.cc' object='asio_sv2-asio-sv2.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(asio_sv2_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o asio_sv2-asio-sv2.o `test -f 'asio-sv2.cc' || echo '$(srcdir)/'`asio-sv2.cc
+
+asio_sv2-asio-sv2.obj: asio-sv2.cc
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(asio_sv2_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT asio_sv2-asio-sv2.obj -MD -MP -MF $(DEPDIR)/asio_sv2-asio-sv2.Tpo -c -o asio_sv2-asio-sv2.obj `if test -f 'asio-sv2.cc'; then $(CYGPATH_W) 'asio-sv2.cc'; else $(CYGPATH_W) '$(srcdir)/asio-sv2.cc'; fi`
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/asio_sv2-asio-sv2.Tpo $(DEPDIR)/asio_sv2-asio-sv2.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='asio-sv2.cc' object='asio_sv2-asio-sv2.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(asio_sv2_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o asio_sv2-asio-sv2.obj `if test -f 'asio-sv2.cc'; then $(CYGPATH_W) 'asio-sv2.cc'; else $(CYGPATH_W) '$(srcdir)/asio-sv2.cc'; fi`
+
+asio_sv3-asio-sv3.o: asio-sv3.cc
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(asio_sv3_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT asio_sv3-asio-sv3.o -MD -MP -MF $(DEPDIR)/asio_sv3-asio-sv3.Tpo -c -o asio_sv3-asio-sv3.o `test -f 'asio-sv3.cc' || echo '$(srcdir)/'`asio-sv3.cc
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/asio_sv3-asio-sv3.Tpo $(DEPDIR)/asio_sv3-asio-sv3.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='asio-sv3.cc' object='asio_sv3-asio-sv3.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(asio_sv3_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o asio_sv3-asio-sv3.o `test -f 'asio-sv3.cc' || echo '$(srcdir)/'`asio-sv3.cc
+
+asio_sv3-asio-sv3.obj: asio-sv3.cc
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(asio_sv3_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT asio_sv3-asio-sv3.obj -MD -MP -MF $(DEPDIR)/asio_sv3-asio-sv3.Tpo -c -o asio_sv3-asio-sv3.obj `if test -f 'asio-sv3.cc'; then $(CYGPATH_W) 'asio-sv3.cc'; else $(CYGPATH_W) '$(srcdir)/asio-sv3.cc'; fi`
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/asio_sv3-asio-sv3.Tpo $(DEPDIR)/asio_sv3-asio-sv3.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='asio-sv3.cc' object='asio_sv3-asio-sv3.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(asio_sv3_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o asio_sv3-asio-sv3.obj `if test -f 'asio-sv3.cc'; then $(CYGPATH_W) 'asio-sv3.cc'; else $(CYGPATH_W) '$(srcdir)/asio-sv3.cc'; fi`
 
 mostlyclean-libtool:
 	-rm -f *.lo

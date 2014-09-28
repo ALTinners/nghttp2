@@ -34,6 +34,7 @@
 #include "shrpx_upstream.h"
 #include "shrpx_downstream_queue.h"
 #include "util.h"
+#include "libevent_util.h"
 
 namespace shrpx {
 
@@ -71,6 +72,8 @@ public:
   virtual int on_downstream_body(Downstream *downstream,
                                  const uint8_t *data, size_t len, bool flush);
   virtual int on_downstream_body_complete(Downstream *downstream);
+
+  virtual void reset_timeouts();
 
   bool get_flow_control() const;
 
