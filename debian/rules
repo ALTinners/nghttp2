@@ -3,6 +3,7 @@
 include /usr/share/cdbs/1/rules/debhelper.mk
 #include /usr/share/cdbs/1/rules/autoreconf.mk
 include /usr/share/cdbs/1/class/autotools.mk
+include /usr/share/cdbs/1/rules/patchsys-quilt.mk
 
 DEB_DBG_PACKAGE_libnghttp2-5 = libnghttp2-5-dbg
 
