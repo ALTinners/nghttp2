@@ -1,3 +1,10 @@
+nghttp2 (0.6.3-1) unstable; urgency=medium
+
+  * New upstream release (Closes: #763906, #750616)
+  * Removed debian/patches/path_max.patch applied upstream
+
+ -- Dave Beckett <dajobe@debian.org>  Fri, 10 Oct 2014 09:12:15 -0700
+
 nghttp2 (0.6.2-2) unstable; urgency=medium
 
   * debian/rules: Add quilt for patching

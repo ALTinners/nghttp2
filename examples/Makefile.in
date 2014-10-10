@@ -107,7 +107,7 @@ target_triplet = @target@
 @ENABLE_EXAMPLES_TRUE@	libevent-server$(EXEEXT) \
 @ENABLE_EXAMPLES_TRUE@	deflate$(EXEEXT) $(am__EXEEXT_1) \
 @ENABLE_EXAMPLES_TRUE@	$(am__EXEEXT_2)
-@ENABLE_EXAMPLES_TRUE@@HAVE_EPOLL_TRUE@am__append_1 = tiny-nghttpd
+@ENABLE_EXAMPLES_TRUE@@ENABLE_TINY_NGHTTPD_TRUE@am__append_1 = tiny-nghttpd
 @ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@am__append_2 = asio-sv asio-sv2 asio-sv3
 subdir = examples
 DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/Makefile.am \
@@ -130,8 +130,7 @@ mkinstalldirs = $(install_sh) -d
 CONFIG_HEADER = $(top_builddir)/config.h
 CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
-@ENABLE_EXAMPLES_TRUE@@HAVE_EPOLL_TRUE@am__EXEEXT_1 =  \
-@ENABLE_EXAMPLES_TRUE@@HAVE_EPOLL_TRUE@	tiny-nghttpd$(EXEEXT)
+@ENABLE_EXAMPLES_TRUE@@ENABLE_TINY_NGHTTPD_TRUE@am__EXEEXT_1 = tiny-nghttpd$(EXEEXT)
 @ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@am__EXEEXT_2 =  \
 @ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@	asio-sv$(EXEEXT) \
 @ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@	asio-sv2$(EXEEXT) \
@@ -196,8 +195,7 @@ libevent_server_LDADD = $(LDADD)
 @ENABLE_EXAMPLES_TRUE@	$(top_builddir)/lib/libnghttp2.la \
 @ENABLE_EXAMPLES_TRUE@	$(top_builddir)/third-party/libhttp-parser.la
 am__tiny_nghttpd_SOURCES_DIST = tiny-nghttpd.c
-@ENABLE_EXAMPLES_TRUE@@HAVE_EPOLL_TRUE@am_tiny_nghttpd_OBJECTS =  \
-@ENABLE_EXAMPLES_TRUE@@HAVE_EPOLL_TRUE@	tiny-nghttpd.$(OBJEXT)
+@ENABLE_EXAMPLES_TRUE@@ENABLE_TINY_NGHTTPD_TRUE@am_tiny_nghttpd_OBJECTS = tiny-nghttpd.$(OBJEXT)
 tiny_nghttpd_OBJECTS = $(am_tiny_nghttpd_OBJECTS)
 tiny_nghttpd_LDADD = $(LDADD)
 @ENABLE_EXAMPLES_TRUE@tiny_nghttpd_DEPENDENCIES =  \
@@ -481,7 +479,7 @@ top_srcdir = @top_srcdir@
 @ENABLE_EXAMPLES_TRUE@libevent_client_SOURCES = libevent-client.c
 @ENABLE_EXAMPLES_TRUE@libevent_server_SOURCES = libevent-server.c
 @ENABLE_EXAMPLES_TRUE@deflate_SOURCES = deflate.c
-@ENABLE_EXAMPLES_TRUE@@HAVE_EPOLL_TRUE@tiny_nghttpd_SOURCES = tiny-nghttpd.c
+@ENABLE_EXAMPLES_TRUE@@ENABLE_TINY_NGHTTPD_TRUE@tiny_nghttpd_SOURCES = tiny-nghttpd.c
 @ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@ASIOCPPFLAGS = ${BOOST_CPPFLAGS} ${AM_CPPFLAGS}
 @ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@ASIOLDFLAGS = @JEMALLOC_LIBS@
 @ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@ASIOLDADD = $(top_builddir)/src/libnghttp2_asio.la

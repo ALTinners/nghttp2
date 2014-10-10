@@ -34,9 +34,11 @@ libnghttp2.so.5 libnghttp2-5 #MINVER#
  nghttp2_check_header_value@libnghttp2.so.5 0.6.0
  nghttp2_cpymem@libnghttp2.so.5 0.6.0
  nghttp2_downcase@libnghttp2.so.5 0.6.0
+ nghttp2_enable_strict_first_settings_check@libnghttp2.so.5 0.6.3
  nghttp2_frame_add_pad@libnghttp2.so.5 0.6.0
  nghttp2_frame_altsvc_free@libnghttp2.so.5 0.6.0
  nghttp2_frame_altsvc_init@libnghttp2.so.5 0.6.0
+ nghttp2_frame_data_free@libnghttp2.so.5 0.6.3
  nghttp2_frame_data_init@libnghttp2.so.5 0.6.0
  nghttp2_frame_goaway_free@libnghttp2.so.5 0.6.0
  nghttp2_frame_goaway_init@libnghttp2.so.5 0.6.0
@@ -44,7 +46,6 @@ libnghttp2.so.5 libnghttp2-5 #MINVER#
  nghttp2_frame_headers_free@libnghttp2.so.5 0.6.0
  nghttp2_frame_headers_init@libnghttp2.so.5 0.6.0
  nghttp2_frame_headers_payload_nv_offset@libnghttp2.so.5 0.6.0
- nghttp2_frame_is_data_frame@libnghttp2.so.5 0.6.0
  nghttp2_frame_iv_copy@libnghttp2.so.5 0.6.0
  nghttp2_frame_pack_altsvc@libnghttp2.so.5 0.6.0
  nghttp2_frame_pack_frame_hd@libnghttp2.so.5 0.6.0
@@ -63,8 +64,6 @@ libnghttp2.so.5 libnghttp2-5 #MINVER#
  nghttp2_frame_priority_free@libnghttp2.so.5 0.6.0
  nghttp2_frame_priority_init@libnghttp2.so.5 0.6.0
  nghttp2_frame_priority_len@libnghttp2.so.5 0.6.0
- nghttp2_frame_private_data_free@libnghttp2.so.5 0.6.0
- nghttp2_frame_private_data_init@libnghttp2.so.5 0.6.0
  nghttp2_frame_push_promise_free@libnghttp2.so.5 0.6.0
  nghttp2_frame_push_promise_init@libnghttp2.so.5 0.6.0
  nghttp2_frame_rst_stream_free@libnghttp2.so.5 0.6.0
@@ -164,8 +163,8 @@ libnghttp2.so.5 libnghttp2-5 #MINVER#
  nghttp2_queue_push@libnghttp2.so.5 0.6.0
  nghttp2_reserve_buffer@libnghttp2.so.5 0.6.0
  nghttp2_select_next_protocol@libnghttp2.so.5 0.6.0
- nghttp2_session_add_frame@libnghttp2.so.5 0.6.0
  nghttp2_session_add_goaway@libnghttp2.so.5 0.6.0
+ nghttp2_session_add_item@libnghttp2.so.5 0.6.3
  nghttp2_session_add_ping@libnghttp2.so.5 0.6.0
  nghttp2_session_add_rst_stream@libnghttp2.so.5 0.6.0
  nghttp2_session_add_settings@libnghttp2.so.5 0.6.0
@@ -230,6 +229,7 @@ libnghttp2.so.5 libnghttp2-5 #MINVER#
  nghttp2_session_on_settings_received@libnghttp2.so.5 0.6.0
  nghttp2_session_on_window_update_received@libnghttp2.so.5 0.6.0
  nghttp2_session_open_stream@libnghttp2.so.5 0.6.0
+ nghttp2_session_outbound_item_init@libnghttp2.so.5 0.6.3
  nghttp2_session_pack_data@libnghttp2.so.5 0.6.0
  nghttp2_session_pop_next_ob_item@libnghttp2.so.5 0.6.0
  nghttp2_session_recv@libnghttp2.so.5 0.6.0
@@ -291,3 +291,4 @@ libnghttp2.so.5 libnghttp2-5 #MINVER#
  nghttp2_submit_settings@libnghttp2.so.5 0.6.0
  nghttp2_submit_window_update@libnghttp2.so.5 0.6.0
  nghttp2_version@libnghttp2.so.5 0.6.0
+ static_table_index@libnghttp2.so.5 0.6.3
