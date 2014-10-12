@@ -1,3 +1,11 @@
+nghttp2 (0.6.3-2) unstable; urgency=medium
+
+  * Standards-Version: 3.9.6
+  * Disable dependency and use of jemalloc on hurd since it's broken
+    there, and an upstream recommendation not requirement.
+
+ -- Dave Beckett <dajobe@debian.org>  Sun, 12 Oct 2014 13:21:05 -0700
+
 nghttp2 (0.6.3-1) unstable; urgency=medium
 
   * New upstream release (Closes: #763906, #750616)

@@ -11,8 +11,11 @@ DEB_CONFIGURE_EXTRA_FLAGS += --libdir=\$${prefix}/lib/$(DEB_HOST_MULTIARCH) \
   --bindir=\$${prefix}/bin/$(DEB_HOST_MULTIARCH) \
   --disable-failmalloc \
   --with-libxml2=yes \
-  --with-jemalloc=yes \
   --with-spdylay=no
+
+ifneq (,$(filter hurd-%,$(DEB_BUILD_ARCH)))
+  DEB_CONFIGURE_EXTRA_FLAGS += --with-jemalloc=yes
+endif
 
 LDFLAGS += -Wl,--default-symver
 
