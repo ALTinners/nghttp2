@@ -158,7 +158,9 @@ am__libnghttpx_a_SOURCES_DIST = util.cc util.h http2.cc http2.h \
 	shrpx_thread_event_receiver.h shrpx_worker.cc shrpx_worker.h \
 	shrpx_worker_config.cc shrpx_worker_config.h \
 	shrpx_connect_blocker.cc shrpx_connect_blocker.h \
-	shrpx_spdy_upstream.cc shrpx_spdy_upstream.h
+	shrpx_downstream_connection_pool.cc \
+	shrpx_downstream_connection_pool.h shrpx_spdy_upstream.cc \
+	shrpx_spdy_upstream.h
 @ENABLE_APP_TRUE@@HAVE_SPDYLAY_TRUE@am__objects_1 = shrpx_spdy_upstream.$(OBJEXT)
 @ENABLE_APP_TRUE@am__objects_2 = util.$(OBJEXT) http2.$(OBJEXT) \
 @ENABLE_APP_TRUE@	timegm.$(OBJEXT) libevent_util.$(OBJEXT) \
@@ -181,6 +183,7 @@ am__libnghttpx_a_SOURCES_DIST = util.cc util.h http2.cc http2.h \
 @ENABLE_APP_TRUE@	shrpx_worker.$(OBJEXT) \
 @ENABLE_APP_TRUE@	shrpx_worker_config.$(OBJEXT) \
 @ENABLE_APP_TRUE@	shrpx_connect_blocker.$(OBJEXT) \
+@ENABLE_APP_TRUE@	shrpx_downstream_connection_pool.$(OBJEXT) \
 @ENABLE_APP_TRUE@	$(am__objects_1)
 @ENABLE_APP_TRUE@am_libnghttpx_a_OBJECTS = $(am__objects_2)
 libnghttpx_a_OBJECTS = $(am_libnghttpx_a_OBJECTS)
@@ -900,7 +903,10 @@ LDADD = \
 @ENABLE_APP_TRUE@	shrpx_worker.h shrpx_worker_config.cc \
 @ENABLE_APP_TRUE@	shrpx_worker_config.h \
 @ENABLE_APP_TRUE@	shrpx_connect_blocker.cc \
-@ENABLE_APP_TRUE@	shrpx_connect_blocker.h $(am__append_4)
+@ENABLE_APP_TRUE@	shrpx_connect_blocker.h \
+@ENABLE_APP_TRUE@	shrpx_downstream_connection_pool.cc \
+@ENABLE_APP_TRUE@	shrpx_downstream_connection_pool.h \
+@ENABLE_APP_TRUE@	$(am__append_4)
 @ENABLE_APP_TRUE@noinst_LIBRARIES = libnghttpx.a
 @ENABLE_APP_TRUE@libnghttpx_a_SOURCES = ${NGHTTPX_SRCS}
 @ENABLE_APP_TRUE@nghttpx_SOURCES = shrpx.cc shrpx.h
@@ -1159,6 +1165,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/shrpx_connect_blocker.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/shrpx_downstream.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/shrpx_downstream_connection.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/shrpx_downstream_connection_pool.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/shrpx_downstream_queue.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/shrpx_http.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/shrpx_http2_downstream_connection.Po@am__quote@

@@ -1,3 +1,9 @@
+nghttp2 (0.6.4-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Dave Beckett <dajobe@debian.org>  Tue, 14 Oct 2014 10:55:00 -0700
+
 nghttp2 (0.6.3-2) unstable; urgency=medium
 
   * Standards-Version: 3.9.6

@@ -1,7 +1,7 @@
 /*
  * nghttp2 - HTTP/2 C Library
  *
- * Copyright (c) 2012, 2013 Tatsuhiro Tsujikawa
+ * Copyright (c) 2014 Tatsuhiro Tsujikawa
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -22,21 +22,44 @@
  * OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-#ifndef NGHTTP2VER_H
-#define NGHTTP2VER_H
+#include "shrpx_downstream_connection_pool.h"
+#include "shrpx_downstream_connection.h"
 
-/**
- * @macro
- * Version number of the nghttp2 library release
- */
-#define NGHTTP2_VERSION "0.6.4"
+namespace shrpx {
 
-/**
- * @macro
- * Numerical representation of the version number of the nghttp2 library
- * release. This is a 24 bit number with 8 bits for major number, 8 bits
- * for minor and 8 bits for patch. Version 1.2.3 becomes 0x010203.
- */
-#define NGHTTP2_VERSION_NUM 0x000604
+DownstreamConnectionPool::DownstreamConnectionPool()
+{}
 
-#endif /* NGHTTP2VER_H */
+DownstreamConnectionPool::~DownstreamConnectionPool()
+{
+  for(auto dconn : pool_) {
+    delete dconn;
+  }
+}
+
+void DownstreamConnectionPool::add_downstream_connection
+(std::unique_ptr<DownstreamConnection> dconn)
+{
+  pool_.insert(dconn.release());
+}
+
+std::unique_ptr<DownstreamConnection>
+DownstreamConnectionPool::pop_downstream_connection()
+{
+  if(pool_.empty()) {
+    return nullptr;
+  }
+
+  auto dconn = std::unique_ptr<DownstreamConnection>(*std::begin(pool_));
+  pool_.erase(std::begin(pool_));
+  return dconn;
+}
+
+void DownstreamConnectionPool::remove_downstream_connection
+(DownstreamConnection *dconn)
+{
+  pool_.erase(dconn);
+  delete dconn;
+}
+
+} // namespace shrpx
