@@ -13,7 +13,7 @@ DEB_CONFIGURE_EXTRA_FLAGS += --libdir=\$${prefix}/lib/$(DEB_HOST_MULTIARCH) \
   --with-libxml2=yes \
   --with-spdylay=no
 
-ifneq (,$(filter hurd-%,$(DEB_BUILD_ARCH)))
+ifeq (,$(filter hurd-%,$(DEB_BUILD_ARCH)))
   DEB_CONFIGURE_EXTRA_FLAGS += --with-jemalloc=yes
 endif
 
