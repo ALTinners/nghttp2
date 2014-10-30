@@ -293,7 +293,7 @@ static void init_settings(nghttp2_settings_storage *settings)
   settings->max_concurrent_streams = NGHTTP2_INITIAL_MAX_CONCURRENT_STREAMS;
   settings->initial_window_size = NGHTTP2_INITIAL_WINDOW_SIZE;
   settings->max_frame_size = NGHTTP2_MAX_FRAME_SIZE_MIN;
-  settings->max_header_set_size = UINT32_MAX;
+  settings->max_header_list_size = UINT32_MAX;
 }
 
 static void active_outbound_item_reset(nghttp2_active_outbound_item *aob)
@@ -1314,7 +1314,7 @@ static int session_predicate_window_update_send
   if(stream->state == NGHTTP2_STREAM_CLOSING) {
     return NGHTTP2_ERR_STREAM_CLOSING;
   }
-  if(stream->state == NGHTTP2_STREAM_RESERVED) {
+  if(state_reserved_local(session, stream)) {
     return NGHTTP2_ERR_INVALID_STREAM_STATE;
   }
   return 0;
@@ -1384,7 +1384,7 @@ static ssize_t nghttp2_session_enforce_flow_control_limits
   return nghttp2_min(nghttp2_min(nghttp2_min(requested_window_size,
                                              stream->remote_window_size),
                                  session->remote_window_size),
-                     session->remote_settings.max_frame_size);
+                     (int32_t)session->remote_settings.max_frame_size);
 }
 
 /*
@@ -1511,7 +1511,7 @@ static int session_headers_add_pad(nghttp2_session *session,
   padlen = padded_payloadlen - frame->hd.length;
 
   DEBUGF(fprintf(stderr,
-                 "send: padding selected: payloadlen=%zu, padlen=%zu\n",
+                 "send: padding selected: payloadlen=%zd, padlen=%zu\n",
                  padded_payloadlen, padlen));
 
   rv = nghttp2_frame_add_pad(framebufs, &frame->hd, padlen);
@@ -1784,9 +1784,9 @@ static int session_prep_frame(nghttp2_session *session,
 
     rv = nghttp2_session_predicate_data_send(session, frame->hd.stream_id);
     if(rv != 0) {
-      int rv2;
-
       if(stream) {
+        int rv2;
+
         rv2 = nghttp2_stream_detach_data(stream, &session->ob_da_pq,
                                          session->last_cycle);
 
@@ -3441,7 +3441,7 @@ int nghttp2_session_update_local_settings(nghttp2_session *session,
       session->local_settings.max_frame_size = iv[i].value;
       break;
     case NGHTTP2_SETTINGS_MAX_HEADER_LIST_SIZE:
-      session->local_settings.max_header_set_size = iv[i].value;
+      session->local_settings.max_header_list_size = iv[i].value;
       break;
     }
   }
@@ -3578,7 +3578,7 @@ int nghttp2_session_on_settings_received(nghttp2_session *session,
       break;
     case NGHTTP2_SETTINGS_MAX_HEADER_LIST_SIZE:
 
-      session->remote_settings.max_header_set_size = entry->value;
+      session->remote_settings.max_header_list_size = entry->value;
 
       break;
     }
@@ -3884,7 +3884,7 @@ static int session_on_stream_window_update_received
     }
     return 0;
   }
-  if(stream->state == NGHTTP2_STREAM_RESERVED) {
+  if(state_reserved_remote(session, stream)) {
     return session_handle_invalid_connection
       (session, frame, NGHTTP2_PROTOCOL_ERROR,
        "WINDOW_UPADATE to reserved stream");
@@ -4467,7 +4467,7 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session,
         iframe->state = NGHTTP2_IB_IGN_PAYLOAD;
 
         rv = nghttp2_session_terminate_session_with_reason
-          (session, NGHTTP2_PROTOCOL_ERROR, "too large frame size");
+          (session, NGHTTP2_FRAME_SIZE_ERROR, "too large frame size");
 
         if(nghttp2_is_fatal(rv)) {
           return rv;
@@ -5389,7 +5389,7 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session,
           }
         }
 
-        DEBUGF(fprintf(stderr, "recv: data_readlen=%zu\n", data_readlen));
+        DEBUGF(fprintf(stderr, "recv: data_readlen=%zd\n", data_readlen));
 
         if(stream && data_readlen > 0 &&
            session->callbacks.on_data_chunk_recv_callback) {
@@ -5815,7 +5815,7 @@ int nghttp2_session_pack_data(nghttp2_session *session,
            use safe limit. */
         payloadlen = datamax;
 
-        DEBUGF(fprintf(stderr, "send: use safe limit payloadlen=%zu",
+        DEBUGF(fprintf(stderr, "send: use safe limit payloadlen=%zd",
                        payloadlen));
       } else {
         assert(&session->aob.framebufs == bufs);
@@ -6005,7 +6005,7 @@ uint32_t nghttp2_session_get_remote_settings(nghttp2_session *session,
   case NGHTTP2_SETTINGS_MAX_FRAME_SIZE:
     return session->remote_settings.max_frame_size;
   case NGHTTP2_SETTINGS_MAX_HEADER_LIST_SIZE:
-    return session->remote_settings.max_header_set_size;
+    return session->remote_settings.max_header_list_size;
   }
 
   assert(0);

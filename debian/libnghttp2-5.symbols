@@ -7,8 +7,6 @@ libnghttp2.so.5 libnghttp2-5 #MINVER#
  nghttp2_buf_free@libnghttp2.so.5 0.6.0
  nghttp2_buf_init2@libnghttp2.so.5 0.6.0
  nghttp2_buf_init@libnghttp2.so.5 0.6.0
- nghttp2_buf_last_reserve@libnghttp2.so.5 0.6.0
- nghttp2_buf_pos_reserve@libnghttp2.so.5 0.6.0
  nghttp2_buf_reserve@libnghttp2.so.5 0.6.0
  nghttp2_buf_reset@libnghttp2.so.5 0.6.0
  nghttp2_buf_wrap_init@libnghttp2.so.5 0.6.0
@@ -161,7 +159,6 @@ libnghttp2.so.5 libnghttp2-5 #MINVER#
  nghttp2_queue_init@libnghttp2.so.5 0.6.0
  nghttp2_queue_pop@libnghttp2.so.5 0.6.0
  nghttp2_queue_push@libnghttp2.so.5 0.6.0
- nghttp2_reserve_buffer@libnghttp2.so.5 0.6.0
  nghttp2_select_next_protocol@libnghttp2.so.5 0.6.0
  nghttp2_session_add_goaway@libnghttp2.so.5 0.6.0
  nghttp2_session_add_item@libnghttp2.so.5 0.6.3

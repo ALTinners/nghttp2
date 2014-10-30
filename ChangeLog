@@ -1,64 +1,462 @@
-commit 19c2805d0d1efaeb24635597d538b843da9f0c0a
+commit 14e56fcd815c7961025476a10153d11c560d967f
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-14
+AuthorDate: 2014-10-31
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-14
+CommitDate: 2014-10-31
 
     Update man pages
 
-commit df078dc004dd67756b15eb9e69a27766afd654e4
+commit db6741251156458988dce81ae325d0995b0168bb
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-14
+AuthorDate: 2014-10-31
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-14
+CommitDate: 2014-10-31
 
-    Bump up version number to 0.6.4
+    Bump up version number to 0.6.5, LT revision to 7:0:2
+
+commit 76800dc8e7afdb4af8906ef57e248d027189d0a7
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-30
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-30
+
+    Remove unused functions
+
+commit 7d282cd0bdb1b9e6f2a4e687e7bd7d3227d9d184
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-30
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-30
+
+    Code cleanup
+
+commit 49b8d1d88c25e991402be3bab07d28e082edbdc9
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-30
+
+    Rename max_header_set_size as max_header_list_size
+
+commit 4d93dd9d9176d03c07ee57aa5cf03983f311bee2
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-30
+
+    Upate to draft-15
     
-    Library code has not changed at all since the last release, so LT
-    revision stays the same.
-
-commit e570225e97bceaba2cb2b5a5c6edf4fdcdb61887
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-14
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-14
-
-    tiny-nghttpd: Simplify timer event handling
-
-commit 8fffa055139031331f1a069be2554b15b5511bbe
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-14
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-14
-
-    src: Fix possible heap-use-after free for OpenSSL global locking
+    * Add NGHTTP2_HTTP_1_1_REQUIRED error code
+    * Allow transmission of WINDOW_UPDATE on reserved (remote)
+    * Allow reception of WINDOW_UPDATE on reserved (local)
+    * Treat frame larger than MAX_FRAME_SIZE as FRAME_SIZE_ERROR
     
-    This is simply programming error, but it is interesting that using
-    libstdc++ does not reveal this error.  With clang++-libc++, we got
-    std::system_error: mutex lock faild: Invalid argument.  This is
-    because we did not give a name to lock object, so it is immediately
-    destructed.  I think this will fix the reported crash on Mac OSX.
+    ALPN identifier is still h2-14 to continue interop, since draft-14 and
+    -15 are binary compatible.  The new error code was added in draft-15,
+    but HTTP/2 allows extensions can freely add new error code, so it is
+    not a problem.
 
-commit 0d4120ce2ce35a04199bc1a37b90aa5bc0123c1e
+commit be1a513c597399c8237659f6025869c5ddbdcb82
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-13
+AuthorDate: 2014-10-30
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-13
+CommitDate: 2014-10-30
 
-    nghttpx: Apply same fix from a225bb2 to spdy upstream
+    nghttpx: Shut up scan-build
 
-commit 20de432725f9b39f71a899fe4b394e622c0dc7b9
+commit 20900b133ec8b0b8455d8ed7310741d578f936c8
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-13
+AuthorDate: 2014-10-30
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-13
+CommitDate: 2014-10-30
 
-    nghttpx: Pool http downstream connection per thread
+    nghttpx: Fix heap-use-after-free in ClientHandler object
+    
+    This bug was found by scan-build
 
-commit 325bb0115ec48db0e76db2f405b44193ec33f04c
+commit 279fc2ad3727c188bf792a188c12a9062f3939ee
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-11
+AuthorDate: 2014-10-30
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-11
+CommitDate: 2014-10-30
 
-    Bump up version number to 0.6.4-DEV
+    Update doc
+
+commit 0ef99b90d9baf4718221ccbffe91d598f2d4cd26
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-28
+
+    asio-lib: Make request_cb take const ref and use int64_t as http_date arg
+
+commit 1bd8f6a0e2d274a8d681ff56395aa6d862a251a4
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-28
+
+    Update doc
+
+commit f70c142e107e367c36aff988d6be760759bd623d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-28
+
+    doc: Remove note about legacy NULL concatenation of header field
+
+commit b3fbf047b21d590447b8fb4c92fefb8846bbaa69
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-28
+
+    Update man pages
+
+commit 0cd8da2cd9f95fa8255668d299fed643d6fd9614
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-28
+
+    Update doc
+
+commit 7fa0f2763efeda94d3894f8b99c1fd42ad44f3ae
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-28
+
+    nghttpx: Update Alt-Svc header field spec to alt-svc-04
+
+commit f381b13c91aabef6bbceb0bc6cde4f788edda146
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-27
+
+    mod a+x to auto-gen scripts
+
+commit 6b9382d865c2cd83e05e576c42735414f2867245
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-27
+
+    Add comments to the auto-generated table
+
+commit 2c335dbc7ae1a1724d715e051cc49cc3298fe8fb
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-27
+
+    Add more comment about local window size adjustment
+
+commit b3463b20a33b022a11894d0914ba184032a47ba7
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-27
+
+    Update doc
+
+commit 15bdf048ccde9db896d80d43456aeb34a3af84b3
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-27
+
+    mkstatictbl.py: Update doc
+
+commit 992ca9353357f9efe7ec9580c540b12960d44c4e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-27
+
+    mkhufftbl.py: Update doc
+
+commit b4ed3324c05b0616cfac6cbf8f46d75bca1888b6
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-27
+
+    mkcipherlist.py: Update doc
+
+commit 98fd6019cf4e4bab264c3a88072ba650c896d7f1
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-27
+
+    man2rst.py: Add purpose of the script
+
+commit 6ccae48f7c29f85a748a4aab11d8b95e2ae1f62c
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-27
+
+    man2rst.py: Add "DO NOT MODIFY THIS FILE!" comment
+
+commit 6933e0ef543a30149f8ae790da193c4cd4b41c53
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-22
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-27
+
+    h2load: Use Headers instead of std::vector<std::pair<>> to store custom headers
+
+commit a9ecdca08a251a3438d2efa1c68377b40981510c
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-22
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-27
+
+    h2load: Read URIs from stdin if -i- is used
+
+commit af5bedd45f3ec1cca5c85e04972446d526fee8b2
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-22
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-27
+
+    h2load: Move code pasing URIs to separate function
+
+commit 7097a31968df6526249ec2e421991ab93af47928
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-22
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-27
+
+    h2load: Uniform handling of URIs from command-line and file
+
+commit 4122920dc6c38400327307646cf7fee1082833e2
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-22
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-27
+
+    h2load: Fix doc and remove trailing spaces
+
+commit 9aed11e3dc84628ac2a161415d1cd682d2362984
+Merge: c6cfcc3 9ea4905
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-27
+
+    Merge branch 'LPardue-master'
+
+commit 9ea4905f68dac402ba7a9782197f4044d6ce7b96
+Author:     Lucas Pardue <Lucas.Pardue@bbc.co.uk>
+AuthorDate: 2014-10-24
+Commit:     Lucas Pardue <Lucas.Pardue@bbc.co.uk>
+CommitDate: 2014-10-27
+
+    Added X-Forwarded-For header stripping option to nghttpx
+
+commit c6cfcc3c30f492fb5291ca5a15767a4f96b5d9a8
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-22
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-22
+
+    src: Disable insecure SSLv3
+
+commit 4bc5e551138e294132c7608678ec4d6bc6b6c378
+Merge: e3af9d8 566a252
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-22
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-22
+
+    Merge branch 'kennypeng-header_add_override'
+
+commit 566a252577a02039df07122a79a076b0d982ece9
+Merge: e3af9d8 27c766c
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-22
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-22
+
+    Merge branch 'header_add_override' of https://github.com/kennypeng/nghttp2 into kennypeng-header_add_override
+
+commit 27c766cb04fee0856255500f75f07e806b05854d
+Author:     Kenny (kang-yen) Peng <kennyp@prizerise.corp.gq1.yahoo.com>
+AuthorDate: 2014-10-21
+Commit:     Kenny (kang-yen) Peng <kennyp@prizerise.corp.gq1.yahoo.com>
+CommitDate: 2014-10-21
+
+    fix some comments and descriptions
+
+commit 41dd6d020510bbccefb1663a759488d2abe7df57
+Author:     Kenny (kang-yen) Peng <kennyp@prizerise.corp.gq1.yahoo.com>
+AuthorDate: 2014-10-21
+Commit:     Kenny (kang-yen) Peng <kennyp@prizerise.corp.gq1.yahoo.com>
+CommitDate: 2014-10-21
+
+    use option i to accept input URI list file
+
+commit db071ca35cc2ce503f48099d537ebc3dd4aa85b6
+Author:     Kenny (kang-yen) Peng <kennyp@prizerise.corp.gq1.yahoo.com>
+AuthorDate: 2014-10-21
+Commit:     Kenny (kang-yen) Peng <kennyp@prizerise.corp.gq1.yahoo.com>
+CommitDate: 2014-10-21
+
+    fix comments of header add/override
+
+commit e3af9d8bd35bb28a32a5d54e90f6942a85afe98b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-21
+
+    nghttp: Use Headers to store custom headers
+
+commit 73955f05193c4c279175b0c8443fce1dc1ff94e7
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-21
+
+    nghttp: Take advantage the fact that custom headers are already lower cased
+
+commit 5df21e36832480ce1b1234ed5015b97aac3f3e89
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-21
+
+    nghttp: Add missing metavar to -H and add example
+
+commit a6e1a40c05e1f7998b6b4dafc591ab6e78d8b2ec
+Author:     Kenny (kang-yen) Peng <kennyp@prizerise.corp.gq1.yahoo.com>
+AuthorDate: 2014-10-20
+Commit:     Kenny (kang-yen) Peng <kennyp@prizerise.corp.gq1.yahoo.com>
+CommitDate: 2014-10-20
+
+    support uri list file input
+
+commit e330520341cff6aded1179c009596af84f81c1fe
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-19
+
+    Fix compile error on arm
+
+commit d13ed04b1738da082870bb1be79e430d13b5797e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-19
+
+    Add Dockerfile.android
+
+commit 75a23c6c7e131d090c317f69bfb09d7b722f63ee
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-19
+
+    Add sample nghttpx logrotate configuration
+
+commit eaca5d83b0e89ea4d01eb298ae9072040ec8a32f
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-19
+
+    Add nghttpx init file for convenience
+
+commit 9c1b5e8fb151b658d7bee7624e2c256f3877f077
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-18
+
+    Update .gitignore
+
+commit 0c31dbb5d914ecf2a90669774256ebcbc7f4cb46
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-18
+
+    Add aux script
+
+commit 8a0b11e9e1ef8376454a8285ab10f1f335823488
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-18
+
+    Add aux script
+
+commit 7ca2787cc802e02d319ec0dccb4e79eea9689d2e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-18
+
+    man2rst.py: Erase \&
+
+commit cfbf907418a2d0790aa3dc68a9839f96452fadf9
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-18
+
+    doc: Disable smartypants since we use '--' prefix for cmd options
+
+commit dd02c4cd9b964826c97798788dbc74a93c2ea1a1
+Author:     Kenny Peng <kennyp@loweradvance-lm.(none)>
+AuthorDate: 2014-10-17
+Commit:     Kenny Peng <kennyp@loweradvance-lm.(none)>
+CommitDate: 2014-10-17
+
+    support header add/override
+
+commit 93ee5bdba6e28107e48ab81d4b8948f9fdcee3f0
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-17
+
+    REAMDE.rst: Add make and binutils to required ubuntu packages
+
+commit f2aa6f4e2b9cbb16771712d96aff367da302abb4
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-16
+
+    nghttp: Document prioritization with -a option
+
+commit bc8a58318424a4ce5d6a3f0c1b90fb75e133436e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-16
+
+    Refactor stream tree code
+
+commit 502ff24568d9a3eecf8b463cbc6bb0fa8afa66ec
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-16
+
+    Avoid iterate siblings when adding/removing stream tree
+
+commit 47692d113c213d499ece2c415cff0ade35099082
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-14
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-14
+
+    Bump up version number to 0.6.5-DEV

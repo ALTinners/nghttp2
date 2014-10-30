@@ -25,8 +25,21 @@ LDFLAGS += -Wl,--default-symver
 # Do not want README so set the default docs explicitly
 DEB_INSTALL_DOCS_ALL = AUTHORS README.rst
 
+# Install scripts for nghttpx init script installed in install/nghttp2 below
+DEB_DH_INSTALLINIT_ARGS_nghttp2 := --onlyscripts --name=nghttpx
+
 clean::
 	rm -rf doc/manual/html doc/manual/doctrees doc/apiref.rst
+
+# Need to install the contrib files, rename them and set the modes
+install/nghttp2::
+	install -d debian/nghttp2/etc/init.d
+	sed -e 's,^DAEMON=.*/,DAEMON=/usr/sbin,' contrib/nghttpx-init > debian/nghttp2/etc/init.d/nghttpx
+	chmod 755 debian/nghttp2/etc/init.d/nghttpx
+	install -d debian/nghttp2/etc/nghttpx
+	install -m644 nghttpx.conf.sample debian/nghttp2/etc/nghttpx/nghttpx.conf
+	install -d debian/nghttp2/etc/logrotate.d
+	install -p -m644 contrib/nghttpx-logrotate debian/nghttp2/etc/logrotate.d/nghttpx
 
 install/libnghttp2-dev::
 	rm -f debian/tmp/usr/lib/*/libnghttp2.la

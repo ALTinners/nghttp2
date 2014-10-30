@@ -4,12 +4,12 @@ nghttp2 - HTTP/2 C Library
 This is an implementation of Hypertext Transfer Protocol version 2
 in C.
 
-The framing layer of HTTP/2 is implemented as form of reusable C
+The framing layer of HTTP/2 is implemented as a form of reusable C
 library.  On top of that, we have implemented HTTP/2 client, server
-and proxy.  Also we have developed load test/benchmarking tool for
+and proxy.  We have also developed load test and benchmarking tool for
 HTTP/2 and SPDY.
 
-HPACK encoding and decoding are available as public API.
+HPACK encoder and decoder are available as public API.
 
 The experimental high level C++ library is also available.
 
@@ -24,7 +24,7 @@ We started to implement h2-14
 compression
 (http://tools.ietf.org/html/draft-ietf-httpbis-header-compression-09)
 and HTTP Alternative Services
-(http://tools.ietf.org/html/draft-ietf-httpbis-alt-svc-02).
+(http://tools.ietf.org/html/draft-ietf-httpbis-alt-svc-04).
 
 The nghttp2 code base was forked from spdylay project.
 
@@ -115,6 +115,8 @@ The Python bindings require the following packages:
 If you are using Ubuntu 14.04 LTS, you need the following packages
 installed:
 
+* make
+* binutils
 * autoconf
 * automake
 * autotools-dev

@@ -80,7 +80,7 @@ namespace nghttp2 {
 
 namespace {
 struct Config {
-  std::vector<std::pair<std::string, std::string>> headers;
+  Headers headers;
   std::string certfile;
   std::string keyfile;
   std::string datafile;
@@ -410,9 +410,7 @@ struct HttpClient;
 
 namespace {
 int submit_request
-(HttpClient *client,
- const std::vector<std::pair<std::string, std::string>>& headers,
- Request *req);
+(HttpClient *client, const Headers& headers, Request *req);
 } // namespace
 
 namespace {
@@ -532,12 +530,12 @@ struct HttpClient {
       const char *host_string = nullptr;
       auto i = std::find_if(std::begin(config.headers),
                             std::end(config.headers),
-                            [](const std::pair<std::string, std::string>& nv)
+                            [](const Header& nv)
                             {
-                              return util::strieq("host", nv.first.c_str());
+                              return "host" == nv.name;
                             });
       if ( i != std::end(config.headers) ) {
-        host_string = (*i).second.c_str();
+        host_string = (*i).value.c_str();
       } else {
         host_string = host.c_str();
       }
@@ -1015,9 +1013,7 @@ http_parser_settings htp_hooks = {
 
 namespace {
 int submit_request
-(HttpClient *client,
- const std::vector<std::pair<std::string, std::string>>& headers,
- Request *req)
+(HttpClient *client, const Headers& headers, Request *req)
 {
   auto path = req->make_reqpath();
   auto scheme = util::get_uri_field(req->uri.c_str(), req->u, UF_SCHEMA);
@@ -1042,8 +1038,8 @@ int submit_request
   for(auto& kv : headers) {
     size_t i;
     for(i = 0; i < num_initial_headers; ++i) {
-      if(util::strieq(kv.first, build_headers[i].name)) {
-        build_headers[i].value = kv.second;
+      if(kv.name == build_headers[i].name) {
+        build_headers[i].value = kv.value;
         break;
       }
     }
@@ -1051,10 +1047,7 @@ int submit_request
       continue;
     }
 
-    // To test "never index" repr, don't index authorization header
-    // field unconditionally.
-    auto no_index = util::strieq(kv.first, "authorization");
-    build_headers.emplace_back(kv.first, kv.second, no_index);
+    build_headers.emplace_back(kv.name, kv.value, kv.no_index);
   }
   std::stable_sort(std::begin(build_headers), std::end(build_headers),
                    http2::name_less);
@@ -1129,8 +1122,8 @@ int on_data_chunk_recv_callback
  const uint8_t *data, size_t len, void *user_data)
 {
   auto client = get_session(user_data);
-  auto req =
-    (Request*)nghttp2_session_get_stream_user_data(session, stream_id);
+  auto req = static_cast<Request*>
+    (nghttp2_session_get_stream_user_data(session, stream_id));
 
   if(!req) {
     return 0;
@@ -1308,8 +1301,8 @@ int on_header_callback(nghttp2_session *session,
 
   switch(frame->hd.type) {
   case NGHTTP2_HEADERS: {
-    auto req = (Request*)nghttp2_session_get_stream_user_data
-      (session, frame->hd.stream_id);
+    auto req = static_cast<Request*>
+      (nghttp2_session_get_stream_user_data(session, frame->hd.stream_id));
 
     if(!req) {
       break;
@@ -1337,8 +1330,9 @@ int on_header_callback(nghttp2_session *session,
     break;
   }
   case NGHTTP2_PUSH_PROMISE: {
-    auto req = (Request*)nghttp2_session_get_stream_user_data
-      (session, frame->push_promise.promised_stream_id);
+    auto req = static_cast<Request*>
+      (nghttp2_session_get_stream_user_data
+       (session, frame->push_promise.promised_stream_id));
 
     if(!req) {
       break;
@@ -1376,8 +1370,8 @@ int on_frame_recv_callback2
   auto client = get_session(user_data);
   switch(frame->hd.type) {
   case NGHTTP2_HEADERS: {
-    auto req = (Request*)nghttp2_session_get_stream_user_data
-      (session, frame->hd.stream_id);
+    auto req = static_cast<Request*>
+      (nghttp2_session_get_stream_user_data(session, frame->hd.stream_id));
     // If this is the HTTP Upgrade with OPTIONS method to avoid POST,
     // req is nullptr.
     if(!req) {
@@ -1421,8 +1415,9 @@ int on_frame_recv_callback2
     }
     break;
   case NGHTTP2_PUSH_PROMISE: {
-    auto req = (Request*)nghttp2_session_get_stream_user_data
-      (session, frame->push_promise.promised_stream_id);
+    auto req = static_cast<Request*>
+      (nghttp2_session_get_stream_user_data
+       (session, frame->push_promise.promised_stream_id));
     if(!req) {
       break;
     }
@@ -1479,8 +1474,8 @@ int on_stream_close_callback
  void *user_data)
 {
   auto client = get_session(user_data);
-  auto req =
-    (Request*)nghttp2_session_get_stream_user_data(session, stream_id);
+  auto req = static_cast<Request*>
+    (nghttp2_session_get_stream_user_data(session, stream_id));
 
   if(!req) {
     return 0;
@@ -1717,7 +1712,8 @@ int communicate(const std::string& scheme, const std::string& host,
       goto fin;
     }
     SSL_CTX_set_options(ssl_ctx,
-                        SSL_OP_ALL | SSL_OP_NO_SSLv2 | SSL_OP_NO_COMPRESSION |
+                        SSL_OP_ALL | SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 |
+                        SSL_OP_NO_COMPRESSION |
                         SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION);
     SSL_CTX_set_mode(ssl_ctx, SSL_MODE_ENABLE_PARTIAL_WRITE);
     SSL_CTX_set_mode(ssl_ctx, SSL_MODE_AUTO_RETRY);
@@ -1804,8 +1800,8 @@ ssize_t file_read_callback
  uint8_t *buf, size_t length, uint32_t *data_flags,
  nghttp2_data_source *source, void *user_data)
 {
-  auto req = (Request*)nghttp2_session_get_stream_user_data
-    (session, stream_id);
+  auto req = static_cast<Request*>
+    (nghttp2_session_get_stream_user_data(session, stream_id));
   assert(req);
   int fd = source->fd;
   ssize_t nread;
@@ -1964,9 +1960,15 @@ Options:
   -a, --get-assets   Download assets  such as stylesheets,  images and
                      script files linked from the downloaded resource.
                      Only links  whose origins  are the same  with the
-                     linking resource will be downloaded.
+                     linking  resource  will  be  downloaded.   nghttp
+                     prioritizes  resources  using  HTTP/2  dependency
+                     based priority.  The priority order, from highest
+                     to lowest,  is html  itself, css,  javascript and
+                     images.
   -s, --stat         Print statistics.
-  -H, --header       Add a header to the requests.
+  -H, --header=<HEADER>
+                     Add   a  header   to   the  requests.    Example:
+                     -H':method: PUT'
   --cert=<CERT>      Use the  specified client certificate  file.  The
                      file must be in PEM format.
   --key=<KEY>        Use the  client private key file.   The file must
@@ -2121,10 +2123,11 @@ int main(int argc, char **argv)
                   << std::endl;
         exit(EXIT_FAILURE);
       }
-      // Note that there is no processing currently to handle multiple
-      // message-header fields with the same field name
-      config.headers.emplace_back(header, value);
-      util::inp_strlower(config.headers.back().first);
+      // To test "never index" repr, don't index authorization header
+      // field unconditionally.
+      auto no_index = util::strieq("authorization", header);
+      config.headers.emplace_back(header, value, no_index);
+      util::inp_strlower(config.headers.back().name);
       break;
     }
     case 'a':

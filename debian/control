@@ -56,7 +56,8 @@ Description: nghttp HTTP 2.0 library - debugging symbols
 Package: nghttp2
 Architecture: any
 Multi-Arch: foreign
-Depends: ${misc:Depends}, libnghttp2-5 (= ${binary:Version}), ${shlibs:Depends}
+Depends: ${misc:Depends}, libnghttp2-5 (= ${binary:Version}), ${shlibs:Depends},
+  lsb-base (>= 3.2-14)
 Description: nghttp HTTP 2.0 servers
  Provides experimental implementation of Hypertext Transfer Protocol
  version 2.0 including a server (nghttpd), client (nghttp) and

@@ -1,3 +1,11 @@
+nghttp2 (0.6.5-1) unstable; urgency=medium
+
+  * New upstream release
+  * Install init file and logrotate files for nghttpx daemon into
+    the nghttp2 package.  Add sample config file.
+
+ -- Dave Beckett <dajobe@debian.org>  Thu, 30 Oct 2014 11:57:27 -0700
+
 nghttp2 (0.6.4-2) unstable; urgency=medium
 
   * debian/rules: Fix test for jemalloc configure arg so hurd may build

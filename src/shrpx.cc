@@ -381,8 +381,7 @@ void exec_binary_signal_cb(evutil_socket_t sig, short events, void *arg)
     return;
   }
 
-  auto argv =
-    static_cast<char**>(malloc(sizeof(char*) * (get_config()->argc + 1)));
+  auto argv = util::make_unique<char*[]>(get_config()->argc + 1);
 
   argv[0] = exec_path;
   for(int i = 1; i < get_config()->argc; ++i) {
@@ -393,7 +392,7 @@ void exec_binary_signal_cb(evutil_socket_t sig, short events, void *arg)
   size_t envlen = 0;
   for(char **p = environ; *p; ++p, ++envlen);
   // 3 for missing fd4, fd6 and port.
-  auto envp = static_cast<char**>(malloc(sizeof(char*) * (envlen + 3 + 1)));
+  auto envp = util::make_unique<char*[]>(envlen + 3 + 1);
   size_t envidx = 0;
 
   auto evlistener4 = listener_handler->get_evlistener4();
@@ -437,7 +436,7 @@ void exec_binary_signal_cb(evutil_socket_t sig, short events, void *arg)
     }
   }
 
-  if(execve(argv[0], argv, envp) == -1) {
+  if(execve(argv[0], argv.get(), envp.get()) == -1) {
     auto error = errno;
     LOG(ERROR) << "execve failed: errno=" << error;
     _Exit(EXIT_FAILURE);
@@ -750,6 +749,7 @@ void fill_default_config()
   mod_config()->num_worker = 1;
   mod_config()->http2_max_concurrent_streams = 100;
   mod_config()->add_x_forwarded_for = false;
+  mod_config()->strip_incoming_x_forwarded_for = false;
   mod_config()->no_via = false;
   mod_config()->accesslog_file = nullptr;
   mod_config()->accesslog_syslog = false;
@@ -1060,8 +1060,8 @@ SSL/TLS:
   --tls-proto-list=<LIST>
                      Comma delimited  list of  SSL/TLS protocol  to be
                      enabled.  The following  protocols are available:
-                     TLSv1.2,  TLSv1.1, TLSv1.0  and SSLv3.   The name
-                     matching is done in case-insensitive manner.  The
+                     TLSv1.2, TLSv1.1 and  TLSv1.0.  The name matching
+                     is   done   in  case-insensitive   manner.    The
                      parameter  must be  delimited by  a single  comma
                      only and any  white spaces are treated  as a part
                      of protocol string.
@@ -1156,6 +1156,9 @@ Misc:
   --add-x-forwarded-for
                      Append  X-Forwarded-For   header  field   to  the
                      downstream request.
+  --strip-incoming-x-forwarded-for
+                     Strip  X-Forwarded-For  header field from inbound
+                     client requests.
   --no-via           Don't append to Via  header field.  If Via header
                      field is received, it is left unaltered.
   --no-location-rewrite
@@ -1308,6 +1311,7 @@ int main(int argc, char **argv)
       {"no-location-rewrite", no_argument, &flag, 62},
       {"backend-connections-per-frontend", required_argument, &flag, 63},
       {"listener-disable-timeout", required_argument, &flag, 64},
+      {"strip-incoming-x-forwarded-for", no_argument, &flag, 65},
       {nullptr, 0, nullptr, 0 }
     };
 
@@ -1604,6 +1608,10 @@ int main(int argc, char **argv)
       case 64:
         // --listener-disable-timeout
         cmdcfgs.emplace_back(SHRPX_OPT_LISTENER_DISABLE_TIMEOUT, optarg);
+        break;
+      case 65:
+        // --strip-incoming-x-forwarded-for
+        cmdcfgs.emplace_back(SHRPX_OPT_STRIP_INCOMING_X_FORWARDED_FOR, "yes");
         break;
       default:
         break;

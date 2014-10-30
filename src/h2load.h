@@ -43,6 +43,8 @@
 
 #include <openssl/ssl.h>
 
+#include "http2.h"
+
 namespace h2load {
 
 class Session;
@@ -50,8 +52,10 @@ class Session;
 struct Config {
   std::vector<std::vector<nghttp2_nv>> nva;
   std::vector<std::vector<const char*>> nv;
+  nghttp2::Headers custom_headers;
   std::string scheme;
   std::string host;
+  std::string ifile;
   addrinfo *addrs;
   size_t nreqs;
   size_t nclients;
@@ -67,6 +71,7 @@ struct Config {
     PROTO_SPDY3_1
   } no_tls_proto;
   uint16_t port;
+  uint16_t default_port;
   bool verbose;
 
   Config();
