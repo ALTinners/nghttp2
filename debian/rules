@@ -34,7 +34,7 @@ clean::
 # Need to install the contrib files, rename them and set the modes
 install/nghttp2::
 	install -d debian/nghttp2/etc/init.d
-	sed -e 's,^DAEMON=.*/,DAEMON=/usr/sbin,' contrib/nghttpx-init > debian/nghttp2/etc/init.d/nghttpx
+	sed -e 's,^DAEMON=.*/,DAEMON=/usr/sbin/,' contrib/nghttpx-init > debian/nghttp2/etc/init.d/nghttpx
 	chmod 755 debian/nghttp2/etc/init.d/nghttpx
 	install -d debian/nghttp2/etc/nghttpx
 	install -m644 nghttpx.conf.sample debian/nghttp2/etc/nghttpx/nghttpx.conf

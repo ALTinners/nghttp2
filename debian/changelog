@@ -1,3 +1,9 @@
+nghttp2 (0.6.5-2) unstable; urgency=medium
+
+  * Fix nghttpx init script path.
+
+ -- Dave Beckett <dajobe@debian.org>  Fri, 31 Oct 2014 11:44:14 -0700
+
 nghttp2 (0.6.5-1) unstable; urgency=medium
 
   * New upstream release
