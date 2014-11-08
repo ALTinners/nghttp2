@@ -95,9 +95,9 @@ struct Config {
   int timeout;
   int window_bits;
   int connection_window_bits;
+  int verbose;
   bool null_out;
   bool remote_name;
-  bool verbose;
   bool get_assets;
   bool stat;
   bool upgrade;
@@ -114,9 +114,9 @@ struct Config {
       timeout(-1),
       window_bits(-1),
       connection_window_bits(-1),
+      verbose(0),
       null_out(false),
       remote_name(false),
-      verbose(false),
       get_assets(false),
       stat(false),
       upgrade(false),
@@ -1129,7 +1129,7 @@ int on_data_chunk_recv_callback
     return 0;
   }
 
-  if(config.verbose) {
+  if(config.verbose >= 2) {
     verbose_on_data_chunk_recv_callback(session, flags, stream_id, data, len,
                                         user_data);
   }
@@ -1715,7 +1715,6 @@ int communicate(const std::string& scheme, const std::string& host,
                         SSL_OP_ALL | SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 |
                         SSL_OP_NO_COMPRESSION |
                         SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION);
-    SSL_CTX_set_mode(ssl_ctx, SSL_MODE_ENABLE_PARTIAL_WRITE);
     SSL_CTX_set_mode(ssl_ctx, SSL_MODE_AUTO_RETRY);
     SSL_CTX_set_mode(ssl_ctx, SSL_MODE_RELEASE_BUFFERS);
     if(!config.keyfile.empty()) {
@@ -1944,7 +1943,9 @@ void print_help(std::ostream& out)
   <URI>              Specify URI to access.
 Options:
   -v, --verbose      Print  debug information  such  as reception  and
-                     transmission of frames and name/value pairs.
+                     transmission  of  frames  and  name/value  pairs.
+                     Specifying this  option multiple  times increases
+                     verbosity.
   -n, --null-out     Discard downloaded data.
   -O, --remote-name  Save download data in the current directory.  The
                      filename is dereived from  URI.  If URI ends with
@@ -2077,7 +2078,7 @@ int main(int argc, char **argv)
       break;
     }
     case 'v':
-      config.verbose = true;
+      ++config.verbose;
       break;
     case 't':
       config.timeout = atoi(optarg) * 1000;

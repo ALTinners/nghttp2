@@ -298,7 +298,6 @@ SSL_CTX* create_ssl_context(const char *private_key_file,
     BIO_free(bio);
   }
 
-  SSL_CTX_set_mode(ssl_ctx, SSL_MODE_ENABLE_PARTIAL_WRITE);
   SSL_CTX_set_mode(ssl_ctx, SSL_MODE_AUTO_RETRY);
   SSL_CTX_set_mode(ssl_ctx, SSL_MODE_RELEASE_BUFFERS);
   if (get_config()->private_key_passwd) {
@@ -402,13 +401,12 @@ SSL_CTX* create_ssl_client_context()
     DIE();
   }
 
-  SSL_CTX_set_mode(ssl_ctx, SSL_MODE_ENABLE_PARTIAL_WRITE);
   SSL_CTX_set_mode(ssl_ctx, SSL_MODE_AUTO_RETRY);
   SSL_CTX_set_mode(ssl_ctx, SSL_MODE_RELEASE_BUFFERS);
 
   if(SSL_CTX_set_default_verify_paths(ssl_ctx) != 1) {
-    LOG(WARNING) << "Could not load system trusted ca certificates: "
-                 << ERR_error_string(ERR_get_error(), nullptr);
+    LOG(WARN) << "Could not load system trusted ca certificates: "
+              << ERR_error_string(ERR_get_error(), nullptr);
   }
 
   if(get_config()->cacert) {
@@ -483,8 +481,7 @@ ClientHandler* accept_connection
   rv = setsockopt(fd, IPPROTO_TCP, TCP_NODELAY,
                   reinterpret_cast<char *>(&val), sizeof(val));
   if(rv == -1) {
-    LOG(WARNING) << "Setting option TCP_NODELAY failed: errno="
-                 << errno;
+    LOG(WARN) << "Setting option TCP_NODELAY failed: errno=" << errno;
   }
   SSL *ssl = nullptr;
   bufferevent *bev;
@@ -636,7 +633,7 @@ void get_altnames(X509 *cert,
   }
   X509_NAME *subjectname = X509_get_subject_name(cert);
   if(!subjectname) {
-    LOG(WARNING) << "Could not get X509 name object from the certificate.";
+    LOG(WARN) << "Could not get X509 name object from the certificate.";
     return;
   }
   int lastpos = -1;
@@ -945,8 +942,10 @@ bool check_http2_requirement(SSL *ssl)
   case TLS1_2_VERSION:
     break;
   default:
-    LOG(INFO) << "TLSv1.2 was not negotiated. "
-              << "HTTP/2 must not be negotiated.";
+    if(LOG_ENABLED(INFO)) {
+      LOG(INFO) << "TLSv1.2 was not negotiated. "
+                << "HTTP/2 must not be negotiated.";
+    }
     return false;
   }
 

@@ -190,15 +190,13 @@ evconnlistener* create_evlistener(ListenHandler *handler, int family)
       // Otherwise, close fd, and create server socket as usual.
 
       if(port == get_config()->port) {
-        if(LOG_ENABLED(INFO)) {
-          LOG(INFO) << "Listening on port " << get_config()->port;
-        }
+        LOG(NOTICE) << "Listening on port " << get_config()->port;
 
         return new_evlistener(handler, fd);
       }
 
-      LOG(WARNING) << "Port was changed between old binary (" << port
-                   << ") and new binary (" << get_config()->port << ")";
+      LOG(WARN) << "Port was changed between old binary (" << port
+                << ") and new binary (" << get_config()->port << ")";
       close(fd);
     }
   }
@@ -257,8 +255,8 @@ evconnlistener* create_evlistener(ListenHandler *handler, int family)
   }
 
   if(!rp) {
-    LOG(WARNING) << "Listening " << (family == AF_INET ? "IPv4" : "IPv6")
-                 << " socket failed";
+    LOG(WARN) << "Listening " << (family == AF_INET ? "IPv4" : "IPv6")
+              << " socket failed";
 
     freeaddrinfo(res);
 
@@ -272,16 +270,14 @@ evconnlistener* create_evlistener(ListenHandler *handler, int family)
   freeaddrinfo(res);
 
   if(rv != 0) {
-    LOG(WARNING) << gai_strerror(rv);
+    LOG(WARN) << gai_strerror(rv);
 
     close(fd);
 
     return nullptr;
   }
 
-  if(LOG_ENABLED(INFO)) {
-    LOG(INFO) << "Listening on " << host << ", port " << get_config()->port;
-  }
+  LOG(NOTICE) << "Listening on " << host << ", port " << get_config()->port;
 
   return new_evlistener(handler, fd);
 }
@@ -325,10 +321,10 @@ void save_pid()
     if(chown(get_config()->pid_file.get(),
              get_config()->uid, get_config()->gid)  == -1) {
       auto error = errno;
-      LOG(WARNING) << "Changing owner of pid file "
-                   << get_config()->pid_file.get()
-                   << " failed: "
-                   << strerror(error);
+      LOG(WARN) << "Changing owner of pid file "
+                << get_config()->pid_file.get()
+                << " failed: "
+                << strerror(error);
     }
   }
 }
@@ -356,9 +352,7 @@ void exec_binary_signal_cb(evutil_socket_t sig, short events, void *arg)
 {
   auto listener_handler = static_cast<ListenHandler*>(arg);
 
-  if(LOG_ENABLED(INFO)) {
-    LOG(INFO) << "Executing new binary";
-  }
+  LOG(NOTICE) << "Executing new binary";
 
   auto pid = fork();
 
@@ -449,9 +443,7 @@ void graceful_shutdown_signal_cb(evutil_socket_t sig, short events, void *arg)
 {
   auto listener_handler = static_cast<ListenHandler*>(arg);
 
-  if(LOG_ENABLED(INFO)) {
-    LOG(INFO) << "Graceful shutdown signal received";
-  }
+  LOG(NOTICE) << "Graceful shutdown signal received";
 
   worker_config->graceful_shutdown = true;
 
@@ -1132,8 +1124,9 @@ Mode:
 Logging:
   -L, --log-level=<LEVEL>
                      Set the  severity level  of log  output.  <LEVEL>
-                     must be one of INFO, WARNING, ERROR and FATAL.
-                     Default: WARNING
+                     must  be one  of  INFO, NOTICE,  WARN, ERROR  and
+                     FATAL.
+                     Default: NOTICE
   --accesslog-file=<PATH>
                      Set path  to write  access log.  To  reopen file,
                      send USR1 signal to nghttpx.
@@ -1216,7 +1209,7 @@ Misc:
 
 int main(int argc, char **argv)
 {
-  Log::set_severity_level(WARNING);
+  Log::set_severity_level(NOTICE);
   create_config();
   fill_default_config();
 
@@ -1345,7 +1338,7 @@ int main(int argc, char **argv)
       break;
     case 'n':
 #ifdef NOTHREADS
-      LOG(WARNING) << "Threading disabled at build time, no threads created.";
+      LOG(WARN) << "Threading disabled at build time, no threads created.";
 #else
       cmdcfgs.emplace_back(SHRPX_OPT_WORKERS, optarg);
 #endif // NOTHREADS
@@ -1671,15 +1664,15 @@ int main(int argc, char **argv)
        fchown(worker_config->accesslog_fd,
               get_config()->uid, get_config()->gid)  == -1) {
       auto error = errno;
-      LOG(WARNING) << "Changing owner of access log file failed: "
-                   << strerror(error);
+      LOG(WARN) << "Changing owner of access log file failed: "
+                << strerror(error);
     }
     if(worker_config->errorlog_fd != -1 &&
        fchown(worker_config->errorlog_fd,
               get_config()->uid, get_config()->gid) == -1) {
       auto error = errno;
-      LOG(WARNING) << "Changing owner of error log file failed: "
-                   << strerror(error);
+      LOG(WARN) << "Changing owner of error log file failed: "
+                << strerror(error);
     }
   }
 
@@ -1698,10 +1691,10 @@ int main(int argc, char **argv)
     if(get_config()->uid != 0) {
       if(chown(path, get_config()->uid, get_config()->gid) == -1) {
         auto error = errno;
-        LOG(WARNING) << "Changing owner of http2 upstream request header file "
-                     << path
-                     << " failed: "
-                     << strerror(error);
+        LOG(WARN) << "Changing owner of http2 upstream request header file "
+                  << path
+                  << " failed: "
+                  << strerror(error);
       }
     }
   }
@@ -1721,11 +1714,11 @@ int main(int argc, char **argv)
     if(get_config()->uid != 0) {
       if(chown(path, get_config()->uid, get_config()->gid) == -1) {
         auto error = errno;
-        LOG(WARNING) << "Changing owner of http2 upstream response header file"
-                     << " "
-                     << path
-                     << " failed: "
-                     << strerror(error);
+        LOG(WARN) << "Changing owner of http2 upstream response header file"
+                  << " "
+                  << path
+                  << " failed: "
+                  << strerror(error);
       }
     }
   }
@@ -1887,9 +1880,7 @@ int main(int argc, char **argv)
 
   event_loop();
 
-  if(LOG_ENABLED(INFO)) {
-    LOG(INFO) << "Shutdown momentarily";
-  }
+  LOG(NOTICE) << "Shutdown momentarily";
 
   return 0;
 }
