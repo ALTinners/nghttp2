@@ -183,6 +183,7 @@ libnghttp2.so.5 libnghttp2-5 #MINVER#
  nghttp2_session_callbacks_set_recv_callback@libnghttp2.so.5 0.6.0
  nghttp2_session_callbacks_set_select_padding_callback@libnghttp2.so.5 0.6.0
  nghttp2_session_callbacks_set_send_callback@libnghttp2.so.5 0.6.0
+ nghttp2_session_can_add_closed_stream@libnghttp2.so.5 0.6.7-1
  nghttp2_session_client_new2@libnghttp2.so.5 0.6.0
  nghttp2_session_client_new@libnghttp2.so.5 0.6.0
  nghttp2_session_close_stream@libnghttp2.so.5 0.6.0
@@ -190,6 +191,7 @@ libnghttp2.so.5 libnghttp2-5 #MINVER#
  nghttp2_session_consume@libnghttp2.so.5 0.6.0
  nghttp2_session_del@libnghttp2.so.5 0.6.0
  nghttp2_session_destroy_stream@libnghttp2.so.5 0.6.0
+nghttp2_session_detach_closed_stream@libnghttp2.so.5 0.6.7-1
  nghttp2_session_end_headers_received@libnghttp2.so.5 0.6.0
  nghttp2_session_end_request_headers_received@libnghttp2.so.5 0.6.0
  nghttp2_session_end_response_headers_received@libnghttp2.so.5 0.6.0

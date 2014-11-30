@@ -21,13 +21,13 @@ dnl LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 dnl OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 dnl WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 AC_PREREQ(2.61)
-AC_INIT([nghttp2], [0.6.6], [t-tujikawa@users.sourceforge.net])
+AC_INIT([nghttp2], [0.6.7], [t-tujikawa@users.sourceforge.net])
 LT_PREREQ([2.2.6])
 LT_INIT()
 dnl See versioning rule:
 dnl  http://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
 AC_SUBST(LT_CURRENT, 7)
-AC_SUBST(LT_REVISION, 1)
+AC_SUBST(LT_REVISION, 2)
 AC_SUBST(LT_AGE, 2)
 
 major=`echo $PACKAGE_VERSION |cut -d. -f1 | sed -e "s/[^0-9]//g"`
@@ -138,6 +138,20 @@ if test "x${cython_path}" = "x"; then
 else
   CYTHON=${cython_path}
   AC_SUBST([CYTHON])
+fi
+
+#
+# If we're running GCC or clang define _U_ to be "__attribute__((unused))"
+# so we can use _U_ to flag unused function parameters and not get warnings
+# about them. Otherwise, define _U_ to be an empty string so that _U_ used
+# to flag an unused function parameters will compile with other compilers.
+#
+# XXX - similar hints for other compilers?
+#
+if test "x$GCC" = "xyes" -o "x$CC" = "xclang" ; then
+  AC_DEFINE([_U_], [__attribute__((unused))], [Hint to the compiler that a function parameters is not used])
+else
+  AC_DEFINE([_U_], , [Hint to the compiler that a function parameters is not used])
 fi
 
 AX_CXX_COMPILE_STDCXX_11([noext], [optional])
@@ -272,10 +286,13 @@ if test "x${have_libevent_openssl}" = "xno"; then
   AC_MSG_NOTICE($LIBEVENT_OPENSSL_PKG_ERRORS)
 fi
 
-# jansson (for hdtest/deflatehd and hdtest/inflatehd)
+# jansson (for src/nghttp, src/deflatehd and src/inflatehd)
 PKG_CHECK_MODULES([JANSSON], [jansson >= 2.5],
                   [have_jansson=yes], [have_jansson=no])
-if test "x${have_jansson}" == "xno"; then
+if test "x${have_jansson}" == "xyes"; then
+  AC_DEFINE([HAVE_JANSSON], [1],
+            [Define to 1 if you have `libjansson` library.])
+else
   AC_MSG_NOTICE($JANSSON_PKG_ERRORS)
 fi
 
@@ -465,6 +482,14 @@ AC_CHECK_TYPES([ptrdiff_t])
 AC_C_BIGENDIAN
 AC_SYS_LARGEFILE
 
+AC_CHECK_MEMBER([struct tm.tm_gmtoff], [have_struct_tm_tm_gmtoff=yes],
+                [have_struct_tm_tm_gmtoff=no], [[#include <time.h>]])
+
+if test "x$have_struct_tm_tm_gmtoff" = "xyes"; then
+  AC_DEFINE([HAVE_STRUCT_TM_TM_GMTOFF], [1],
+            [Define to 1 if you have `struct tm.tm_gmtoff` member.])
+fi
+
 # Checks for library functions.
 if test "x$cross_compiling" != "xyes"; then
   AC_FUNC_MALLOC
@@ -518,7 +543,6 @@ if test "x$werror" != "xno"; then
     AX_CHECK_COMPILE_FLAG([-Wcast-align], [CFLAGS="$CFLAGS -Wcast-align"])
     AX_CHECK_COMPILE_FLAG([-Wclobbered], [CFLAGS="$CFLAGS -Wclobbered"])
     AX_CHECK_COMPILE_FLAG([-Wvla], [CFLAGS="$CFLAGS -Wvla"])
-    AX_CHECK_COMPILE_FLAG([-Wno-unused-parameter], [CFLAGS="$CFLAGS -Wno-unused-parameter"])
     AX_CHECK_COMPILE_FLAG([-Wpragmas], [CFLAGS="$CFLAGS -Wpragmas"])
     AX_CHECK_COMPILE_FLAG([-Wunreachable-code], [CFLAGS="$CFLAGS -Wunreachable-code"])
     AX_CHECK_COMPILE_FLAG([-Waddress], [CFLAGS="$CFLAGS -Waddress"])
@@ -573,6 +597,7 @@ AC_CONFIG_FILES([
   doc/nghttp2.h.rst
   doc/nghttp2ver.h.rst
   doc/asio_http2.h.rst
+  doc/contribute.rst
   contrib/Makefile
 ])
 AC_OUTPUT
