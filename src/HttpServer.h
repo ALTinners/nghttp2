@@ -27,9 +27,9 @@
 
 #include "nghttp2_config.h"
 
-#include <stdint.h>
 #include <sys/types.h>
 
+#include <cinttypes>
 #include <cstdlib>
 
 #include <string>
@@ -39,38 +39,31 @@
 
 #include <openssl/ssl.h>
 
-#include <event2/event.h>
-#include <event2/bufferevent.h>
+#include <ev.h>
 
 #include <nghttp2/nghttp2.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-#include "nghttp2_buf.h"
-
-#ifdef __cplusplus
-}
-#endif
-
 #include "http2.h"
+#include "buffer.h"
+#include "template.h"
 
 namespace nghttp2 {
 
 struct Config {
   std::map<std::string, std::vector<std::string>> push;
+  Headers trailer;
   std::string htdocs;
   std::string host;
   std::string private_key_file;
   std::string cert_file;
   std::string dh_param_file;
-  timeval stream_read_timeout;
-  timeval stream_write_timeout;
-  nghttp2_option *session_option;
+  std::string address;
+  ev_tstamp stream_read_timeout;
+  ev_tstamp stream_write_timeout;
   void *data_ptr;
   size_t padding;
   size_t num_worker;
+  size_t max_concurrent_streams;
   ssize_t header_table_size;
   uint16_t port;
   bool verbose;
@@ -79,20 +72,37 @@ struct Config {
   bool no_tls;
   bool error_gzip;
   bool early_response;
+  bool hexdump;
+  bool echo_upload;
   Config();
   ~Config();
 };
 
 class Http2Handler;
 
+struct FileEntry {
+  FileEntry(std::string path, int64_t length, int64_t mtime, int fd)
+      : path(std::move(path)), length(length), mtime(mtime), dlprev(nullptr),
+        dlnext(nullptr), fd(fd), usecount(1) {}
+  std::string path;
+  int64_t length;
+  int64_t mtime;
+  FileEntry *dlprev, *dlnext;
+  int fd;
+  int usecount;
+};
+
 struct Stream {
   Headers headers;
-  std::pair<std::string, size_t> response_body;
   Http2Handler *handler;
-  event *rtimer;
-  event *wtimer;
+  FileEntry *file_ent;
+  ev_timer rtimer;
+  ev_timer wtimer;
+  int64_t body_length;
+  int64_t body_offset;
   int32_t stream_id;
-  int file;
+  http2::HeaderIndex hdidx;
+  bool echo_upload;
   Stream(Http2Handler *handler, int32_t stream_id);
   ~Stream();
 };
@@ -106,10 +116,9 @@ public:
 
   void remove_self();
   int setup_bev();
-  int send();
   int on_read();
   int on_write();
-  int on_connect();
+  int connection_made();
   int verify_npn_result();
 
   int submit_file_response(const std::string &status, Stream *stream,
@@ -137,15 +146,39 @@ public:
   void remove_settings_timer();
   void terminate_session(uint32_t error_code);
 
+  int fill_wb();
+
+  int read_clear();
+  int write_clear();
+  int tls_handshake();
+  int read_tls();
+  int write_tls();
+
+  struct ev_loop *get_loop() const;
+
+  using WriteBuf = Buffer<64_k>;
+
+  WriteBuf *get_wb();
+
 private:
+  ev_io wev_;
+  ev_io rev_;
+  ev_timer settings_timerev_;
   std::map<int32_t, std::unique_ptr<Stream>> id2stream_;
+  WriteBuf wb_;
+  std::function<int(Http2Handler &)> read_, write_;
   int64_t session_id_;
   nghttp2_session *session_;
   Sessions *sessions_;
   SSL *ssl_;
-  bufferevent *bev_;
-  event *settings_timerev_;
+  const uint8_t *data_pending_;
+  size_t data_pendinglen_;
   int fd_;
+};
+
+struct StatusPage {
+  std::string status;
+  FileEntry file_ent;
 };
 
 class HttpServer {
@@ -154,8 +187,10 @@ public:
   int listen();
   int run();
   const Config *get_config() const;
+  const StatusPage *get_status_page(int status) const;
 
 private:
+  std::vector<StatusPage> status_pages_;
   const Config *config_;
 };
 

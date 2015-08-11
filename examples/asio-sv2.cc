@@ -35,12 +35,16 @@
 //
 #include <sys/types.h>
 #include <sys/stat.h>
+#ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#endif // HAVE_UNISTD_H
+#ifdef HAVE_FCNTL_H
 #include <fcntl.h>
+#endif // HAVE_FCNTL_H
 #include <iostream>
 #include <string>
 
-#include <nghttp2/asio_http2.h>
+#include <nghttp2/asio_http2_server.h>
 
 using namespace nghttp2::asio_http2;
 using namespace nghttp2::asio_http2::server;
@@ -48,30 +52,28 @@ using namespace nghttp2::asio_http2::server;
 int main(int argc, char *argv[]) {
   try {
     // Check command line arguments.
-    if (argc < 4) {
-      std::cerr << "Usage: asio-sv2 <port> <threads> <doc-root> "
-                << "<private-key-file> <cert-file>\n";
+    if (argc < 5) {
+      std::cerr << "Usage: asio-sv2 <address> <port> <threads> <doc-root> "
+                << "[<private-key-file> <cert-file>]\n";
       return 1;
     }
 
-    uint16_t port = std::stoi(argv[1]);
-    std::size_t num_threads = std::stoi(argv[2]);
-    std::string docroot = argv[3];
+    boost::system::error_code ec;
+
+    std::string addr = argv[1];
+    std::string port = argv[2];
+    std::size_t num_threads = std::stoi(argv[3]);
+    std::string docroot = argv[4];
 
     http2 server;
 
     server.num_threads(num_threads);
 
-    if (argc >= 6) {
-      server.tls(argv[4], argv[5]);
-    }
-
-    server.listen("*", port, [&docroot](const std::shared_ptr<request> &req,
-                                        const std::shared_ptr<response> &res) {
-      auto path = percent_decode(req->path());
+    server.handle("/", [&docroot](const request &req, const response &res) {
+      auto path = percent_decode(req.uri().path);
       if (!check_path(path)) {
-        res->write_head(404);
-        res->end();
+        res.write_head(404);
+        res.end();
         return;
       }
 
@@ -82,23 +84,39 @@ int main(int argc, char *argv[]) {
       path = docroot + path;
       auto fd = open(path.c_str(), O_RDONLY);
       if (fd == -1) {
-        res->write_head(404);
-        res->end();
+        res.write_head(404);
+        res.end();
         return;
       }
 
-      auto headers = std::vector<header>();
+      auto header = header_map();
 
       struct stat stbuf;
       if (stat(path.c_str(), &stbuf) == 0) {
-        headers.push_back(
-            header{"content-length", std::to_string(stbuf.st_size)});
-        headers.push_back(
-            header{"last-modified", http_date(stbuf.st_mtim.tv_sec)});
+        header.emplace("content-length",
+                       header_value{std::to_string(stbuf.st_size)});
+        header.emplace("last-modified",
+                       header_value{http_date(stbuf.st_mtime)});
       }
-      res->write_head(200, std::move(headers));
-      res->end(file_reader_from_fd(fd));
+      res.write_head(200, std::move(header));
+      res.end(file_generator_from_fd(fd));
     });
+
+    if (argc >= 7) {
+      boost::asio::ssl::context tls(boost::asio::ssl::context::sslv23);
+      tls.use_private_key_file(argv[5], boost::asio::ssl::context::pem);
+      tls.use_certificate_chain_file(argv[6]);
+
+      configure_tls_context_easy(ec, tls);
+
+      if (server.listen_and_serve(ec, tls, addr, port)) {
+        std::cerr << "error: " << ec.message() << std::endl;
+      }
+    } else {
+      if (server.listen_and_serve(ec, addr, port)) {
+        std::cerr << "error: " << ec.message() << std::endl;
+      }
+    }
   } catch (std::exception &e) {
     std::cerr << "exception: " << e.what() << "\n";
   }

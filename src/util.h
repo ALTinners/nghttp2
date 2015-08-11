@@ -27,9 +27,15 @@
 
 #include "nghttp2_config.h"
 
+#ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#endif // HAVE_UNISTD_H
 #include <getopt.h>
+#ifdef HAVE_NETDB_H
+#include <netdb.h>
+#endif // HAVE_NETDB_H
 
+#include <cmath>
 #include <cstring>
 #include <cassert>
 #include <vector>
@@ -43,24 +49,16 @@
 
 namespace nghttp2 {
 
+// The additional HTTP/2 protocol ALPN protocol identifier we also
+// supports for our applications to make smooth migration into final
+// h2 ALPN ID.
+constexpr const char NGHTTP2_H2_16_ALPN[] = "\x5h2-16";
+constexpr const char NGHTTP2_H2_16[] = "h2-16";
+
+constexpr const char NGHTTP2_H2_14_ALPN[] = "\x5h2-14";
+constexpr const char NGHTTP2_H2_14[] = "h2-14";
+
 namespace util {
-
-template <typename T, size_t N> constexpr size_t array_size(T (&)[N]) {
-  return N;
-}
-
-template <typename T, typename F> struct Defer {
-  Defer(T t, F f) : t(t), f(std::move(f)) {}
-
-  ~Defer() { f(t); }
-
-  T t;
-  F f;
-};
-
-template <typename T, typename F> Defer<T, F> defer(T &&t, F f) {
-  return Defer<T, F>(std::forward<T>(t), std::forward<F>(f));
-}
 
 extern const char DEFAULT_STRIP_CHARSET[];
 
@@ -168,15 +166,42 @@ bool isHexDigit(const char c);
 
 bool inRFC3986UnreservedChars(const char c);
 
+bool in_rfc3986_sub_delims(const char c);
+
 // Returns true if |c| is in token (HTTP-p1, Section 3.2.6)
 bool in_token(char c);
+
+bool in_attr_char(char c);
+
+// Returns integer corresponding to hex notation |c|.  It is undefined
+// if isHexDigit(c) is false.
+uint32_t hex_to_uint(char c);
 
 std::string percentEncode(const unsigned char *target, size_t len);
 
 std::string percentEncode(const std::string &target);
 
-std::string percentDecode(std::string::const_iterator first,
-                          std::string::const_iterator last);
+// percent-encode path component of URI |s|.
+std::string percent_encode_path(const std::string &s);
+
+template <typename InputIt>
+std::string percentDecode(InputIt first, InputIt last) {
+  std::string result;
+  for (; first != last; ++first) {
+    if (*first == '%') {
+      if (first + 1 != last && first + 2 != last && isHexDigit(*(first + 1)) &&
+          isHexDigit(*(first + 2))) {
+        result += (hex_to_uint(*(first + 1)) << 4) + hex_to_uint(*(first + 2));
+        first += 2;
+        continue;
+      }
+      result += *first;
+      continue;
+    }
+    result += *first;
+  }
+  return result;
+}
 
 // Percent encode |target| if character is not in token or '%'.
 std::string percent_encode_token(const std::string &target);
@@ -186,6 +211,14 @@ std::string percent_encode_token(const std::string &target);
 std::string quote_string(const std::string &target);
 
 std::string format_hex(const unsigned char *s, size_t len);
+
+template <size_t N> std::string format_hex(const unsigned char (&s)[N]) {
+  return format_hex(s, N);
+}
+
+template <size_t N> std::string format_hex(const std::array<uint8_t, N> &s) {
+  return format_hex(s.data(), s.size());
+}
 
 std::string http_date(time_t t);
 
@@ -199,96 +232,7 @@ std::string iso8601_date(int64_t ms);
 
 time_t parse_http_date(const std::string &s);
 
-template <typename InputIterator1, typename InputIterator2>
-bool startsWith(InputIterator1 first1, InputIterator1 last1,
-                InputIterator2 first2, InputIterator2 last2) {
-  if (last1 - first1 < last2 - first2) {
-    return false;
-  }
-  return std::equal(first2, last2, first1);
-}
-
-bool startsWith(const std::string &a, const std::string &b);
-
-struct CaseCmp {
-  bool operator()(char lhs, char rhs) const {
-    if ('A' <= lhs && lhs <= 'Z') {
-      lhs += 'a' - 'A';
-    }
-    if ('A' <= rhs && rhs <= 'Z') {
-      rhs += 'a' - 'A';
-    }
-    return lhs == rhs;
-  }
-};
-
-template <typename InputIterator1, typename InputIterator2>
-bool istartsWith(InputIterator1 first1, InputIterator1 last1,
-                 InputIterator2 first2, InputIterator2 last2) {
-  if (last1 - first1 < last2 - first2) {
-    return false;
-  }
-  return std::equal(first2, last2, first1, CaseCmp());
-}
-
-bool istartsWith(const std::string &a, const std::string &b);
-bool istartsWith(const char *a, const char *b);
-bool istartsWith(const char *a, size_t n, const char *b);
-
-template <typename InputIterator1, typename InputIterator2>
-bool endsWith(InputIterator1 first1, InputIterator1 last1,
-              InputIterator2 first2, InputIterator2 last2) {
-  if (last1 - first1 < last2 - first2) {
-    return false;
-  }
-  return std::equal(first2, last2, last1 - (last2 - first2));
-}
-
-template <typename InputIterator1, typename InputIterator2>
-bool iendsWith(InputIterator1 first1, InputIterator1 last1,
-               InputIterator2 first2, InputIterator2 last2) {
-  if (last1 - first1 < last2 - first2) {
-    return false;
-  }
-  return std::equal(first2, last2, last1 - (last2 - first2), CaseCmp());
-}
-
-bool endsWith(const std::string &a, const std::string &b);
-
-int strcompare(const char *a, const uint8_t *b, size_t n);
-
-bool strieq(const std::string &a, const std::string &b);
-
-bool strieq(const char *a, const char *b);
-
-bool strieq(const char *a, const uint8_t *b, size_t n);
-
-bool strieq(const char *a, const char *b, size_t n);
-
-template <typename A, typename B>
-bool streq(const A *a, const B *b, size_t bn) {
-  if (!a || !b) {
-    return false;
-  }
-  auto blast = b + bn;
-  for (; *a && b != blast && *a == *b; ++a, ++b)
-    ;
-  return !*a && b == blast;
-}
-
-template <typename A, typename B>
-bool streq(const A *a, size_t alen, const B *b, size_t blen) {
-  if (alen != blen) {
-    return false;
-  }
-  return memcmp(a, b, alen) == 0;
-}
-
-bool strifind(const char *a, const char *b);
-
 char upcase(char c);
-
-char lowcase(char c);
 
 inline char lowcase(char c) {
   static unsigned char tbl[] = {
@@ -314,8 +258,157 @@ inline char lowcase(char c) {
   return tbl[static_cast<unsigned char>(c)];
 }
 
+template <typename InputIterator1, typename InputIterator2>
+bool startsWith(InputIterator1 first1, InputIterator1 last1,
+                InputIterator2 first2, InputIterator2 last2) {
+  if (last1 - first1 < last2 - first2) {
+    return false;
+  }
+  return std::equal(first2, last2, first1);
+}
+
+inline bool startsWith(const std::string &a, const std::string &b) {
+  return startsWith(std::begin(a), std::end(a), std::begin(b), std::end(b));
+}
+
+inline bool startsWith(const char *a, const char *b) {
+  return startsWith(a, a + strlen(a), b, b + strlen(b));
+}
+
+struct CaseCmp {
+  bool operator()(char lhs, char rhs) const {
+    return lowcase(lhs) == lowcase(rhs);
+  }
+};
+
+template <typename InputIterator1, typename InputIterator2>
+bool istartsWith(InputIterator1 first1, InputIterator1 last1,
+                 InputIterator2 first2, InputIterator2 last2) {
+  if (last1 - first1 < last2 - first2) {
+    return false;
+  }
+  return std::equal(first2, last2, first1, CaseCmp());
+}
+
+inline bool istartsWith(const std::string &a, const std::string &b) {
+  return istartsWith(std::begin(a), std::end(a), std::begin(b), std::end(b));
+}
+
+template <typename InputIt>
+bool istartsWith(InputIt a, size_t an, const char *b) {
+  return istartsWith(a, a + an, b, b + strlen(b));
+}
+
+bool istartsWith(const char *a, const char *b);
+
+template <typename InputIterator1, typename InputIterator2>
+bool endsWith(InputIterator1 first1, InputIterator1 last1,
+              InputIterator2 first2, InputIterator2 last2) {
+  if (last1 - first1 < last2 - first2) {
+    return false;
+  }
+  return std::equal(first2, last2, last1 - (last2 - first2));
+}
+
+inline bool endsWith(const std::string &a, const std::string &b) {
+  return endsWith(std::begin(a), std::end(a), std::begin(b), std::end(b));
+}
+
+template <typename InputIterator1, typename InputIterator2>
+bool iendsWith(InputIterator1 first1, InputIterator1 last1,
+               InputIterator2 first2, InputIterator2 last2) {
+  if (last1 - first1 < last2 - first2) {
+    return false;
+  }
+  return std::equal(first2, last2, last1 - (last2 - first2), CaseCmp());
+}
+
+inline bool iendsWith(const std::string &a, const std::string &b) {
+  return iendsWith(std::begin(a), std::end(a), std::begin(b), std::end(b));
+}
+
+int strcompare(const char *a, const uint8_t *b, size_t n);
+
+template <typename InputIt> bool strieq(const char *a, InputIt b, size_t bn) {
+  if (!a) {
+    return false;
+  }
+  auto blast = b + bn;
+  for (; *a && b != blast && lowcase(*a) == lowcase(*b); ++a, ++b)
+    ;
+  return !*a && b == blast;
+}
+
+template <typename InputIt1, typename InputIt2>
+bool strieq(InputIt1 a, size_t alen, InputIt2 b, size_t blen) {
+  if (alen != blen) {
+    return false;
+  }
+  return std::equal(a, a + alen, b, CaseCmp());
+}
+
+inline bool strieq(const std::string &a, const std::string &b) {
+  return strieq(std::begin(a), a.size(), std::begin(b), b.size());
+}
+
+bool strieq(const char *a, const char *b);
+
+inline bool strieq(const char *a, const std::string &b) {
+  return strieq(a, b.c_str(), b.size());
+}
+
+template <typename InputIt, size_t N>
+bool strieq_l(const char (&a)[N], InputIt b, size_t blen) {
+  return strieq(a, N - 1, b, blen);
+}
+
+template <size_t N> bool strieq_l(const char (&a)[N], const std::string &b) {
+  return strieq(a, N - 1, std::begin(b), b.size());
+}
+
+template <typename InputIt> bool streq(const char *a, InputIt b, size_t bn) {
+  if (!a) {
+    return false;
+  }
+  auto blast = b + bn;
+  for (; *a && b != blast && *a == *b; ++a, ++b)
+    ;
+  return !*a && b == blast;
+}
+
+template <typename InputIt1, typename InputIt2>
+bool streq(InputIt1 a, size_t alen, InputIt2 b, size_t blen) {
+  if (alen != blen) {
+    return false;
+  }
+  return std::equal(a, a + alen, b);
+}
+
+inline bool streq(const char *a, const char *b) {
+  if (!a || !b) {
+    return false;
+  }
+  return streq(a, strlen(a), b, strlen(b));
+}
+
+template <typename InputIt, size_t N>
+bool streq_l(const char (&a)[N], InputIt b, size_t blen) {
+  return streq(a, N - 1, b, blen);
+}
+
+bool strifind(const char *a, const char *b);
+
+template <typename InputIt> void inp_strlower(InputIt first, InputIt last) {
+  std::transform(first, last, first, lowcase);
+}
+
 // Lowercase |s| in place.
-void inp_strlower(std::string &s);
+inline void inp_strlower(std::string &s) {
+  inp_strlower(std::begin(s), std::end(s));
+}
+
+// Returns string representation of |n| with 2 fractional digits.
+std::string dtos(double n);
 
 template <typename T> std::string utos(T n) {
   std::string res;
@@ -333,6 +426,44 @@ template <typename T> std::string utos(T n) {
     res[i] = (n % 10) + '0';
   }
   return res;
+}
+
+template <typename T> std::string utos_with_unit(T n) {
+  char u = 0;
+  if (n >= (1 << 30)) {
+    u = 'G';
+    n /= (1 << 30);
+  } else if (n >= (1 << 20)) {
+    u = 'M';
+    n /= (1 << 20);
+  } else if (n >= (1 << 10)) {
+    u = 'K';
+    n /= (1 << 10);
+  }
+  if (u == 0) {
+    return utos(n);
+  }
+  return utos(n) + u;
+}
+
+// Like utos_with_unit(), but 2 digits fraction part is followed.
+template <typename T> std::string utos_with_funit(T n) {
+  char u = 0;
+  int b = 0;
+  if (n >= (1 << 30)) {
+    u = 'G';
+    b = 30;
+  } else if (n >= (1 << 20)) {
+    u = 'M';
+    b = 20;
+  } else if (n >= (1 << 10)) {
+    u = 'K';
+    b = 10;
+  }
+  if (b == 0) {
+    return utos(n);
+  }
+  return dtos(static_cast<double>(n) / (1 << b)) + u;
 }
 
 extern const char UPPER_XDIGITS[];
@@ -353,18 +484,6 @@ template <typename T> std::string utox(T n) {
     res[i] = UPPER_XDIGITS[(n & 0x0f)];
   }
   return res;
-}
-
-template <typename T, typename... U>
-typename std::enable_if<!std::is_array<T>::value, std::unique_ptr<T>>::type
-make_unique(U &&... u) {
-  return std::unique_ptr<T>(new T(std::forward<U>(u)...));
-}
-
-template <typename T>
-typename std::enable_if<std::is_array<T>::value, std::unique_ptr<T>>::type
-make_unique(size_t size) {
-  return std::unique_ptr<T>(new typename std::remove_extent<T>::type[size]());
 }
 
 void to_token68(std::string &base64str);
@@ -392,6 +511,10 @@ void write_uri_field(std::ostream &o, const char *uri, const http_parser_url &u,
                      http_parser_url_fields field);
 
 bool numeric_host(const char *hostname);
+
+// Returns numeric address string of |addr|.  If getnameinfo() is
+// failed, "unknown" is returned.
+std::string numeric_name(const struct sockaddr *sa, socklen_t salen);
 
 // Opens |path| with O_APPEND enabled.  If file does not exist, it is
 // created first.  This function returns file descriptor referring the
@@ -424,6 +547,12 @@ int64_t to_time64(const timeval &tv);
 // protocol identifier.
 bool check_h2_is_selected(const unsigned char *alpn, size_t len);
 
+// Selects h2 protocol ALPN ID if one of supported h2 versions are
+// present in |in| of length inlen.  Returns true if h2 version is
+// selected.
+bool select_h2(const unsigned char **out, unsigned char *outlen,
+               const unsigned char *in, unsigned int inlen);
+
 // Returns default ALPN protocol list, which only contains supported
 // HTTP/2 protocol identifier.
 std::vector<unsigned char> get_default_alpn();
@@ -453,6 +582,78 @@ template <typename Clock, typename Rep> Rep clock_precision() {
 
   return duration.count();
 }
+
+int make_socket_closeonexec(int fd);
+int make_socket_nonblocking(int fd);
+int make_socket_nodelay(int fd);
+
+int create_nonblock_socket(int family);
+
+bool check_socket_connected(int fd);
+
+// Returns true if |host| is IPv6 numeric address (e.g., ::1)
+bool ipv6_numeric_addr(const char *host);
+
+// Parses NULL terminated string |s| as unsigned integer and returns
+// the parsed integer.  Additionally, if |s| ends with 'k', 'm', 'g'
+// and its upper case characters, multiply the integer by 1024, 1024 *
+// 1024 and 1024 * 1024 respectively.  If there is an error, returns
+// -1.
+int64_t parse_uint_with_unit(const char *s);
+
+// Parses NULL terminated string |s| as unsigned integer and returns
+// the parsed integer.  If there is an error, returns -1.
+int64_t parse_uint(const char *s);
+int64_t parse_uint(const uint8_t *s, size_t len);
+int64_t parse_uint(const std::string &s);
+
+// Parses NULL terminated string |s| as unsigned integer and returns
+// the parsed integer casted to double.  If |s| ends with "s", the
+// parsed value's unit is a second.  If |s| ends with "ms", the unit
+// is millisecond.  If none of them are given, the unit is second.
+// This function returns std::numeric_limits<double>::infinity() if
+// error occurs.
+double parse_duration_with_unit(const char *s);
+
+// Returns string representation of time duration |t|.  If t has
+// fractional part (at least more than or equal to 1e-3), |t| is
+// multiplied by 1000 and the unit "ms" is appended.  Otherwise, |t|
+// is left as is and "s" is appended.
+std::string duration_str(double t);
+
+// Returns string representation of time duration |t|.  It appends
+// unit after the formatting.  The available units are s, ms and us.
+// The unit which is equal to or less than |t| is used and 2
+// fractional digits follow.
+std::string format_duration(const std::chrono::microseconds &u);
+
+// Creates "host:port" string using given |host| and |port|.  If
+// |host| is numeric IPv6 address (e.g., ::1), it is enclosed by "["
+// and "]".  If |port| is 80 or 443, port part is omitted.
+std::string make_hostport(const char *host, uint16_t port);
+
+// Dumps |src| of length |len| in the format similar to `hexdump -C`.
+void hexdump(FILE *out, const uint8_t *src, size_t len);
+
+// Copies 2 byte unsigned integer |n| in host byte order to |buf| in
+// network byte order.
+void put_uint16be(uint8_t *buf, uint16_t n);
+
+// Copies 4 byte unsigned integer |n| in host byte order to |buf| in
+// network byte order.
+void put_uint32be(uint8_t *buf, uint32_t n);
+
+// Retrieves 2 byte unsigned integer stored in |data| in network byte
+// order and returns it in host byte order.
+uint16_t get_uint16(const uint8_t *data);
+
+// Retrieves 4 byte unsigned integer stored in |data| in network byte
+// order and returns it in host byte order.
+uint32_t get_uint32(const uint8_t *data);
+
+// Retrieves 8 byte unsigned integer stored in |data| in network byte
+// order and returns it in host byte order.
+uint64_t get_uint64(const uint8_t *data);
 
 } // namespace util
 

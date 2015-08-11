@@ -34,14 +34,15 @@
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
 //
 
-#ifndef HTTP_SERVER2_IO_SERVICE_POOL_HPP
-#define HTTP_SERVER2_IO_SERVICE_POOL_HPP
+#ifndef ASIO_IO_SERVICE_POOL_H
+#define ASIO_IO_SERVICE_POOL_H
 
 #include "nghttp2_config.h"
 
 #include <vector>
 #include <memory>
-#include <boost/asio.hpp>
+#include <future>
+
 #include <boost/noncopyable.hpp>
 #include <boost/thread.hpp>
 
@@ -51,48 +52,40 @@ namespace nghttp2 {
 
 namespace asio_http2 {
 
-namespace server {
-
 /// A pool of io_service objects.
 class io_service_pool : private boost::noncopyable {
 public:
   /// Construct the io_service pool.
-  explicit io_service_pool(std::size_t pool_size, std::size_t thread_pool_size);
+  explicit io_service_pool(std::size_t pool_size);
 
   /// Run all io_service objects in the pool.
-  void run();
+  void run(bool asynchronous = false);
 
   /// Stop all io_service objects in the pool.
   void stop();
 
+  /// Join on all io_service objects in the pool.
+  void join();
+
   /// Get an io_service to use.
   boost::asio::io_service &get_io_service();
 
-  boost::asio::io_service &get_task_io_service();
-
 private:
-  typedef std::shared_ptr<boost::asio::io_service> io_service_ptr;
-  typedef std::shared_ptr<boost::asio::io_service::work> work_ptr;
-
   /// The pool of io_services.
-  std::vector<io_service_ptr> io_services_;
-
-  boost::asio::io_service task_io_service_;
-  boost::thread_group thread_pool_;
+  std::vector<std::shared_ptr<boost::asio::io_service>> io_services_;
 
   /// The work that keeps the io_services running.
-  std::vector<work_ptr> work_;
+  std::vector<std::shared_ptr<boost::asio::io_service::work>> work_;
 
   /// The next io_service to use for a connection.
   std::size_t next_io_service_;
 
-  std::size_t thread_pool_size_;
+  /// Futures to all the io_service objects
+  std::vector<std::future<std::size_t>> futures_;
 };
-
-} // namespace server
 
 } // namespace asio_http2
 
 } // namespace nghttp2
 
-#endif // HTTP_SERVER2_IO_SERVICE_POOL_HPP
+#endif // ASIO_IO_SERVICE_POOL_H

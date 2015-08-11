@@ -35,17 +35,17 @@
 
 #define MAKE_NV(NAME, VALUE)                                                   \
   {                                                                            \
-    (uint8_t *) NAME, (uint8_t *)VALUE, strlen(NAME), strlen(VALUE),           \
-        NGHTTP2_NV_FLAG_NONE                                                   \
+    (uint8_t *)(NAME), (uint8_t *)(VALUE), sizeof((NAME)) - 1,                 \
+        sizeof((VALUE)) - 1, NGHTTP2_NV_FLAG_NONE                              \
   }
 #define ARRLEN(ARR) (sizeof(ARR) / sizeof(ARR[0]))
 
-#define assert_nv_equal(A, B, len)                                             \
+#define assert_nv_equal(A, B, len, mem)                                        \
   do {                                                                         \
     size_t alloclen = sizeof(nghttp2_nv) * len;                                \
-    nghttp2_nv *sa = A, *sb = B;                                               \
-    nghttp2_nv *a = malloc(alloclen);                                          \
-    nghttp2_nv *b = malloc(alloclen);                                          \
+    const nghttp2_nv *sa = A, *sb = B;                                         \
+    nghttp2_nv *a = mem->malloc(alloclen, NULL);                               \
+    nghttp2_nv *b = mem->malloc(alloclen, NULL);                               \
     ssize_t i_;                                                                \
     memcpy(a, sa, alloclen);                                                   \
     memcpy(b, sb, alloclen);                                                   \
@@ -54,8 +54,8 @@
     for (i_ = 0; i_ < (ssize_t)len; ++i_) {                                    \
       CU_ASSERT(nghttp2_nv_equal(&a[i_], &b[i_]));                             \
     }                                                                          \
-    free(b);                                                                   \
-    free(a);                                                                   \
+    mem->free(b, NULL);                                                        \
+    mem->free(a, NULL);                                                        \
   } while (0);
 
 int unpack_framebuf(nghttp2_frame *frame, nghttp2_bufs *bufs);
@@ -74,12 +74,20 @@ typedef struct {
 } nva_out;
 
 void nva_out_init(nva_out *out);
-void nva_out_reset(nva_out *out);
+void nva_out_reset(nva_out *out, nghttp2_mem *mem);
 
-void add_out(nva_out *out, nghttp2_nv *nv);
+void add_out(nva_out *out, nghttp2_nv *nv, nghttp2_mem *mem);
 
 ssize_t inflate_hd(nghttp2_hd_inflater *inflater, nva_out *out,
-                   nghttp2_bufs *bufs, size_t offset);
+                   nghttp2_bufs *bufs, size_t offset, nghttp2_mem *mem);
+
+int pack_headers(nghttp2_bufs *bufs, nghttp2_hd_deflater *deflater,
+                 int32_t stream_id, int flags, const nghttp2_nv *nva,
+                 size_t nvlen, nghttp2_mem *mem);
+
+int pack_push_promise(nghttp2_bufs *bufs, nghttp2_hd_deflater *deflater,
+                      int32_t stream_id, int flags, int32_t promised_stream_id,
+                      const nghttp2_nv *nva, size_t nvlen, nghttp2_mem *mem);
 
 int frame_pack_bufs_init(nghttp2_bufs *bufs);
 
@@ -99,6 +107,6 @@ nghttp2_stream *open_stream_with_dep_excl(nghttp2_session *session,
                                           int32_t stream_id,
                                           nghttp2_stream *dep_stream);
 
-nghttp2_outbound_item *create_data_ob_item(void);
+nghttp2_outbound_item *create_data_ob_item(nghttp2_mem *mem);
 
 #endif /* NGHTTP2_TEST_HELPER_H */

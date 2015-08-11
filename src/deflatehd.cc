@@ -26,7 +26,9 @@
 #include <config.h>
 #endif // HAVE_CONFIG_H
 
+#ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#endif // HAVE_UNISTD_H
 #include <getopt.h>
 
 #include <cstdio>
@@ -46,6 +48,10 @@ extern "C" {
 
 #include "comp_helper.h"
 }
+
+#include "template.h"
+
+namespace nghttp2 {
 
 typedef struct {
   size_t table_size;
@@ -120,7 +126,7 @@ static void deflate_hd(nghttp2_hd_deflater *deflater,
   ssize_t rv;
   nghttp2_bufs bufs;
 
-  nghttp2_bufs_init2(&bufs, 4096, 16, 0);
+  nghttp2_bufs_init2(&bufs, 4_k, 16, 0, nghttp2_mem_default());
 
   rv = nghttp2_hd_deflate_hd_bufs(deflater, &bufs, (nghttp2_nv *)nva.data(),
                                   nva.size());
@@ -186,18 +192,19 @@ static int deflate_hd_json(json_t *obj, nghttp2_hd_deflater *deflater,
   return 0;
 }
 
-static void init_deflater(nghttp2_hd_deflater *deflater) {
-  nghttp2_hd_deflate_init2(deflater, config.deflate_table_size);
+static nghttp2_hd_deflater *init_deflater() {
+  nghttp2_hd_deflater *deflater;
+  nghttp2_hd_deflate_new(&deflater, config.deflate_table_size);
   nghttp2_hd_deflate_change_table_size(deflater, config.table_size);
+  return deflater;
 }
 
 static void deinit_deflater(nghttp2_hd_deflater *deflater) {
-  nghttp2_hd_deflate_free(deflater);
+  nghttp2_hd_deflate_del(deflater);
 }
 
 static int perform(void) {
   json_error_t error;
-  nghttp2_hd_deflater deflater;
 
   auto json = json_loadf(stdin, 0, &error);
 
@@ -218,7 +225,7 @@ static int perform(void) {
     exit(EXIT_FAILURE);
   }
 
-  init_deflater(&deflater);
+  auto deflater = init_deflater();
   output_json_header();
   auto len = json_array_size(cases);
 
@@ -228,7 +235,7 @@ static int perform(void) {
       fprintf(stderr, "Unexpected JSON type at %zu. It should be object.\n", i);
       continue;
     }
-    if (deflate_hd_json(obj, &deflater, i) != 0) {
+    if (deflate_hd_json(obj, deflater, i) != 0) {
       continue;
     }
     if (i + 1 < len) {
@@ -236,7 +243,7 @@ static int perform(void) {
     }
   }
   output_json_footer();
-  deinit_deflater(&deflater);
+  deinit_deflater(deflater);
   json_decref(json);
   return 0;
 }
@@ -244,8 +251,8 @@ static int perform(void) {
 static int perform_from_http1text(void) {
   char line[1 << 14];
   int seq = 0;
-  nghttp2_hd_deflater deflater;
-  init_deflater(&deflater);
+
+  auto deflater = init_deflater();
   output_json_header();
   for (;;) {
     std::vector<nghttp2_nv> nva;
@@ -292,7 +299,7 @@ static int perform_from_http1text(void) {
       if (seq > 0) {
         printf(",\n");
       }
-      deflate_hd(&deflater, nva, inputlen, seq);
+      deflate_hd(deflater, nva, inputlen, seq);
     }
 
     for (auto &nv : nva) {
@@ -305,7 +312,7 @@ static int perform_from_http1text(void) {
     ++seq;
   }
   output_json_footer();
-  deinit_deflater(&deflater);
+  deinit_deflater(deflater);
   return 0;
 }
 
@@ -445,3 +452,7 @@ int main(int argc, char **argv) {
           output_sum, comp_ratio);
   return 0;
 }
+
+} // namespace nghttp2
+
+int main(int argc, char **argv) { return nghttp2::main(argc, argv); }

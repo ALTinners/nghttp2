@@ -22,17 +22,19 @@
  * OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-#include "nghttp2_config.h"
+#include "nghttp.h"
 
-#include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/socket.h>
-#include <netdb.h>
+#ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#endif // HAVE_UNISTD_H
+#ifdef HAVE_FCNTL_H
 #include <fcntl.h>
+#endif // HAVE_FCNTL_H
+#ifdef HAVE_NETINET_IN_H
 #include <netinet/in.h>
+#endif // HAVE_NETINET_IN_H
 #include <netinet/tcp.h>
-#include <signal.h>
 #include <getopt.h>
 
 #include <cassert>
@@ -40,41 +42,24 @@
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
-#include <string>
 #include <iostream>
-#include <string>
-#include <set>
 #include <iomanip>
-#include <fstream>
-#include <map>
-#include <vector>
 #include <sstream>
 #include <tuple>
-#include <chrono>
 
-#include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/conf.h>
-
-#include <event.h>
-#include <event2/event.h>
-#include <event2/bufferevent_ssl.h>
-
-#include <nghttp2/nghttp2.h>
 
 #ifdef HAVE_JANSSON
 #include <jansson.h>
 #endif // HAVE_JANSSON
 
-#include "http-parser/http_parser.h"
-
 #include "app_helper.h"
 #include "HtmlParser.h"
 #include "util.h"
-#include "libevent_util.h"
 #include "base64.h"
-#include "http2.h"
-#include "nghttp2_gzip.h"
+#include "ssl.h"
+#include "template.h"
 
 #ifndef O_BINARY
 #define O_BINARY (0)
@@ -82,70 +67,58 @@
 
 namespace nghttp2 {
 
-namespace {
-struct Config {
-  Headers headers;
-  std::string certfile;
-  std::string keyfile;
-  std::string datafile;
-  std::string harfile;
-  nghttp2_option *http2_option;
-  size_t output_upper_thres;
-  size_t padding;
-  ssize_t peer_max_concurrent_streams;
-  ssize_t header_table_size;
+// The anchor stream nodes when --no-dep is not used.  The stream ID =
+// 1 is excluded since it is used as first stream in upgrade case.  We
+// follows the same dependency anchor nodes as Firefox does.
+struct Anchor {
+  int32_t stream_id;
+  // stream ID this anchor depends on
+  int32_t dep_stream_id;
+  // .. with this weight.
   int32_t weight;
-  int multiply;
-  // milliseconds
-  int timeout;
-  int window_bits;
-  int connection_window_bits;
-  int verbose;
-  bool null_out;
-  bool remote_name;
-  bool get_assets;
-  bool stat;
-  bool upgrade;
-  bool continuation;
-  bool no_content_length;
-  bool no_dep;
-
-  Config()
-      : output_upper_thres(1024 * 1024), padding(0),
-        peer_max_concurrent_streams(NGHTTP2_INITIAL_MAX_CONCURRENT_STREAMS),
-        header_table_size(-1), weight(NGHTTP2_DEFAULT_WEIGHT), multiply(1),
-        timeout(-1), window_bits(-1), connection_window_bits(-1), verbose(0),
-        null_out(false), remote_name(false), get_assets(false), stat(false),
-        upgrade(false), continuation(false), no_content_length(false),
-        no_dep(false) {
-    nghttp2_option_new(&http2_option);
-    nghttp2_option_set_peer_max_concurrent_streams(http2_option,
-                                                   peer_max_concurrent_streams);
-  }
-
-  ~Config() { nghttp2_option_del(http2_option); }
 };
+
+// This is index into anchors.  Firefox uses ANCHOR_FOLLOWERS for html
+// file.
+enum {
+  ANCHOR_LEADERS,
+  ANCHOR_UNBLOCKED,
+  ANCHOR_BACKGROUND,
+  ANCHOR_SPECULATIVE,
+  ANCHOR_FOLLOWERS,
+};
+
+namespace {
+constexpr auto anchors = std::array<Anchor, 5>{{
+    {3, 0, 201}, {5, 0, 101}, {7, 0, 1}, {9, 7, 1}, {11, 3, 1},
+}};
 } // namespace
+
+Config::Config()
+    : padding(0), max_concurrent_streams(100),
+      peer_max_concurrent_streams(NGHTTP2_INITIAL_MAX_CONCURRENT_STREAMS),
+      header_table_size(-1), weight(NGHTTP2_DEFAULT_WEIGHT), multiply(1),
+      timeout(0.), window_bits(-1), connection_window_bits(-1), verbose(0),
+      null_out(false), remote_name(false), get_assets(false), stat(false),
+      upgrade(false), continuation(false), no_content_length(false),
+      no_dep(false), hexdump(false), no_push(false) {
+  nghttp2_option_new(&http2_option);
+  nghttp2_option_set_peer_max_concurrent_streams(http2_option,
+                                                 peer_max_concurrent_streams);
+}
+
+Config::~Config() { nghttp2_option_del(http2_option); }
 
 namespace {
 Config config;
 } // namespace
 
-enum StatStage {
-  STAT_INITIAL,
-  STAT_ON_REQUEST,
-  STAT_ON_RESPONSE,
-  STAT_ON_COMPLETE
-};
-
 namespace {
-struct RequestStat {
-  std::chrono::steady_clock::time_point on_request_time;
-  std::chrono::steady_clock::time_point on_response_time;
-  std::chrono::steady_clock::time_point on_complete_time;
-  StatStage stage;
-  RequestStat() : stage(STAT_INITIAL) {}
-};
+void print_protocol_nego_error() {
+  std::cerr << "[ERROR] HTTP/2 protocol was not selected."
+            << " (nghttp2 expects " << NGHTTP2_PROTO_VERSION_ID << ")"
+            << std::endl;
+}
 } // namespace
 
 namespace {
@@ -158,929 +131,183 @@ std::string strip_fragment(const char *raw_uri) {
 }
 } // namespace
 
-namespace {
-struct Request;
-} // namespace
+Request::Request(const std::string &uri, const http_parser_url &u,
+                 const nghttp2_data_provider *data_prd, int64_t data_length,
+                 const nghttp2_priority_spec &pri_spec, int level)
+    : uri(uri), u(u), pri_spec(pri_spec), data_length(data_length),
+      data_offset(0), response_len(0), inflater(nullptr), html_parser(nullptr),
+      data_prd(data_prd), stream_id(-1), status(0), level(level),
+      expect_final_response(false) {
+  http2::init_hdidx(res_hdidx);
+  http2::init_hdidx(req_hdidx);
+}
 
-namespace {
-struct Dependency {
-  std::vector<std::vector<Request *>> deps;
-};
-} // namespace
+Request::~Request() {
+  nghttp2_gzip_inflate_del(inflater);
+  delete html_parser;
+}
 
-namespace {
-struct Request {
-  Headers res_nva;
-  Headers req_nva;
-  // URI without fragment
-  std::string uri;
-  http_parser_url u;
-  std::shared_ptr<Dependency> dep;
-  nghttp2_priority_spec pri_spec;
-  RequestStat stat;
-  int64_t data_length;
-  int64_t data_offset;
-  // Number of bytes received from server
-  int64_t response_len;
-  nghttp2_gzip *inflater;
-  HtmlParser *html_parser;
-  const nghttp2_data_provider *data_prd;
-  int32_t stream_id;
-  int status;
-  // Recursion level: 0: first entity, 1: entity linked from first entity
-  int level;
-  // RequestPriority value defined in HtmlParser.h
-  int pri;
-  bool expect_final_response;
+void Request::init_inflater() {
+  int rv;
+  rv = nghttp2_gzip_inflate_new(&inflater);
+  assert(rv == 0);
+}
 
-  // For pushed request, |uri| is empty and |u| is zero-cleared.
-  Request(const std::string &uri, const http_parser_url &u,
-          const nghttp2_data_provider *data_prd, int64_t data_length,
-          const nghttp2_priority_spec &pri_spec,
-          std::shared_ptr<Dependency> dep, int pri = 0, int level = 0)
-      : uri(uri), u(u), dep(std::move(dep)), pri_spec(pri_spec),
-        data_length(data_length), data_offset(0), response_len(0),
-        inflater(nullptr), html_parser(nullptr), data_prd(data_prd),
-        stream_id(-1), status(0), level(level), pri(pri),
-        expect_final_response(false) {}
+void Request::init_html_parser() { html_parser = new HtmlParser(uri); }
 
-  ~Request() {
-    nghttp2_gzip_inflate_del(inflater);
-    delete html_parser;
+int Request::update_html_parser(const uint8_t *data, size_t len, int fin) {
+  if (!html_parser) {
+    return 0;
   }
-
-  void init_inflater() {
-    int rv;
-    rv = nghttp2_gzip_inflate_new(&inflater);
-    assert(rv == 0);
-  }
-
-  void init_html_parser() { html_parser = new HtmlParser(uri); }
-
-  int update_html_parser(const uint8_t *data, size_t len, int fin) {
-    if (!html_parser) {
-      return 0;
-    }
-    int rv;
-    rv = html_parser->parse_chunk(reinterpret_cast<const char *>(data), len,
+  return html_parser->parse_chunk(reinterpret_cast<const char *>(data), len,
                                   fin);
-    return rv;
+}
+
+std::string Request::make_reqpath() const {
+  std::string path = util::has_uri_field(u, UF_PATH)
+                         ? util::get_uri_field(uri.c_str(), u, UF_PATH)
+                         : "/";
+  if (util::has_uri_field(u, UF_QUERY)) {
+    path += "?";
+    path.append(uri.c_str() + u.field_data[UF_QUERY].off,
+                u.field_data[UF_QUERY].len);
   }
-
-  std::string make_reqpath() const {
-    std::string path = util::has_uri_field(u, UF_PATH)
-                           ? util::get_uri_field(uri.c_str(), u, UF_PATH)
-                           : "/";
-    if (util::has_uri_field(u, UF_QUERY)) {
-      path += "?";
-      path.append(uri.c_str() + u.field_data[UF_QUERY].off,
-                  u.field_data[UF_QUERY].len);
-    }
-    return path;
-  }
-
-  int32_t find_dep_stream_id(int start) {
-    for (auto i = start; i >= 0; --i) {
-      for (auto req : dep->deps[i]) {
-        return req->stream_id;
-      }
-    }
-    return -1;
-  }
-
-  nghttp2_priority_spec resolve_dep(int32_t pri) {
-    nghttp2_priority_spec pri_spec;
-    int exclusive = 0;
-    int32_t stream_id = -1;
-
-    nghttp2_priority_spec_default_init(&pri_spec);
-
-    if (config.no_dep || pri == 0) {
-      return pri_spec;
-    }
-
-    nghttp2_priority_spec_default_init(&pri_spec);
-
-    auto start = std::min(pri, (int)dep->deps.size() - 1);
-
-    for (auto i = start; i >= 0; --i) {
-      if (dep->deps[i][0]->pri < pri) {
-        stream_id = find_dep_stream_id(i);
-
-        if (i != (int)dep->deps.size() - 1) {
-          exclusive = 1;
-        }
-
-        break;
-      } else if (dep->deps[i][0]->pri == pri) {
-        stream_id = find_dep_stream_id(i - 1);
-
-        break;
-      }
-    }
-
-    if (stream_id == -1) {
-      return pri_spec;
-    }
-
-    nghttp2_priority_spec_init(&pri_spec, stream_id, NGHTTP2_DEFAULT_WEIGHT,
-                               exclusive);
-
-    return pri_spec;
-  }
-
-  bool is_ipv6_literal_addr() const {
-    if (util::has_uri_field(u, UF_HOST)) {
-      return memchr(uri.c_str() + u.field_data[UF_HOST].off, ':',
-                    u.field_data[UF_HOST].len);
-    } else {
-      return false;
-    }
-  }
-
-  bool response_pseudo_header_allowed() const {
-    return res_nva.empty() || res_nva.back().name.c_str()[0] == ':';
-  }
-
-  bool push_request_pseudo_header_allowed() const {
-    return res_nva.empty() || req_nva.back().name.c_str()[0] == ':';
-  }
-
-  void record_request_time() {
-    stat.stage = STAT_ON_REQUEST;
-    stat.on_request_time = get_time();
-  }
-
-  void record_response_time() {
-    stat.stage = STAT_ON_RESPONSE;
-    stat.on_response_time = get_time();
-  }
-
-  void record_complete_time() {
-    stat.stage = STAT_ON_COMPLETE;
-    stat.on_complete_time = get_time();
-  }
-};
-} // namespace
+  return path;
+}
 
 namespace {
-struct SessionStat {
-  // The point in time when download was started.
-  std::chrono::system_clock::time_point started_system_time;
-  // The point of time when download was started.
-  std::chrono::steady_clock::time_point on_started_time;
-  // The point of time when DNS resolution was completed.
-  std::chrono::steady_clock::time_point on_dns_complete_time;
-  // The point of time when connection was established or SSL/TLS
-  // handshake was completed.
-  std::chrono::steady_clock::time_point on_connect_time;
-  // The point of time when HTTP/2 commnucation was started.
-  std::chrono::steady_clock::time_point on_handshake_time;
-};
-} // namespace
-
-namespace {
-size_t populate_settings(nghttp2_settings_entry *iv) {
-  size_t niv = 2;
-
-  iv[0].settings_id = NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS;
-  iv[0].value = 100;
-
-  iv[1].settings_id = NGHTTP2_SETTINGS_INITIAL_WINDOW_SIZE;
-  if (config.window_bits != -1) {
-    iv[1].value = (1 << config.window_bits) - 1;
-  } else {
-    iv[1].value = NGHTTP2_INITIAL_WINDOW_SIZE;
+// Perform special handling |host| if it is IPv6 literal and includes
+// zone ID per RFC 6874.
+std::string decode_host(std::string host) {
+  auto zone_start = std::find(std::begin(host), std::end(host), '%');
+  if (zone_start == std::end(host) ||
+      !util::ipv6_numeric_addr(
+          std::string(std::begin(host), zone_start).c_str())) {
+    return std::move(host);
   }
-
-  if (config.header_table_size >= 0) {
-    iv[niv].settings_id = NGHTTP2_SETTINGS_HEADER_TABLE_SIZE;
-    iv[niv].value = config.header_table_size;
-    ++niv;
+  // case: ::1%
+  if (zone_start + 1 == std::end(host)) {
+    host.pop_back();
+    return std::move(host);
   }
-  return niv;
+  // case: ::1%12 or ::1%1
+  if (zone_start + 3 >= std::end(host)) {
+    return std::move(host);
+  }
+  // If we see "%25", followed by more characters, then decode %25 as
+  // '%'.
+  auto zone_id_src = (*(zone_start + 1) == '2' && *(zone_start + 2) == '5')
+                         ? zone_start + 3
+                         : zone_start + 1;
+  auto zone_id = util::percentDecode(zone_id_src, std::end(host));
+  host.erase(zone_start + 1, std::end(host));
+  host += zone_id;
+  return std::move(host);
 }
 } // namespace
 
 namespace {
-void eventcb(bufferevent *bev, short events, void *ptr);
+nghttp2_priority_spec resolve_dep(int res_type) {
+  nghttp2_priority_spec pri_spec;
+
+  if (config.no_dep) {
+    nghttp2_priority_spec_default_init(&pri_spec);
+
+    return pri_spec;
+  }
+
+  int32_t anchor_id;
+  int32_t weight;
+  switch (res_type) {
+  case REQ_CSS:
+  case REQ_JS:
+    anchor_id = anchors[ANCHOR_LEADERS].stream_id;
+    weight = 2;
+    break;
+  case REQ_UNBLOCK_JS:
+    anchor_id = anchors[ANCHOR_UNBLOCKED].stream_id;
+    weight = 2;
+    break;
+  case REQ_IMG:
+    anchor_id = anchors[ANCHOR_FOLLOWERS].stream_id;
+    weight = 12;
+    break;
+  default:
+    anchor_id = anchors[ANCHOR_FOLLOWERS].stream_id;
+    weight = 2;
+  }
+
+  nghttp2_priority_spec_init(&pri_spec, anchor_id, weight, 0);
+  return pri_spec;
+}
 } // namespace
 
-namespace {
-extern http_parser_settings htp_hooks;
-} // namespace
-
-namespace {
-void upgrade_readcb(bufferevent *bev, void *ptr);
-} // namespace
-
-namespace {
-void readcb(bufferevent *bev, void *ptr);
-} // namespace
-
-namespace {
-void writecb(bufferevent *bev, void *ptr);
-} // namespace
-
-namespace {
-struct HttpClient;
-} // namespace
-
-namespace {
-int submit_request(HttpClient *client, const Headers &headers, Request *req);
-} // namespace
-
-namespace {
-void settings_timeout_cb(evutil_socket_t fd, short what, void *arg);
-} // namespace
-
-enum client_state { STATE_IDLE, STATE_CONNECTED };
-
-namespace {
-struct HttpClient {
-  std::vector<std::unique_ptr<Request>> reqvec;
-  // Insert path already added in reqvec to prevent multiple request
-  // for 1 resource.
-  std::set<std::string> path_cache;
-  std::string scheme;
-  std::string host;
-  std::string hostport;
-  // Used for parse the HTTP upgrade response from server
-  std::unique_ptr<http_parser> htp;
-  SessionStat stat;
-  nghttp2_session *session;
-  const nghttp2_session_callbacks *callbacks;
-  event_base *evbase;
-  SSL_CTX *ssl_ctx;
-  SSL *ssl;
-  bufferevent *bev;
-  event *settings_timerev;
-  addrinfo *addrs;
-  addrinfo *next_addr;
-  // The number of completed requests, including failed ones.
-  size_t complete;
-  // The length of settings_payload
-  size_t settings_payloadlen;
-  client_state state;
-  // The HTTP status code of the response message of HTTP Upgrade.
-  unsigned int upgrade_response_status_code;
-  // true if the response message of HTTP Upgrade request is fully
-  // received. It is not relevant the upgrade succeeds, or not.
-  bool upgrade_response_complete;
-  // SETTINGS payload sent as token68 in HTTP Upgrade
-  uint8_t settings_payload[128];
-
-  HttpClient(const nghttp2_session_callbacks *callbacks, event_base *evbase,
-             SSL_CTX *ssl_ctx)
-      : session(nullptr), callbacks(callbacks), evbase(evbase),
-        ssl_ctx(ssl_ctx), ssl(nullptr), bev(nullptr), settings_timerev(nullptr),
-        addrs(nullptr), next_addr(nullptr), complete(0), settings_payloadlen(0),
-        state(STATE_IDLE), upgrade_response_status_code(0),
-        upgrade_response_complete(false) {}
-
-  ~HttpClient() {
-    disconnect();
-    if (addrs) {
-      freeaddrinfo(addrs);
-      addrs = nullptr;
-      next_addr = nullptr;
-    }
+bool Request::is_ipv6_literal_addr() const {
+  if (util::has_uri_field(u, UF_HOST)) {
+    return memchr(uri.c_str() + u.field_data[UF_HOST].off, ':',
+                  u.field_data[UF_HOST].len);
+  } else {
+    return false;
   }
+}
 
-  bool need_upgrade() const { return config.upgrade && scheme == "http"; }
-
-  int resolve_host(const std::string &host, uint16_t port) {
-    int rv;
-    addrinfo hints;
-    this->host = host;
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_protocol = 0;
-    hints.ai_flags = AI_ADDRCONFIG;
-    rv = getaddrinfo(host.c_str(), util::utos(port).c_str(), &hints, &addrs);
-    if (rv != 0) {
-      std::cerr << "[ERROR] getaddrinfo() failed: " << gai_strerror(rv)
-                << std::endl;
-      return -1;
-    }
-    if (addrs == nullptr) {
-      std::cerr << "[ERROR] No address returned" << std::endl;
-      return -1;
-    }
-    next_addr = addrs;
-    return 0;
+bool Request::response_pseudo_header_allowed(int16_t token) const {
+  if (!res_nva.empty() && res_nva.back().name.c_str()[0] != ':') {
+    return false;
   }
-
-  int initiate_connection() {
-    int rv = 0;
-    if (ssl_ctx) {
-      // We are establishing TLS connection.
-      ssl = SSL_new(ssl_ctx);
-      if (!ssl) {
-        std::cerr << "[ERROR] SSL_new() failed: "
-                  << ERR_error_string(ERR_get_error(), nullptr) << std::endl;
-        return -1;
-      }
-
-      // If the user overrode the host header, use that value for the
-      // SNI extension
-      const char *host_string = nullptr;
-      auto i =
-          std::find_if(std::begin(config.headers), std::end(config.headers),
-                       [](const Header &nv) { return "host" == nv.name; });
-      if (i != std::end(config.headers)) {
-        host_string = (*i).value.c_str();
-      } else {
-        host_string = host.c_str();
-      }
-
-      if (!util::numeric_host(host_string)) {
-        SSL_set_tlsext_host_name(ssl, host_string);
-      }
-
-      bev = bufferevent_openssl_socket_new(
-          evbase, -1, ssl, BUFFEREVENT_SSL_CONNECTING, BEV_OPT_DEFER_CALLBACKS);
-    } else {
-      bev = bufferevent_socket_new(evbase, -1, BEV_OPT_DEFER_CALLBACKS);
-    }
-    rv = -1;
-    while (next_addr) {
-      rv = bufferevent_socket_connect(bev, next_addr->ai_addr,
-                                      next_addr->ai_addrlen);
-      next_addr = next_addr->ai_next;
-      if (rv == 0) {
-        break;
-      }
-    }
-    if (rv != 0) {
-      return -1;
-    }
-    bufferevent_enable(bev, EV_READ);
-    if (need_upgrade()) {
-      htp = util::make_unique<http_parser>();
-      http_parser_init(htp.get(), HTTP_RESPONSE);
-      htp->data = this;
-      bufferevent_setcb(bev, upgrade_readcb, nullptr, eventcb, this);
-    } else {
-      bufferevent_setcb(bev, readcb, writecb, eventcb, this);
-    }
-    if (config.timeout != -1) {
-      timeval tv = {config.timeout, 0};
-      bufferevent_set_timeouts(bev, &tv, &tv);
-    }
-    return 0;
+  switch (token) {
+  case http2::HD__STATUS:
+    return res_hdidx[token] == -1;
+  default:
+    return false;
   }
+}
 
-  void disconnect() {
-    int fd = -1;
-    state = STATE_IDLE;
-    nghttp2_session_del(session);
-    session = nullptr;
-    if (ssl) {
-      fd = SSL_get_fd(ssl);
-      SSL_set_shutdown(ssl, SSL_RECEIVED_SHUTDOWN);
-      SSL_shutdown(ssl);
-    }
-    if (bev) {
-      bufferevent_disable(bev, EV_READ | EV_WRITE);
-      bufferevent_free(bev);
-      bev = nullptr;
-    }
-    if (settings_timerev) {
-      event_free(settings_timerev);
-      settings_timerev = nullptr;
-    }
-    if (ssl) {
-      SSL_free(ssl);
-      ssl = nullptr;
-    }
-    if (fd != -1) {
-      shutdown(fd, SHUT_WR);
-      close(fd);
-    }
+bool Request::push_request_pseudo_header_allowed(int16_t token) const {
+  if (!req_nva.empty() && req_nva.back().name.c_str()[0] != ':') {
+    return false;
   }
-
-  int on_upgrade_connect() {
-    ssize_t rv;
-    record_handshake_time();
-    assert(!reqvec.empty());
-    nghttp2_settings_entry iv[32];
-    size_t niv = populate_settings(iv);
-    assert(sizeof(settings_payload) >= 8 * niv);
-    rv = nghttp2_pack_settings_payload(settings_payload,
-                                       sizeof(settings_payload), iv, niv);
-    if (rv < 0) {
-      return -1;
-    }
-    settings_payloadlen = rv;
-    auto token68 = base64::encode(&settings_payload[0],
-                                  &settings_payload[settings_payloadlen]);
-    util::to_token68(token68);
-    std::string req;
-    if (reqvec[0]->data_prd) {
-      // If the request contains upload data, use OPTIONS * to upgrade
-      req = "OPTIONS *";
-    } else {
-      req = "GET ";
-      req += reqvec[0]->make_reqpath();
-    }
-    req += " HTTP/1.1\r\n"
-           "Host: ";
-    req += hostport;
-    req += "\r\n"
-           "Connection: Upgrade, HTTP2-Settings\r\n"
-           "Upgrade: " NGHTTP2_CLEARTEXT_PROTO_VERSION_ID "\r\n"
-           "HTTP2-Settings: ";
-    req += token68;
-    req += "\r\n"
-           "Accept: */*\r\n"
-           "User-Agent: nghttp2/" NGHTTP2_VERSION "\r\n"
-           "\r\n";
-    bufferevent_write(bev, req.c_str(), req.size());
-    if (config.verbose) {
-      print_timer();
-      std::cout << " HTTP Upgrade request\n" << req << std::endl;
-    }
-    return 0;
+  switch (token) {
+  case http2::HD__AUTHORITY:
+  case http2::HD__METHOD:
+  case http2::HD__PATH:
+  case http2::HD__SCHEME:
+    return req_hdidx[token] == -1;
+  default:
+    return false;
   }
+}
 
-  int on_upgrade_read() {
-    int rv;
-    auto input = bufferevent_get_input(bev);
-
-    for (;;) {
-      auto inputlen = evbuffer_get_contiguous_space(input);
-
-      if (inputlen == 0) {
-        assert(evbuffer_get_length(input) == 0);
-
-        return 0;
-      }
-
-      auto mem = evbuffer_pullup(input, inputlen);
-
-      auto nread = http_parser_execute(
-          htp.get(), &htp_hooks, reinterpret_cast<const char *>(mem), inputlen);
-
-      if (config.verbose) {
-        std::cout.write(reinterpret_cast<const char *>(mem), nread);
-      }
-
-      if (evbuffer_drain(input, nread) != 0) {
-        return -1;
-      }
-
-      auto htperr = HTTP_PARSER_ERRNO(htp.get());
-
-      if (htperr != HPE_OK) {
-        std::cerr << "[ERROR] Failed to parse HTTP Upgrade response header: "
-                  << "(" << http_errno_name(htperr) << ") "
-                  << http_errno_description(htperr) << std::endl;
-        return -1;
-      }
-
-      if (upgrade_response_complete) {
-
-        if (config.verbose) {
-          std::cout << std::endl;
-        }
-
-        if (upgrade_response_status_code == 101) {
-          if (config.verbose) {
-            print_timer();
-            std::cout << " HTTP Upgrade success" << std::endl;
-          }
-
-          bufferevent_setcb(bev, readcb, writecb, eventcb, this);
-
-          rv = on_connect();
-
-          if (rv != 0) {
-            return rv;
-          }
-
-          // Read remaining data in the buffer because it is not
-          // notified callback anymore.
-          rv = on_read();
-
-          if (rv != 0) {
-            return rv;
-          }
-
-          return 0;
-        }
-
-        std::cerr << "[ERROR] HTTP Upgrade failed" << std::endl;
-
-        return -1;
-      }
-    }
+Headers::value_type *Request::get_res_header(int16_t token) {
+  auto idx = res_hdidx[token];
+  if (idx == -1) {
+    return nullptr;
   }
+  return &res_nva[idx];
+}
 
-  int on_connect() {
-    int rv;
-    if (!need_upgrade()) {
-      record_handshake_time();
-    }
-
-    rv = nghttp2_session_client_new2(&session, callbacks, this,
-                                     config.http2_option);
-
-    if (rv != 0) {
-      return -1;
-    }
-    if (need_upgrade()) {
-      // Adjust stream user-data depending on the existence of upload
-      // data
-      Request *stream_user_data = nullptr;
-      if (!reqvec[0]->data_prd) {
-        stream_user_data = reqvec[0].get();
-      }
-      rv = nghttp2_session_upgrade(session, settings_payload,
-                                   settings_payloadlen, stream_user_data);
-      if (rv != 0) {
-        std::cerr << "[ERROR] nghttp2_session_upgrade() returned error: "
-                  << nghttp2_strerror(rv) << std::endl;
-        return -1;
-      }
-      if (stream_user_data) {
-        stream_user_data->stream_id = 1;
-        on_request(stream_user_data);
-      }
-    }
-    // Send connection header here
-    bufferevent_write(bev, NGHTTP2_CLIENT_CONNECTION_PREFACE,
-                      NGHTTP2_CLIENT_CONNECTION_PREFACE_LEN);
-    // If upgrade succeeds, the SETTINGS value sent with
-    // HTTP2-Settings header field has already been submitted to
-    // session object.
-    if (!need_upgrade()) {
-      nghttp2_settings_entry iv[16];
-      auto niv = populate_settings(iv);
-      rv = nghttp2_submit_settings(session, NGHTTP2_FLAG_NONE, iv, niv);
-      if (rv != 0) {
-        return -1;
-      }
-    }
-    assert(settings_timerev == nullptr);
-    settings_timerev = evtimer_new(evbase, settings_timeout_cb, this);
-    // SETTINGS ACK timeout is 10 seconds for now
-    timeval settings_timeout = {10, 0};
-    evtimer_add(settings_timerev, &settings_timeout);
-
-    if (config.connection_window_bits != -1) {
-      int32_t wininc = (1 << config.connection_window_bits) - 1 -
-                       NGHTTP2_INITIAL_CONNECTION_WINDOW_SIZE;
-      rv = nghttp2_submit_window_update(session, NGHTTP2_FLAG_NONE, 0, wininc);
-      if (rv != 0) {
-        return -1;
-      }
-    }
-    // Adjust first request depending on the existence of the upload
-    // data
-    for (auto i = std::begin(reqvec) + (need_upgrade() && !reqvec[0]->data_prd);
-         i != std::end(reqvec); ++i) {
-      if (submit_request(this, config.headers, (*i).get()) != 0) {
-        return -1;
-      }
-    }
-    return on_write();
+Headers::value_type *Request::get_req_header(int16_t token) {
+  auto idx = req_hdidx[token];
+  if (idx == -1) {
+    return nullptr;
   }
-
-  int on_read() {
-    int rv;
-    auto input = bufferevent_get_input(bev);
-
-    for (;;) {
-      auto inputlen = evbuffer_get_contiguous_space(input);
-
-      if (inputlen == 0) {
-        assert(evbuffer_get_length(input) == 0);
-
-        return on_write();
-      }
-
-      auto mem = evbuffer_pullup(input, inputlen);
-
-      rv = nghttp2_session_mem_recv(session, mem, inputlen);
-
-      if (rv < 0) {
-        std::cerr << "[ERROR] nghttp2_session_mem_recv() returned error: "
-                  << nghttp2_strerror(rv) << std::endl;
-        return -1;
-      }
-
-      if (evbuffer_drain(input, rv) != 0) {
-        return -1;
-      }
-    }
-  }
-
-  int on_write() {
-    int rv;
-    uint8_t buf[4096];
-    auto output = bufferevent_get_output(bev);
-    util::EvbufferBuffer evbbuf(output, buf, sizeof(buf));
-    for (;;) {
-      if (evbuffer_get_length(output) + evbbuf.get_buflen() >
-          config.output_upper_thres) {
-        break;
-      }
-
-      const uint8_t *data;
-      auto datalen = nghttp2_session_mem_send(session, &data);
-
-      if (datalen < 0) {
-        std::cerr << "[ERROR] nghttp2_session_mem_send() returned error: "
-                  << nghttp2_strerror(datalen) << std::endl;
-        return -1;
-      }
-      if (datalen == 0) {
-        break;
-      }
-      rv = evbbuf.add(data, datalen);
-      if (rv != 0) {
-        std::cerr << "[ERROR] evbuffer_add() failed" << std::endl;
-        return -1;
-      }
-    }
-    rv = evbbuf.flush();
-    if (rv != 0) {
-      std::cerr << "[ERROR] evbuffer_add() failed" << std::endl;
-      return -1;
-    }
-    if (nghttp2_session_want_read(session) == 0 &&
-        nghttp2_session_want_write(session) == 0 &&
-        evbuffer_get_length(output) == 0) {
-      return -1;
-    }
-    return 0;
-  }
-
-  bool all_requests_processed() const { return complete == reqvec.size(); }
-  void update_hostport() {
-    if (reqvec.empty()) {
-      return;
-    }
-    scheme =
-        util::get_uri_field(reqvec[0]->uri.c_str(), reqvec[0]->u, UF_SCHEMA);
-    std::stringstream ss;
-    if (reqvec[0]->is_ipv6_literal_addr()) {
-      ss << "[";
-      util::write_uri_field(ss, reqvec[0]->uri.c_str(), reqvec[0]->u, UF_HOST);
-      ss << "]";
-    } else {
-      util::write_uri_field(ss, reqvec[0]->uri.c_str(), reqvec[0]->u, UF_HOST);
-    }
-    if (util::has_uri_field(reqvec[0]->u, UF_PORT) &&
-        reqvec[0]->u.port !=
-            util::get_default_port(reqvec[0]->uri.c_str(), reqvec[0]->u)) {
-      ss << ":" << reqvec[0]->u.port;
-    }
-    hostport = ss.str();
-  }
-  bool add_request(const std::string &uri,
-                   const nghttp2_data_provider *data_prd, int64_t data_length,
-                   const nghttp2_priority_spec &pri_spec,
-                   std::shared_ptr<Dependency> dep, int pri = 0,
-                   int level = 0) {
-    http_parser_url u;
-    memset(&u, 0, sizeof(u));
-    if (http_parser_parse_url(uri.c_str(), uri.size(), 0, &u) != 0) {
-      return false;
-    }
-    if (path_cache.count(uri)) {
-      return false;
-    }
-
-    if (config.multiply == 1) {
-      path_cache.insert(uri);
-    }
-
-    reqvec.push_back(util::make_unique<Request>(
-        uri, u, data_prd, data_length, pri_spec, std::move(dep), pri, level));
-    return true;
-  }
-
-  void record_handshake_time() { stat.on_handshake_time = get_time(); }
-
-  void record_started_time() {
-    stat.started_system_time = std::chrono::system_clock::now();
-    stat.on_started_time = get_time();
-  }
-
-  void record_dns_complete_time() { stat.on_dns_complete_time = get_time(); }
-
-  void record_connect_time() { stat.on_connect_time = get_time(); }
-
-  void on_request(Request *req) {
-    req->record_request_time();
-
-    if (req->pri == 0 && req->dep) {
-      assert(req->dep->deps.empty());
-
-      req->dep->deps.push_back(std::vector<Request *>{req});
-
-      return;
-    }
-
-    if (req->stream_id % 2 == 0) {
-      return;
-    }
-
-    auto itr = std::begin(req->dep->deps);
-    for (; itr != std::end(req->dep->deps); ++itr) {
-      if ((*itr)[0]->pri == req->pri) {
-        (*itr).push_back(req);
-
-        break;
-      }
-
-      if ((*itr)[0]->pri > req->pri) {
-        auto v = std::vector<Request *>{req};
-        req->dep->deps.insert(itr, std::move(v));
-
-        break;
-      }
-    }
-
-    if (itr == std::end(req->dep->deps)) {
-      req->dep->deps.push_back(std::vector<Request *>{req});
-    }
-  }
-
-#ifdef HAVE_JANSSON
-  void output_har(FILE *outfile) {
-    static auto PAGE_ID = "page_0";
-
-    auto root = json_object();
-    auto log = json_object();
-    json_object_set_new(root, "log", log);
-    json_object_set_new(log, "version", json_string("1.2"));
-
-    auto creator = json_object();
-    json_object_set_new(log, "creator", creator);
-
-    json_object_set_new(creator, "name", json_string("nghttp"));
-    json_object_set_new(creator, "version", json_string(NGHTTP2_VERSION));
-
-    auto pages = json_array();
-    json_object_set_new(log, "pages", pages);
-
-    auto page = json_object();
-    json_array_append_new(pages, page);
-
-    json_object_set_new(
-        page, "startedDateTime",
-        json_string(util::format_iso8601(stat.started_system_time).c_str()));
-    json_object_set_new(page, "id", json_string(PAGE_ID));
-    json_object_set_new(page, "title", json_string(""));
-
-    json_object_set_new(page, "pageTimings", json_object());
-
-    auto entries = json_array();
-    json_object_set_new(log, "entries", entries);
-
-    auto dns_delta =
-        std::chrono::duration_cast<std::chrono::microseconds>(
-            stat.on_dns_complete_time - stat.on_started_time).count() /
-        1000.0;
-    auto connect_delta =
-        std::chrono::duration_cast<std::chrono::microseconds>(
-            stat.on_connect_time - stat.on_dns_complete_time).count() /
-        1000.0;
-
-    for (size_t i = 0; i < reqvec.size(); ++i) {
-      auto &req = reqvec[i];
-
-      if (req->stat.stage != STAT_ON_COMPLETE) {
-        continue;
-      }
-
-      auto entry = json_object();
-      json_array_append_new(entries, entry);
-
-      auto &req_stat = req->stat;
-      auto request_time =
-          (i == 0) ? stat.started_system_time
-                   : stat.started_system_time +
-                         std::chrono::duration_cast<
-                             std::chrono::system_clock::duration>(
-                             req_stat.on_request_time - stat.on_started_time);
-
-      auto wait_delta =
-          std::chrono::duration_cast<std::chrono::microseconds>(
-              req_stat.on_response_time - req_stat.on_request_time).count() /
-          1000.0;
-      auto receive_delta =
-          std::chrono::duration_cast<std::chrono::microseconds>(
-              req_stat.on_complete_time - req_stat.on_response_time).count() /
-          1000.0;
-
-      auto time_sum =
-          std::chrono::duration_cast<std::chrono::microseconds>(
-              (i == 0) ? (req_stat.on_complete_time - stat.on_started_time)
-                       : (req_stat.on_complete_time - req_stat.on_request_time))
-              .count() /
-          1000.0;
-
-      json_object_set_new(
-          entry, "startedDateTime",
-          json_string(util::format_iso8601(request_time).c_str()));
-      json_object_set_new(entry, "time", json_real(time_sum));
-
-      auto request = json_object();
-      json_object_set_new(entry, "request", request);
-
-      auto method_ptr = http2::get_header(req->req_nva, ":method");
-
-      const char *method = "GET";
-      if (method_ptr) {
-        method = (*method_ptr).value.c_str();
-      }
-
-      auto req_headers = json_array();
-      json_object_set_new(request, "headers", req_headers);
-
-      for (auto &nv : req->req_nva) {
-        auto hd = json_object();
-        json_array_append_new(req_headers, hd);
-
-        json_object_set_new(hd, "name", json_string(nv.name.c_str()));
-        json_object_set_new(hd, "value", json_string(nv.value.c_str()));
-      }
-
-      json_object_set_new(request, "method", json_string(method));
-      json_object_set_new(request, "url", json_string(req->uri.c_str()));
-      json_object_set_new(request, "httpVersion", json_string("HTTP/2.0"));
-      json_object_set_new(request, "cookies", json_array());
-      json_object_set_new(request, "queryString", json_array());
-      json_object_set_new(request, "headersSize", json_integer(-1));
-      json_object_set_new(request, "bodySize", json_integer(-1));
-
-      auto response = json_object();
-      json_object_set_new(entry, "response", response);
-
-      auto res_headers = json_array();
-      json_object_set_new(response, "headers", res_headers);
-
-      for (auto &nv : req->res_nva) {
-        auto hd = json_object();
-        json_array_append_new(res_headers, hd);
-
-        json_object_set_new(hd, "name", json_string(nv.name.c_str()));
-        json_object_set_new(hd, "value", json_string(nv.value.c_str()));
-      }
-
-      json_object_set_new(response, "status", json_integer(req->status));
-      json_object_set_new(response, "statusText", json_string(""));
-      json_object_set_new(response, "httpVersion", json_string("HTTP/2.0"));
-      json_object_set_new(response, "cookies", json_array());
-
-      auto content = json_object();
-      json_object_set_new(response, "content", content);
-
-      json_object_set_new(content, "size", json_integer(req->response_len));
-
-      auto content_type_ptr = http2::get_header(req->res_nva, "content-type");
-
-      const char *content_type = "";
-      if (content_type_ptr) {
-        content_type = content_type_ptr->value.c_str();
-      }
-
-      json_object_set_new(content, "mimeType", json_string(content_type));
-
-      json_object_set_new(response, "redirectURL", json_string(""));
-      json_object_set_new(response, "headersSize", json_integer(-1));
-      json_object_set_new(response, "bodySize", json_integer(-1));
-
-      json_object_set_new(entry, "cache", json_object());
-
-      auto timings = json_object();
-      json_object_set_new(entry, "timings", timings);
-
-      auto dns_timing = (i == 0) ? dns_delta : 0;
-      auto connect_timing = (i == 0) ? connect_delta : 0;
-
-      json_object_set_new(timings, "dns", json_real(dns_timing));
-      json_object_set_new(timings, "connect", json_real(connect_timing));
-
-      json_object_set_new(timings, "blocked", json_real(0.0));
-      json_object_set_new(timings, "send", json_real(0.0));
-      json_object_set_new(timings, "wait", json_real(wait_delta));
-      json_object_set_new(timings, "receive", json_real(receive_delta));
-
-      json_object_set_new(entry, "pageref", json_string(PAGE_ID));
-    }
-
-    json_dumpf(root, outfile, JSON_PRESERVE_ORDER | JSON_INDENT(2));
-    json_decref(root);
-  }
-#endif // HAVE_JANSSON
-};
-} // namespace
+  return &req_nva[idx];
+}
+
+void Request::record_request_start_time() {
+  timing.state = RequestState::ON_REQUEST;
+  timing.request_start_time = get_time();
+}
+
+void Request::record_response_start_time() {
+  timing.state = RequestState::ON_RESPONSE;
+  timing.response_start_time = get_time();
+}
+
+void Request::record_response_end_time() {
+  timing.state = RequestState::ON_COMPLETE;
+  timing.response_end_time = get_time();
+}
 
 namespace {
 int htp_msg_begincb(http_parser *htp) {
@@ -1135,7 +362,7 @@ int submit_request(HttpClient *client, const Headers &headers, Request *req) {
   if (config.continuation) {
     for (size_t i = 0; i < 6; ++i) {
       build_headers.emplace_back("continuation-test-" + util::utos(i + 1),
-                                 std::string(4096, '-'));
+                                 std::string(4_k, '-'));
     }
   }
   auto num_initial_headers = build_headers.size();
@@ -1156,14 +383,22 @@ int submit_request(HttpClient *client, const Headers &headers, Request *req) {
 
     build_headers.emplace_back(kv.name, kv.value, kv.no_index);
   }
-  std::stable_sort(std::begin(build_headers), std::end(build_headers),
-                   http2::name_less);
 
   auto nva = std::vector<nghttp2_nv>();
   nva.reserve(build_headers.size());
 
   for (auto &kv : build_headers) {
     nva.push_back(http2::make_nv(kv.name, kv.value, kv.no_index));
+  }
+
+  std::string trailer_names;
+  if (!config.trailer.empty()) {
+    trailer_names = config.trailer[0].name;
+    for (size_t i = 1; i < config.trailer.size(); ++i) {
+      trailer_names += ", ";
+      trailer_names += config.trailer[i].name;
+    }
+    nva.push_back(http2::make_nv_ls("trailer", trailer_names));
   }
 
   auto stream_id =
@@ -1176,13 +411,1065 @@ int submit_request(HttpClient *client, const Headers &headers, Request *req) {
   }
 
   req->stream_id = stream_id;
-  client->on_request(req);
+  client->request_done(req);
 
   req->req_nva = std::move(build_headers);
 
   return 0;
 }
 } // namespace
+
+namespace {
+void readcb(struct ev_loop *loop, ev_io *w, int revents) {
+  auto client = static_cast<HttpClient *>(w->data);
+  if (client->do_read() != 0) {
+    client->disconnect();
+  }
+}
+} // namespace
+
+namespace {
+void writecb(struct ev_loop *loop, ev_io *w, int revents) {
+  auto client = static_cast<HttpClient *>(w->data);
+  auto rv = client->do_write();
+  if (rv == HttpClient::ERR_CONNECT_FAIL) {
+    client->connect_fail();
+    return;
+  }
+  if (rv != 0) {
+    client->disconnect();
+  }
+}
+} // namespace
+
+namespace {
+void timeoutcb(struct ev_loop *loop, ev_timer *w, int revents) {
+  auto client = static_cast<HttpClient *>(w->data);
+  std::cerr << "[ERROR] Timeout" << std::endl;
+  client->disconnect();
+}
+} // namespace
+
+namespace {
+void settings_timeout_cb(struct ev_loop *loop, ev_timer *w, int revents) {
+  auto client = static_cast<HttpClient *>(w->data);
+  ev_timer_stop(loop, w);
+
+  nghttp2_session_terminate_session(client->session, NGHTTP2_SETTINGS_TIMEOUT);
+
+  client->signal_write();
+}
+} // namespace
+
+HttpClient::HttpClient(const nghttp2_session_callbacks *callbacks,
+                       struct ev_loop *loop, SSL_CTX *ssl_ctx)
+    : session(nullptr), callbacks(callbacks), loop(loop), ssl_ctx(ssl_ctx),
+      ssl(nullptr), addrs(nullptr), next_addr(nullptr), cur_addr(nullptr),
+      complete(0), success(0), settings_payloadlen(0), state(ClientState::IDLE),
+      upgrade_response_status_code(0), fd(-1),
+      upgrade_response_complete(false) {
+  ev_io_init(&wev, writecb, 0, EV_WRITE);
+  ev_io_init(&rev, readcb, 0, EV_READ);
+
+  wev.data = this;
+  rev.data = this;
+
+  ev_timer_init(&wt, timeoutcb, 0., config.timeout);
+  ev_timer_init(&rt, timeoutcb, 0., config.timeout);
+
+  wt.data = this;
+  rt.data = this;
+
+  ev_timer_init(&settings_timer, settings_timeout_cb, 0., 10.);
+
+  settings_timer.data = this;
+}
+
+HttpClient::~HttpClient() {
+  disconnect();
+
+  if (addrs) {
+    freeaddrinfo(addrs);
+    addrs = nullptr;
+    next_addr = nullptr;
+  }
+}
+
+bool HttpClient::need_upgrade() const {
+  return config.upgrade && scheme == "http";
+}
+
+int HttpClient::resolve_host(const std::string &host, uint16_t port) {
+  int rv;
+  this->host = host;
+  addrinfo hints{};
+  hints.ai_family = AF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
+  hints.ai_protocol = 0;
+  hints.ai_flags = AI_ADDRCONFIG;
+  rv = getaddrinfo(host.c_str(), util::utos(port).c_str(), &hints, &addrs);
+  if (rv != 0) {
+    std::cerr << "[ERROR] getaddrinfo() failed: " << gai_strerror(rv)
+              << std::endl;
+    return -1;
+  }
+  if (addrs == nullptr) {
+    std::cerr << "[ERROR] No address returned" << std::endl;
+    return -1;
+  }
+  next_addr = addrs;
+  return 0;
+}
+
+int HttpClient::initiate_connection() {
+  int rv;
+
+  cur_addr = nullptr;
+  while (next_addr) {
+    cur_addr = next_addr;
+    next_addr = next_addr->ai_next;
+    fd = util::create_nonblock_socket(cur_addr->ai_family);
+    if (fd == -1) {
+      continue;
+    }
+
+    if (ssl_ctx) {
+      // We are establishing TLS connection.
+      ssl = SSL_new(ssl_ctx);
+      if (!ssl) {
+        std::cerr << "[ERROR] SSL_new() failed: "
+                  << ERR_error_string(ERR_get_error(), nullptr) << std::endl;
+        return -1;
+      }
+
+      SSL_set_fd(ssl, fd);
+      SSL_set_connect_state(ssl);
+
+      // If the user overrode the :authority or host header, use that
+      // value for the SNI extension
+      const char *host_string = nullptr;
+      auto i = std::find_if(std::begin(config.headers),
+                            std::end(config.headers), [](const Header &nv) {
+        return ":authority" == nv.name || "host" == nv.name;
+      });
+      if (i != std::end(config.headers)) {
+        host_string = (*i).value.c_str();
+      } else {
+        host_string = host.c_str();
+      }
+
+      if (!util::numeric_host(host_string)) {
+        SSL_set_tlsext_host_name(ssl, host_string);
+      }
+    }
+
+    rv = connect(fd, cur_addr->ai_addr, cur_addr->ai_addrlen);
+
+    if (rv != 0 && errno != EINPROGRESS) {
+      if (ssl) {
+        SSL_free(ssl);
+        ssl = nullptr;
+      }
+      close(fd);
+      fd = -1;
+      continue;
+    }
+    break;
+  }
+
+  if (fd == -1) {
+    return -1;
+  }
+
+  writefn = &HttpClient::connected;
+
+  if (need_upgrade()) {
+    on_readfn = &HttpClient::on_upgrade_read;
+    on_writefn = &HttpClient::on_upgrade_connect;
+  } else {
+    on_readfn = &HttpClient::on_read;
+    on_writefn = &HttpClient::on_write;
+  }
+
+  ev_io_set(&rev, fd, EV_READ);
+  ev_io_set(&wev, fd, EV_WRITE);
+
+  ev_io_start(loop, &wev);
+
+  ev_timer_again(loop, &wt);
+
+  return 0;
+}
+
+void HttpClient::disconnect() {
+  state = ClientState::IDLE;
+
+  ev_timer_stop(loop, &settings_timer);
+
+  ev_timer_stop(loop, &rt);
+  ev_timer_stop(loop, &wt);
+
+  ev_io_stop(loop, &rev);
+  ev_io_stop(loop, &wev);
+
+  nghttp2_session_del(session);
+  session = nullptr;
+
+  if (ssl) {
+    SSL_set_shutdown(ssl, SSL_RECEIVED_SHUTDOWN);
+    ERR_clear_error();
+    SSL_shutdown(ssl);
+    SSL_free(ssl);
+    ssl = nullptr;
+  }
+
+  if (fd != -1) {
+    shutdown(fd, SHUT_WR);
+    close(fd);
+    fd = -1;
+  }
+}
+
+int HttpClient::read_clear() {
+  ev_timer_again(loop, &rt);
+
+  std::array<uint8_t, 8_k> buf;
+
+  for (;;) {
+    ssize_t nread;
+    while ((nread = read(fd, buf.data(), buf.size())) == -1 && errno == EINTR)
+      ;
+    if (nread == -1) {
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        return 0;
+      }
+      return -1;
+    }
+
+    if (nread == 0) {
+      return -1;
+    }
+
+    if (on_readfn(*this, buf.data(), nread) != 0) {
+      return -1;
+    }
+  }
+
+  return 0;
+}
+
+int HttpClient::write_clear() {
+  ev_timer_again(loop, &rt);
+
+  for (;;) {
+    if (wb.rleft() > 0) {
+      ssize_t nwrite;
+      while ((nwrite = write(fd, wb.pos, wb.rleft())) == -1 && errno == EINTR)
+        ;
+      if (nwrite == -1) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+          ev_io_start(loop, &wev);
+          ev_timer_again(loop, &wt);
+          return 0;
+        }
+        return -1;
+      }
+      wb.drain(nwrite);
+      continue;
+    }
+    wb.reset();
+    if (on_writefn(*this) != 0) {
+      return -1;
+    }
+    if (wb.rleft() == 0) {
+      break;
+    }
+  }
+
+  ev_io_stop(loop, &wev);
+  ev_timer_stop(loop, &wt);
+
+  return 0;
+}
+
+int HttpClient::noop() { return 0; }
+
+void HttpClient::connect_fail() {
+  if (state == ClientState::IDLE) {
+    std::cerr << "[ERROR] Could not connect to the address "
+              << util::numeric_name(cur_addr->ai_addr, cur_addr->ai_addrlen)
+              << std::endl;
+  }
+  auto cur_state = state;
+  disconnect();
+  if (cur_state == ClientState::IDLE) {
+    if (initiate_connection() == 0) {
+      std::cerr << "Trying next address "
+                << util::numeric_name(cur_addr->ai_addr, cur_addr->ai_addrlen)
+                << std::endl;
+    }
+  }
+}
+
+int HttpClient::connected() {
+  if (!util::check_socket_connected(fd)) {
+    return ERR_CONNECT_FAIL;
+  }
+
+  if (config.verbose) {
+    print_timer();
+    std::cout << " Connected" << std::endl;
+  }
+
+  state = ClientState::CONNECTED;
+
+  ev_io_start(loop, &rev);
+  ev_io_stop(loop, &wev);
+
+  ev_timer_again(loop, &rt);
+  ev_timer_stop(loop, &wt);
+
+  if (ssl) {
+    readfn = &HttpClient::tls_handshake;
+    writefn = &HttpClient::tls_handshake;
+
+    return do_write();
+  }
+
+  readfn = &HttpClient::read_clear;
+  writefn = &HttpClient::write_clear;
+
+  if (need_upgrade()) {
+    htp = make_unique<http_parser>();
+    http_parser_init(htp.get(), HTTP_RESPONSE);
+    htp->data = this;
+
+    return do_write();
+  }
+
+  if (connection_made() != 0) {
+    return -1;
+  }
+
+  return 0;
+}
+
+namespace {
+size_t populate_settings(nghttp2_settings_entry *iv) {
+  size_t niv = 2;
+
+  iv[0].settings_id = NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS;
+  iv[0].value = config.max_concurrent_streams;
+
+  iv[1].settings_id = NGHTTP2_SETTINGS_INITIAL_WINDOW_SIZE;
+  if (config.window_bits != -1) {
+    iv[1].value = (1 << config.window_bits) - 1;
+  } else {
+    iv[1].value = NGHTTP2_INITIAL_WINDOW_SIZE;
+  }
+
+  if (config.header_table_size >= 0) {
+    iv[niv].settings_id = NGHTTP2_SETTINGS_HEADER_TABLE_SIZE;
+    iv[niv].value = config.header_table_size;
+    ++niv;
+  }
+
+  if (config.no_push) {
+    iv[niv].settings_id = NGHTTP2_SETTINGS_ENABLE_PUSH;
+    iv[niv].value = 0;
+    ++niv;
+  }
+
+  return niv;
+}
+} // namespace
+
+int HttpClient::on_upgrade_connect() {
+  ssize_t rv;
+  record_connect_end_time();
+  assert(!reqvec.empty());
+  std::array<nghttp2_settings_entry, 16> iv;
+  size_t niv = populate_settings(iv.data());
+  assert(settings_payload.size() >= 8 * niv);
+  rv = nghttp2_pack_settings_payload(settings_payload.data(),
+                                     settings_payload.size(), iv.data(), niv);
+  if (rv < 0) {
+    return -1;
+  }
+  settings_payloadlen = rv;
+  auto token68 =
+      base64::encode(std::begin(settings_payload),
+                     std::begin(settings_payload) + settings_payloadlen);
+  util::to_token68(token68);
+  std::string req;
+  if (reqvec[0]->data_prd) {
+    // If the request contains upload data, use OPTIONS * to upgrade
+    req = "OPTIONS *";
+  } else {
+    req = "GET ";
+    req += reqvec[0]->make_reqpath();
+  }
+
+  auto headers = Headers{{"Host", hostport},
+                         {"Connection", "Upgrade, HTTP2-Settings"},
+                         {"Upgrade", NGHTTP2_CLEARTEXT_PROTO_VERSION_ID},
+                         {"HTTP2-Settings", token68},
+                         {"Accept", "*/*"},
+                         {"User-Agent", "nghttp2/" NGHTTP2_VERSION}};
+  auto initial_headerslen = headers.size();
+
+  for (auto &kv : config.headers) {
+    size_t i;
+    for (i = 0; i < initial_headerslen; ++i) {
+      if (util::strieq(kv.name, headers[i].name)) {
+        headers[i].value = kv.value;
+        break;
+      }
+    }
+    if (i < initial_headerslen) {
+      continue;
+    }
+    if (kv.name.size() != 0 && kv.name[0] != ':') {
+      headers.emplace_back(kv.name, kv.value, kv.no_index);
+    }
+  }
+
+  req += " HTTP/1.1\r\n";
+
+  for (auto &kv : headers) {
+    req += kv.name;
+    req += ": ";
+    req += kv.value;
+    req += "\r\n";
+  }
+  req += "\r\n";
+
+  wb.write(req.c_str(), req.size());
+
+  if (config.verbose) {
+    print_timer();
+    std::cout << " HTTP Upgrade request\n" << req << std::endl;
+  }
+
+  // record request time if this is GET request
+  if (!reqvec[0]->data_prd) {
+    reqvec[0]->record_request_start_time();
+  }
+
+  on_writefn = &HttpClient::noop;
+
+  signal_write();
+
+  return 0;
+}
+
+int HttpClient::on_upgrade_read(const uint8_t *data, size_t len) {
+  int rv;
+
+  auto nread = http_parser_execute(htp.get(), &htp_hooks,
+                                   reinterpret_cast<const char *>(data), len);
+
+  if (config.verbose) {
+    std::cout.write(reinterpret_cast<const char *>(data), nread);
+  }
+
+  auto htperr = HTTP_PARSER_ERRNO(htp.get());
+
+  if (htperr != HPE_OK) {
+    std::cerr << "[ERROR] Failed to parse HTTP Upgrade response header: "
+              << "(" << http_errno_name(htperr) << ") "
+              << http_errno_description(htperr) << std::endl;
+    return -1;
+  }
+
+  if (!upgrade_response_complete) {
+    return 0;
+  }
+
+  if (config.verbose) {
+    std::cout << std::endl;
+  }
+
+  if (upgrade_response_status_code != 101) {
+    std::cerr << "[ERROR] HTTP Upgrade failed" << std::endl;
+
+    return -1;
+  }
+
+  if (config.verbose) {
+    print_timer();
+    std::cout << " HTTP Upgrade success" << std::endl;
+  }
+
+  on_readfn = &HttpClient::on_read;
+  on_writefn = &HttpClient::on_write;
+
+  rv = connection_made();
+  if (rv != 0) {
+    return rv;
+  }
+
+  // Read remaining data in the buffer because it is not notified
+  // callback anymore.
+  rv = on_readfn(*this, data + nread, len - nread);
+  if (rv != 0) {
+    return rv;
+  }
+
+  return 0;
+}
+
+int HttpClient::do_read() { return readfn(*this); }
+int HttpClient::do_write() { return writefn(*this); }
+
+int HttpClient::connection_made() {
+  int rv;
+
+  if (!need_upgrade()) {
+    record_connect_end_time();
+  }
+
+  if (ssl) {
+    // Check NPN or ALPN result
+    const unsigned char *next_proto = nullptr;
+    unsigned int next_proto_len;
+    SSL_get0_next_proto_negotiated(ssl, &next_proto, &next_proto_len);
+    for (int i = 0; i < 2; ++i) {
+      if (next_proto) {
+        if (config.verbose) {
+          std::cout << "The negotiated protocol: ";
+          std::cout.write(reinterpret_cast<const char *>(next_proto),
+                          next_proto_len);
+          std::cout << std::endl;
+        }
+        if (!util::check_h2_is_selected(next_proto, next_proto_len)) {
+          next_proto = nullptr;
+        }
+        break;
+      }
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L
+      SSL_get0_alpn_selected(ssl, &next_proto, &next_proto_len);
+#else  // OPENSSL_VERSION_NUMBER < 0x10002000L
+      break;
+#endif // OPENSSL_VERSION_NUMBER < 0x10002000L
+    }
+    if (!next_proto) {
+      print_protocol_nego_error();
+      return -1;
+    }
+  }
+
+  rv = nghttp2_session_client_new2(&session, callbacks, this,
+                                   config.http2_option);
+
+  if (rv != 0) {
+    return -1;
+  }
+  if (need_upgrade()) {
+    // Adjust stream user-data depending on the existence of upload
+    // data
+    Request *stream_user_data = nullptr;
+    if (!reqvec[0]->data_prd) {
+      stream_user_data = reqvec[0].get();
+    }
+    rv = nghttp2_session_upgrade(session, settings_payload.data(),
+                                 settings_payloadlen, stream_user_data);
+    if (rv != 0) {
+      std::cerr << "[ERROR] nghttp2_session_upgrade() returned error: "
+                << nghttp2_strerror(rv) << std::endl;
+      return -1;
+    }
+    if (stream_user_data) {
+      stream_user_data->stream_id = 1;
+      request_done(stream_user_data);
+    }
+  }
+  // If upgrade succeeds, the SETTINGS value sent with
+  // HTTP2-Settings header field has already been submitted to
+  // session object.
+  if (!need_upgrade()) {
+    std::array<nghttp2_settings_entry, 16> iv;
+    auto niv = populate_settings(iv.data());
+    rv = nghttp2_submit_settings(session, NGHTTP2_FLAG_NONE, iv.data(), niv);
+    if (rv != 0) {
+      return -1;
+    }
+  }
+  if (!config.no_dep) {
+    // Create anchor stream nodes
+    nghttp2_priority_spec pri_spec;
+
+    for (auto &anchor : anchors) {
+      nghttp2_priority_spec_init(&pri_spec, anchor.dep_stream_id, anchor.weight,
+                                 0);
+      rv = nghttp2_submit_priority(session, NGHTTP2_FLAG_NONE, anchor.stream_id,
+                                   &pri_spec);
+      if (rv != 0) {
+        return -1;
+      }
+    }
+
+    rv = nghttp2_session_set_next_stream_id(
+        session, anchors[ANCHOR_FOLLOWERS].stream_id + 2);
+    if (rv != 0) {
+      return -1;
+    }
+
+    if (need_upgrade()) {
+      // Amend the priority because we cannot send priority in
+      // HTTP/1.1 Upgrade.
+      auto &anchor = anchors[ANCHOR_FOLLOWERS];
+      nghttp2_priority_spec_init(&pri_spec, anchor.stream_id, config.weight, 0);
+
+      rv = nghttp2_submit_priority(session, NGHTTP2_FLAG_NONE, 1, &pri_spec);
+      if (rv != 0) {
+        return -1;
+      }
+    }
+  } else if (need_upgrade() && config.weight != NGHTTP2_DEFAULT_WEIGHT) {
+    // Amend the priority because we cannot send priority in
+    // HTTP/1.1 Upgrade.
+    nghttp2_priority_spec pri_spec;
+
+    nghttp2_priority_spec_init(&pri_spec, 0, config.weight, 0);
+
+    rv = nghttp2_submit_priority(session, NGHTTP2_FLAG_NONE, 1, &pri_spec);
+    if (rv != 0) {
+      return -1;
+    }
+  }
+
+  ev_timer_again(loop, &settings_timer);
+
+  if (config.connection_window_bits != -1) {
+    int32_t wininc = (1 << config.connection_window_bits) - 1 -
+                     NGHTTP2_INITIAL_CONNECTION_WINDOW_SIZE;
+    rv = nghttp2_submit_window_update(session, NGHTTP2_FLAG_NONE, 0, wininc);
+    if (rv != 0) {
+      return -1;
+    }
+  }
+  // Adjust first request depending on the existence of the upload
+  // data
+  for (auto i = std::begin(reqvec) + (need_upgrade() && !reqvec[0]->data_prd);
+       i != std::end(reqvec); ++i) {
+    if (submit_request(this, config.headers, (*i).get()) != 0) {
+      return -1;
+    }
+  }
+
+  signal_write();
+
+  return 0;
+}
+
+int HttpClient::on_read(const uint8_t *data, size_t len) {
+  if (config.hexdump) {
+    util::hexdump(stdout, data, len);
+  }
+
+  auto rv = nghttp2_session_mem_recv(session, data, len);
+  if (rv < 0) {
+    std::cerr << "[ERROR] nghttp2_session_mem_recv() returned error: "
+              << nghttp2_strerror(rv) << std::endl;
+    return -1;
+  }
+
+  assert(static_cast<size_t>(rv) == len);
+
+  if (nghttp2_session_want_read(session) == 0 &&
+      nghttp2_session_want_write(session) == 0 && wb.rleft() == 0) {
+    return -1;
+  }
+
+  signal_write();
+
+  return 0;
+}
+
+int HttpClient::on_write() {
+  auto rv = nghttp2_session_send(session);
+  if (rv != 0) {
+    std::cerr << "[ERROR] nghttp2_session_send() returned error: "
+              << nghttp2_strerror(rv) << std::endl;
+    return -1;
+  }
+
+  if (nghttp2_session_want_read(session) == 0 &&
+      nghttp2_session_want_write(session) == 0 && wb.rleft() == 0) {
+    return -1;
+  }
+
+  return 0;
+}
+
+int HttpClient::tls_handshake() {
+  ev_timer_again(loop, &rt);
+
+  ERR_clear_error();
+
+  auto rv = SSL_do_handshake(ssl);
+
+  if (rv == 0) {
+    return -1;
+  }
+
+  if (rv < 0) {
+    auto err = SSL_get_error(ssl, rv);
+    switch (err) {
+    case SSL_ERROR_WANT_READ:
+      ev_io_stop(loop, &wev);
+      ev_timer_stop(loop, &wt);
+      return 0;
+    case SSL_ERROR_WANT_WRITE:
+      ev_io_start(loop, &wev);
+      ev_timer_again(loop, &wt);
+      return 0;
+    default:
+      return -1;
+    }
+  }
+
+  ev_io_stop(loop, &wev);
+  ev_timer_stop(loop, &wt);
+
+  readfn = &HttpClient::read_tls;
+  writefn = &HttpClient::write_tls;
+
+  if (connection_made() != 0) {
+    return -1;
+  }
+
+  return 0;
+}
+
+int HttpClient::read_tls() {
+  ev_timer_again(loop, &rt);
+
+  ERR_clear_error();
+
+  std::array<uint8_t, 8_k> buf;
+  for (;;) {
+    auto rv = SSL_read(ssl, buf.data(), buf.size());
+
+    if (rv == 0) {
+      return -1;
+    }
+
+    if (rv < 0) {
+      auto err = SSL_get_error(ssl, rv);
+      switch (err) {
+      case SSL_ERROR_WANT_READ:
+        return 0;
+      case SSL_ERROR_WANT_WRITE:
+        // renegotiation started
+        return -1;
+      default:
+        return -1;
+      }
+    }
+
+    if (on_readfn(*this, buf.data(), rv) != 0) {
+      return -1;
+    }
+  }
+}
+
+int HttpClient::write_tls() {
+  ev_timer_again(loop, &rt);
+
+  ERR_clear_error();
+
+  for (;;) {
+    if (wb.rleft() > 0) {
+      auto rv = SSL_write(ssl, wb.pos, wb.rleft());
+
+      if (rv == 0) {
+        return -1;
+      }
+
+      if (rv < 0) {
+        auto err = SSL_get_error(ssl, rv);
+        switch (err) {
+        case SSL_ERROR_WANT_READ:
+          // renegotiation started
+          return -1;
+        case SSL_ERROR_WANT_WRITE:
+          ev_io_start(loop, &wev);
+          ev_timer_again(loop, &wt);
+          return 0;
+        default:
+          return -1;
+        }
+      }
+
+      wb.drain(rv);
+
+      continue;
+    }
+    wb.reset();
+    if (on_writefn(*this) != 0) {
+      return -1;
+    }
+    if (wb.rleft() == 0) {
+      break;
+    }
+  }
+
+  ev_io_stop(loop, &wev);
+  ev_timer_stop(loop, &wt);
+
+  return 0;
+}
+
+void HttpClient::signal_write() { ev_io_start(loop, &wev); }
+
+bool HttpClient::all_requests_processed() const {
+  return complete == reqvec.size();
+}
+
+void HttpClient::update_hostport() {
+  if (reqvec.empty()) {
+    return;
+  }
+  scheme = util::get_uri_field(reqvec[0]->uri.c_str(), reqvec[0]->u, UF_SCHEMA);
+  std::stringstream ss;
+  if (reqvec[0]->is_ipv6_literal_addr()) {
+    // we may have zone ID, which must start with "%25", or "%".  RFC
+    // 6874 defines "%25" only, and just "%" is allowed for just
+    // convenience to end-user input.
+    auto host =
+        util::get_uri_field(reqvec[0]->uri.c_str(), reqvec[0]->u, UF_HOST);
+    auto end = std::find(std::begin(host), std::end(host), '%');
+    ss << "[";
+    ss.write(host.c_str(), end - std::begin(host));
+    ss << "]";
+  } else {
+    util::write_uri_field(ss, reqvec[0]->uri.c_str(), reqvec[0]->u, UF_HOST);
+  }
+  if (util::has_uri_field(reqvec[0]->u, UF_PORT) &&
+      reqvec[0]->u.port !=
+          util::get_default_port(reqvec[0]->uri.c_str(), reqvec[0]->u)) {
+    ss << ":" << reqvec[0]->u.port;
+  }
+  hostport = ss.str();
+}
+
+bool HttpClient::add_request(const std::string &uri,
+                             const nghttp2_data_provider *data_prd,
+                             int64_t data_length,
+                             const nghttp2_priority_spec &pri_spec, int level) {
+  http_parser_url u{};
+  if (http_parser_parse_url(uri.c_str(), uri.size(), 0, &u) != 0) {
+    return false;
+  }
+  if (path_cache.count(uri)) {
+    return false;
+  }
+
+  if (config.multiply == 1) {
+    path_cache.insert(uri);
+  }
+
+  reqvec.push_back(
+      make_unique<Request>(uri, u, data_prd, data_length, pri_spec, level));
+  return true;
+}
+
+void HttpClient::record_start_time() {
+  timing.system_start_time = std::chrono::system_clock::now();
+  timing.start_time = get_time();
+}
+
+void HttpClient::record_domain_lookup_end_time() {
+  timing.domain_lookup_end_time = get_time();
+}
+
+void HttpClient::record_connect_end_time() {
+  timing.connect_end_time = get_time();
+}
+
+void HttpClient::request_done(Request *req) {
+  if (req->stream_id % 2 == 0) {
+    return;
+  }
+}
+
+#ifdef HAVE_JANSSON
+void HttpClient::output_har(FILE *outfile) {
+  static auto PAGE_ID = "page_0";
+
+  auto root = json_object();
+  auto log = json_object();
+  json_object_set_new(root, "log", log);
+  json_object_set_new(log, "version", json_string("1.2"));
+
+  auto creator = json_object();
+  json_object_set_new(log, "creator", creator);
+
+  json_object_set_new(creator, "name", json_string("nghttp"));
+  json_object_set_new(creator, "version", json_string(NGHTTP2_VERSION));
+
+  auto pages = json_array();
+  json_object_set_new(log, "pages", pages);
+
+  auto page = json_object();
+  json_array_append_new(pages, page);
+
+  json_object_set_new(
+      page, "startedDateTime",
+      json_string(util::format_iso8601(timing.system_start_time).c_str()));
+  json_object_set_new(page, "id", json_string(PAGE_ID));
+  json_object_set_new(page, "title", json_string(""));
+
+  json_object_set_new(page, "pageTimings", json_object());
+
+  auto entries = json_array();
+  json_object_set_new(log, "entries", entries);
+
+  auto dns_delta =
+      std::chrono::duration_cast<std::chrono::microseconds>(
+          timing.domain_lookup_end_time - timing.start_time).count() /
+      1000.0;
+  auto connect_delta =
+      std::chrono::duration_cast<std::chrono::microseconds>(
+          timing.connect_end_time - timing.domain_lookup_end_time).count() /
+      1000.0;
+
+  for (size_t i = 0; i < reqvec.size(); ++i) {
+    auto &req = reqvec[i];
+
+    if (req->timing.state != RequestState::ON_COMPLETE) {
+      continue;
+    }
+
+    auto entry = json_object();
+    json_array_append_new(entries, entry);
+
+    auto &req_timing = req->timing;
+    auto request_time =
+        (i == 0) ? timing.system_start_time
+                 : timing.system_start_time +
+                       std::chrono::duration_cast<
+                           std::chrono::system_clock::duration>(
+                           req_timing.request_start_time - timing.start_time);
+
+    auto wait_delta = std::chrono::duration_cast<std::chrono::microseconds>(
+                          req_timing.response_start_time -
+                          req_timing.request_start_time).count() /
+                      1000.0;
+    auto receive_delta = std::chrono::duration_cast<std::chrono::microseconds>(
+                             req_timing.response_end_time -
+                             req_timing.response_start_time).count() /
+                         1000.0;
+
+    auto time_sum =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            (i == 0) ? (req_timing.response_end_time - timing.start_time)
+                     : (req_timing.response_end_time -
+                        req_timing.request_start_time)).count() /
+        1000.0;
+
+    json_object_set_new(
+        entry, "startedDateTime",
+        json_string(util::format_iso8601(request_time).c_str()));
+    json_object_set_new(entry, "time", json_real(time_sum));
+
+    auto pushed = req->stream_id % 2 == 0;
+
+    json_object_set_new(entry, "comment",
+                        json_string(pushed ? "Pushed Object" : ""));
+
+    auto request = json_object();
+    json_object_set_new(entry, "request", request);
+
+    auto method_ptr = http2::get_header(req->req_nva, ":method");
+
+    const char *method = "GET";
+    if (method_ptr) {
+      method = (*method_ptr).value.c_str();
+    }
+
+    auto req_headers = json_array();
+    json_object_set_new(request, "headers", req_headers);
+
+    for (auto &nv : req->req_nva) {
+      auto hd = json_object();
+      json_array_append_new(req_headers, hd);
+
+      json_object_set_new(hd, "name", json_string(nv.name.c_str()));
+      json_object_set_new(hd, "value", json_string(nv.value.c_str()));
+    }
+
+    json_object_set_new(request, "method", json_string(method));
+    json_object_set_new(request, "url", json_string(req->uri.c_str()));
+    json_object_set_new(request, "httpVersion", json_string("HTTP/2.0"));
+    json_object_set_new(request, "cookies", json_array());
+    json_object_set_new(request, "queryString", json_array());
+    json_object_set_new(request, "headersSize", json_integer(-1));
+    json_object_set_new(request, "bodySize", json_integer(-1));
+
+    auto response = json_object();
+    json_object_set_new(entry, "response", response);
+
+    auto res_headers = json_array();
+    json_object_set_new(response, "headers", res_headers);
+
+    for (auto &nv : req->res_nva) {
+      auto hd = json_object();
+      json_array_append_new(res_headers, hd);
+
+      json_object_set_new(hd, "name", json_string(nv.name.c_str()));
+      json_object_set_new(hd, "value", json_string(nv.value.c_str()));
+    }
+
+    json_object_set_new(response, "status", json_integer(req->status));
+    json_object_set_new(response, "statusText", json_string(""));
+    json_object_set_new(response, "httpVersion", json_string("HTTP/2.0"));
+    json_object_set_new(response, "cookies", json_array());
+
+    auto content = json_object();
+    json_object_set_new(response, "content", content);
+
+    json_object_set_new(content, "size", json_integer(req->response_len));
+
+    auto content_type_ptr = http2::get_header(req->res_nva, "content-type");
+
+    const char *content_type = "";
+    if (content_type_ptr) {
+      content_type = content_type_ptr->value.c_str();
+    }
+
+    json_object_set_new(content, "mimeType", json_string(content_type));
+
+    json_object_set_new(response, "redirectURL", json_string(""));
+    json_object_set_new(response, "headersSize", json_integer(-1));
+    json_object_set_new(response, "bodySize", json_integer(-1));
+    json_object_set_new(entry, "cache", json_object());
+
+    auto timings = json_object();
+    json_object_set_new(entry, "timings", timings);
+
+    auto dns_timing = (i == 0) ? dns_delta : 0;
+    auto connect_timing = (i == 0) ? connect_delta : 0;
+
+    json_object_set_new(timings, "dns", json_real(dns_timing));
+    json_object_set_new(timings, "connect", json_real(connect_timing));
+
+    json_object_set_new(timings, "blocked", json_real(0.0));
+    json_object_set_new(timings, "send", json_real(0.0));
+    json_object_set_new(timings, "wait", json_real(wait_delta));
+    json_object_set_new(timings, "receive", json_real(receive_delta));
+
+    json_object_set_new(entry, "pageref", json_string(PAGE_ID));
+    json_object_set_new(entry, "connection",
+                        json_string(util::utos(req->stream_id).c_str()));
+  }
+
+  json_dumpf(root, outfile, JSON_PRESERVE_ORDER | JSON_INDENT(2));
+  json_decref(root);
+}
+#endif // HAVE_JANSSON
 
 namespace {
 void update_html_parser(HttpClient *client, Request *req, const uint8_t *data,
@@ -1194,19 +1481,17 @@ void update_html_parser(HttpClient *client, Request *req, const uint8_t *data,
 
   for (auto &p : req->html_parser->get_links()) {
     auto uri = strip_fragment(p.first.c_str());
-    auto pri = p.second;
+    auto res_type = p.second;
 
-    http_parser_url u;
-    memset(&u, 0, sizeof(u));
+    http_parser_url u{};
     if (http_parser_parse_url(uri.c_str(), uri.size(), 0, &u) == 0 &&
         util::fieldeq(uri.c_str(), u, req->uri.c_str(), req->u, UF_SCHEMA) &&
         util::fieldeq(uri.c_str(), u, req->uri.c_str(), req->u, UF_HOST) &&
         util::porteq(uri.c_str(), u, req->uri.c_str(), req->u)) {
       // No POST data for assets
-      auto pri_spec = req->resolve_dep(pri);
+      auto pri_spec = resolve_dep(res_type);
 
-      if (client->add_request(uri, nullptr, 0, pri_spec, req->dep, pri,
-                              req->level + 1)) {
+      if (client->add_request(uri, nullptr, 0, pri_spec, req->level + 1)) {
 
         submit_request(client, config.headers, client->reqvec.back().get());
       }
@@ -1217,7 +1502,7 @@ void update_html_parser(HttpClient *client, Request *req, const uint8_t *data,
 } // namespace
 
 namespace {
-HttpClient *get_session(void *user_data) {
+HttpClient *get_client(void *user_data) {
   return static_cast<HttpClient *>(user_data);
 }
 } // namespace
@@ -1226,7 +1511,7 @@ namespace {
 int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
                                 int32_t stream_id, const uint8_t *data,
                                 size_t len, void *user_data) {
-  auto client = get_session(user_data);
+  auto client = get_client(user_data);
   auto req = static_cast<Request *>(
       nghttp2_session_get_stream_user_data(session, stream_id));
 
@@ -1239,40 +1524,33 @@ int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
                                         user_data);
   }
 
-  if (req->status == 0) {
-    nghttp2_submit_rst_stream(session, NGHTTP2_FLAG_NONE, stream_id,
-                              NGHTTP2_PROTOCOL_ERROR);
-    return 0;
-  }
+  req->response_len += len;
 
   if (req->inflater) {
     while (len > 0) {
-      const size_t MAX_OUTLEN = 4096;
-      uint8_t out[MAX_OUTLEN];
+      const size_t MAX_OUTLEN = 4_k;
+      std::array<uint8_t, MAX_OUTLEN> out;
       size_t outlen = MAX_OUTLEN;
       size_t tlen = len;
-      int rv = nghttp2_gzip_inflate(req->inflater, out, &outlen, data, &tlen);
+      int rv =
+          nghttp2_gzip_inflate(req->inflater, out.data(), &outlen, data, &tlen);
       if (rv != 0) {
         nghttp2_submit_rst_stream(session, NGHTTP2_FLAG_NONE, stream_id,
                                   NGHTTP2_INTERNAL_ERROR);
         break;
       }
 
-      req->response_len += outlen;
-
       if (!config.null_out) {
-        std::cout.write(reinterpret_cast<const char *>(out), outlen);
+        std::cout.write(reinterpret_cast<const char *>(out.data()), outlen);
       }
 
-      update_html_parser(client, req, out, outlen, 0);
+      update_html_parser(client, req, out.data(), outlen, 0);
       data += tlen;
       len -= tlen;
     }
 
     return 0;
   }
-
-  req->response_len += len;
 
   if (!config.null_out) {
     std::cout.write(reinterpret_cast<const char *>(data), len);
@@ -1281,18 +1559,6 @@ int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
   update_html_parser(client, req, data, len, 0);
 
   return 0;
-}
-} // namespace
-
-namespace {
-void settings_timeout_cb(evutil_socket_t fd, short what, void *arg) {
-  int rv;
-  auto client = get_session(arg);
-  nghttp2_session_terminate_session(client->session, NGHTTP2_SETTINGS_TIMEOUT);
-  rv = client->on_write();
-  if (rv != 0) {
-    client->disconnect();
-  }
 }
 } // namespace
 
@@ -1310,36 +1576,36 @@ void check_response_header(nghttp2_session *session, Request *req) {
 
   req->expect_final_response = false;
 
-  for (auto &nv : req->res_nva) {
-    if ("content-encoding" == nv.name) {
-      gzip =
-          util::strieq("gzip", nv.value) || util::strieq("deflate", nv.value);
-      continue;
-    }
-    if (":status" == nv.name) {
-      int status;
-      if (req->status != 0 ||
-          (status = http2::parse_http_status_code(nv.value)) == -1) {
+  auto status_hd = req->get_res_header(http2::HD__STATUS);
 
-        nghttp2_submit_rst_stream(session, NGHTTP2_FLAG_NONE, req->stream_id,
-                                  NGHTTP2_PROTOCOL_ERROR);
-        return;
-      }
-
-      req->status = status;
-    }
-  }
-
-  if (req->status == 0) {
+  if (!status_hd) {
     nghttp2_submit_rst_stream(session, NGHTTP2_FLAG_NONE, req->stream_id,
                               NGHTTP2_PROTOCOL_ERROR);
     return;
+  }
+
+  auto status = http2::parse_http_status_code(status_hd->value);
+  if (status == -1) {
+    nghttp2_submit_rst_stream(session, NGHTTP2_FLAG_NONE, req->stream_id,
+                              NGHTTP2_PROTOCOL_ERROR);
+    return;
+  }
+
+  req->status = status;
+
+  for (auto &nv : req->res_nva) {
+    if ("content-encoding" == nv.name) {
+      gzip = util::strieq_l("gzip", nv.value) ||
+             util::strieq_l("deflate", nv.value);
+      continue;
+    }
   }
 
   if (req->status / 100 == 1) {
     req->expect_final_response = true;
     req->status = 0;
     req->res_nva.clear();
+    http2::init_hdidx(req->res_hdidx);
     return;
   }
 
@@ -1359,23 +1625,41 @@ void check_response_header(nghttp2_session *session, Request *req) {
 namespace {
 int on_begin_headers_callback(nghttp2_session *session,
                               const nghttp2_frame *frame, void *user_data) {
-  auto client = get_session(user_data);
+  auto client = get_client(user_data);
   switch (frame->hd.type) {
+  case NGHTTP2_HEADERS: {
+    auto req = static_cast<Request *>(
+        nghttp2_session_get_stream_user_data(session, frame->hd.stream_id));
+    if (!req) {
+      break;
+    }
+
+    switch (frame->headers.cat) {
+    case NGHTTP2_HCAT_RESPONSE:
+    case NGHTTP2_HCAT_PUSH_RESPONSE:
+      req->record_response_start_time();
+      break;
+    default:
+      break;
+    }
+
+    break;
+  }
   case NGHTTP2_PUSH_PROMISE: {
     auto stream_id = frame->push_promise.promised_stream_id;
-    http_parser_url u;
-    memset(&u, 0, sizeof(u));
+    http_parser_url u{};
     // TODO Set pri and level
     nghttp2_priority_spec pri_spec;
 
     nghttp2_priority_spec_default_init(&pri_spec);
 
-    auto req = util::make_unique<Request>("", u, nullptr, 0, pri_spec, nullptr);
+    auto req = make_unique<Request>("", u, nullptr, 0, pri_spec);
     req->stream_id = stream_id;
 
     nghttp2_session_set_stream_user_data(session, stream_id, req.get());
 
-    client->on_request(req.get());
+    client->request_done(req.get());
+    req->record_request_start_time();
     client->reqvec.push_back(std::move(req));
 
     break;
@@ -1395,12 +1679,6 @@ int on_header_callback(nghttp2_session *session, const nghttp2_frame *frame,
                                flags, user_data);
   }
 
-  if (!http2::check_nv(name, namelen, value, valuelen)) {
-    nghttp2_submit_rst_stream(session, NGHTTP2_FLAG_NONE, frame->hd.stream_id,
-                              NGHTTP2_PROTOCOL_ERROR);
-    return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
-  }
-
   switch (frame->hd.type) {
   case NGHTTP2_HEADERS: {
     auto req = static_cast<Request *>(
@@ -1410,24 +1688,17 @@ int on_header_callback(nghttp2_session *session, const nghttp2_frame *frame,
       break;
     }
 
-    if (frame->headers.cat != NGHTTP2_HCAT_RESPONSE &&
-        frame->headers.cat != NGHTTP2_HCAT_PUSH_RESPONSE &&
-        (frame->headers.cat != NGHTTP2_HCAT_HEADERS ||
-         !req->expect_final_response)) {
+    /* ignore trailer header */
+    if (frame->headers.cat == NGHTTP2_HCAT_HEADERS &&
+        !req->expect_final_response) {
       break;
     }
 
-    if (namelen > 0 && name[0] == ':') {
-      if (!req->response_pseudo_header_allowed() ||
-          !http2::check_http2_response_pseudo_header(name, namelen)) {
-        nghttp2_submit_rst_stream(session, NGHTTP2_FLAG_NONE,
-                                  frame->hd.stream_id, NGHTTP2_PROTOCOL_ERROR);
-        return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
-      }
-    }
+    auto token = http2::lookup_token(name, namelen);
 
+    http2::index_header(req->res_hdidx, token, req->res_nva.size());
     http2::add_header(req->res_nva, name, namelen, value, valuelen,
-                      flags & NGHTTP2_NV_FLAG_NO_INDEX);
+                      flags & NGHTTP2_NV_FLAG_NO_INDEX, token);
     break;
   }
   case NGHTTP2_PUSH_PROMISE: {
@@ -1438,18 +1709,11 @@ int on_header_callback(nghttp2_session *session, const nghttp2_frame *frame,
       break;
     }
 
-    if (namelen > 0 && name[0] == ':') {
-      if (!req->push_request_pseudo_header_allowed() ||
-          !http2::check_http2_request_pseudo_header(name, namelen)) {
-        nghttp2_submit_rst_stream(session, NGHTTP2_FLAG_NONE,
-                                  frame->push_promise.promised_stream_id,
-                                  NGHTTP2_PROTOCOL_ERROR);
-        break;
-      }
-    }
+    auto token = http2::lookup_token(name, namelen);
 
+    http2::index_header(req->req_hdidx, token, req->req_nva.size());
     http2::add_header(req->req_nva, name, namelen, value, valuelen,
-                      flags & NGHTTP2_NV_FLAG_NO_INDEX);
+                      flags & NGHTTP2_NV_FLAG_NO_INDEX, token);
     break;
   }
   }
@@ -1466,39 +1730,56 @@ int on_frame_recv_callback2(nghttp2_session *session,
     verbose_on_frame_recv_callback(session, frame, user_data);
   }
 
-  auto client = get_session(user_data);
+  auto client = get_client(user_data);
   switch (frame->hd.type) {
+  case NGHTTP2_DATA: {
+    auto req = static_cast<Request *>(
+        nghttp2_session_get_stream_user_data(session, frame->hd.stream_id));
+    if (!req) {
+      return 0;
+      ;
+    }
+
+    if (frame->hd.flags & NGHTTP2_FLAG_END_STREAM) {
+      req->record_response_end_time();
+      ++client->success;
+    }
+
+    break;
+  }
   case NGHTTP2_HEADERS: {
     auto req = static_cast<Request *>(
         nghttp2_session_get_stream_user_data(session, frame->hd.stream_id));
     // If this is the HTTP Upgrade with OPTIONS method to avoid POST,
     // req is nullptr.
     if (!req) {
-      break;
+      return 0;
+      ;
     }
 
-    if (frame->headers.cat == NGHTTP2_HCAT_RESPONSE ||
-        frame->headers.cat == NGHTTP2_HCAT_PUSH_RESPONSE) {
-      req->record_response_time();
+    switch (frame->headers.cat) {
+    case NGHTTP2_HCAT_RESPONSE:
+    case NGHTTP2_HCAT_PUSH_RESPONSE:
       check_response_header(session, req);
-
       break;
-    }
-
-    if (frame->headers.cat == NGHTTP2_HCAT_HEADERS) {
+    case NGHTTP2_HCAT_HEADERS:
       if (req->expect_final_response) {
         check_response_header(session, req);
-      } else {
-        nghttp2_submit_rst_stream(session, NGHTTP2_FLAG_NONE,
-                                  frame->hd.stream_id, NGHTTP2_PROTOCOL_ERROR);
         break;
       }
+      if ((frame->hd.flags & NGHTTP2_FLAG_END_STREAM) == 0) {
+        nghttp2_submit_rst_stream(session, NGHTTP2_FLAG_NONE,
+                                  frame->hd.stream_id, NGHTTP2_PROTOCOL_ERROR);
+        return 0;
+      }
+      break;
+    default:
+      assert(0);
     }
 
-    if (req->status == 0 && (frame->hd.flags & NGHTTP2_FLAG_END_STREAM)) {
-      nghttp2_submit_rst_stream(session, NGHTTP2_FLAG_NONE, frame->hd.stream_id,
-                                NGHTTP2_PROTOCOL_ERROR);
-      break;
+    if (frame->hd.flags & NGHTTP2_FLAG_END_STREAM) {
+      req->record_response_end_time();
+      ++client->success;
     }
 
     break;
@@ -1507,11 +1788,7 @@ int on_frame_recv_callback2(nghttp2_session *session,
     if ((frame->hd.flags & NGHTTP2_FLAG_ACK) == 0) {
       break;
     }
-    if (client->settings_timerev) {
-      evtimer_del(client->settings_timerev);
-      event_free(client->settings_timerev);
-      client->settings_timerev = nullptr;
-    }
+    ev_timer_stop(client->loop, &client->settings_timer);
     break;
   case NGHTTP2_PUSH_PROMISE: {
     auto req = static_cast<Request *>(nghttp2_session_get_stream_user_data(
@@ -1519,38 +1796,27 @@ int on_frame_recv_callback2(nghttp2_session *session,
     if (!req) {
       break;
     }
-    std::string scheme, authority, method, path;
-    for (auto &nv : req->req_nva) {
-      if (nv.name == ":scheme") {
-        scheme = nv.value;
-        continue;
-      }
-      if (nv.name == ":authority" || nv.name == "host") {
-        authority = nv.value;
-        continue;
-      }
-      if (nv.name == ":method") {
-        method = nv.value;
-        continue;
-      }
-      if (nv.name == ":path") {
-        path = nv.value;
-        continue;
-      }
+    auto scheme = req->get_req_header(http2::HD__SCHEME);
+    auto authority = req->get_req_header(http2::HD__AUTHORITY);
+    auto path = req->get_req_header(http2::HD__PATH);
+
+    if (!authority) {
+      authority = req->get_req_header(http2::HD_HOST);
     }
-    if (scheme.empty() || authority.empty() || method.empty() || path.empty() ||
-        path[0] != '/') {
+
+    // libnghttp2 guarantees :scheme, :method, :path and (:authority |
+    // host) exist and non-empty.
+    if (path->value[0] != '/') {
       nghttp2_submit_rst_stream(session, NGHTTP2_FLAG_NONE,
                                 frame->push_promise.promised_stream_id,
                                 NGHTTP2_PROTOCOL_ERROR);
       break;
     }
-    std::string uri = scheme;
+    std::string uri = scheme->value;
     uri += "://";
-    uri += authority;
-    uri += path;
-    http_parser_url u;
-    memset(&u, 0, sizeof(u));
+    uri += authority->value;
+    uri += path->value;
+    http_parser_url u{};
     if (http_parser_parse_url(uri.c_str(), uri.size(), 0, &u) != 0) {
       nghttp2_submit_rst_stream(session, NGHTTP2_FLAG_NONE,
                                 frame->push_promise.promised_stream_id,
@@ -1559,6 +1825,18 @@ int on_frame_recv_callback2(nghttp2_session *session,
     }
     req->uri = uri;
     req->u = u;
+
+    if (client->path_cache.count(uri)) {
+      nghttp2_submit_rst_stream(session, NGHTTP2_FLAG_NONE,
+                                frame->push_promise.promised_stream_id,
+                                NGHTTP2_CANCEL);
+      break;
+    }
+
+    if (config.multiply == 1) {
+      client->path_cache.insert(uri);
+    }
+
     break;
   }
   }
@@ -1567,9 +1845,25 @@ int on_frame_recv_callback2(nghttp2_session *session,
 } // namespace
 
 namespace {
+int before_frame_send_callback(nghttp2_session *session,
+                               const nghttp2_frame *frame, void *user_data) {
+  if (frame->hd.type != NGHTTP2_HEADERS ||
+      frame->headers.cat != NGHTTP2_HCAT_REQUEST) {
+    return 0;
+  }
+  auto req = static_cast<Request *>(
+      nghttp2_session_get_stream_user_data(session, frame->hd.stream_id));
+  assert(req);
+  req->record_request_start_time();
+  return 0;
+}
+
+} // namespace
+
+namespace {
 int on_stream_close_callback(nghttp2_session *session, int32_t stream_id,
                              uint32_t error_code, void *user_data) {
-  auto client = get_session(user_data);
+  auto client = get_client(user_data);
   auto req = static_cast<Request *>(
       nghttp2_session_get_stream_user_data(session, stream_id));
 
@@ -1578,7 +1872,6 @@ int on_stream_close_callback(nghttp2_session *session, int32_t stream_id,
   }
 
   update_html_parser(client, req, nullptr, 0, 1);
-  req->record_complete_time();
   ++client->complete;
 
   if (client->all_requests_processed()) {
@@ -1589,40 +1882,69 @@ int on_stream_close_callback(nghttp2_session *session, int32_t stream_id,
 }
 } // namespace
 
+struct RequestResult {
+  std::chrono::microseconds time;
+};
+
 namespace {
 void print_stats(const HttpClient &client) {
   std::cout << "***** Statistics *****" << std::endl;
-  int i = 0;
-  for (auto &req : client.reqvec) {
-    std::cout << "#" << ++i << ": " << req->uri << std::endl;
-    std::cout << "    Status: " << req->status << std::endl;
-    std::cout << "    Delta (ms) from handshake(HEADERS):" << std::endl;
-    if (req->stat.stage >= STAT_ON_RESPONSE) {
-      std::cout << "        response HEADERS: "
-                << time_delta(req->stat.on_response_time,
-                              client.stat.on_handshake_time).count() << "("
-                << time_delta(req->stat.on_response_time,
-                              req->stat.on_request_time).count() << ")"
-                << std::endl;
-    }
-    if (req->stat.stage >= STAT_ON_COMPLETE) {
-      std::cout << "        Completed: "
-                << time_delta(req->stat.on_complete_time,
-                              client.stat.on_handshake_time).count() << "("
-                << time_delta(req->stat.on_complete_time,
-                              req->stat.on_request_time).count() << ")"
-                << std::endl;
-    }
-    std::cout << std::endl;
-  }
-}
-} // namespace
 
-namespace {
-void print_protocol_nego_error() {
-  std::cerr << "[ERROR] HTTP/2 protocol was not selected."
-            << " (nghttp2 expects " << NGHTTP2_PROTO_VERSION_ID << ")"
-            << std::endl;
+  std::vector<Request *> reqs;
+  reqs.reserve(client.reqvec.size());
+  for (const auto &req : client.reqvec) {
+    if (req->timing.state == RequestState::ON_COMPLETE) {
+      reqs.push_back(req.get());
+    }
+  }
+
+  std::sort(std::begin(reqs), std::end(reqs),
+            [](const Request *lhs, const Request *rhs) {
+    const auto &ltiming = lhs->timing;
+    const auto &rtiming = rhs->timing;
+    return ltiming.response_end_time < rtiming.response_end_time ||
+           (ltiming.response_end_time == rtiming.response_end_time &&
+            ltiming.request_start_time < rtiming.request_start_time);
+  });
+
+  std::cout << R"(
+Request timing:
+  responseEnd: the  time  when  last  byte of  response  was  received
+               relative to connectEnd
+ requestStart: the time  just before  first byte  of request  was sent
+               relative  to connectEnd.   If  '*' is  shown, this  was
+               pushed by server.
+      process: responseEnd - requestStart
+         code: HTTP status code
+         size: number  of  bytes  received as  response  body  without
+               inflation.
+          URI: request URI
+
+see http://www.w3.org/TR/resource-timing/#processing-model
+
+sorted by 'complete'
+
+id  responseEnd requestStart  process code size request path)" << std::endl;
+
+  const auto &base = client.timing.connect_end_time;
+  for (const auto &req : reqs) {
+    auto response_end = std::chrono::duration_cast<std::chrono::microseconds>(
+        req->timing.response_end_time - base);
+    auto request_start = std::chrono::duration_cast<std::chrono::microseconds>(
+        req->timing.request_start_time - base);
+    auto total = std::chrono::duration_cast<std::chrono::microseconds>(
+        req->timing.response_end_time - req->timing.request_start_time);
+    auto pushed = req->stream_id % 2 == 0;
+
+    std::cout << std::setw(3) << req->stream_id << " " << std::setw(11)
+              << ("+" + util::format_duration(response_end)) << " "
+              << (pushed ? "*" : " ") << std::setw(11)
+              << ("+" + util::format_duration(request_start)) << " "
+              << std::setw(8) << util::format_duration(total) << " "
+              << std::setw(4) << req->status << " " << std::setw(4)
+              << util::utos_with_unit(req->response_len) << " "
+              << req->make_reqpath() << std::endl;
+  }
 }
 } // namespace
 
@@ -1641,7 +1963,8 @@ int client_select_next_proto_cb(SSL *ssl, unsigned char **out,
       std::cout << std::endl;
     }
   }
-  if (nghttp2_select_next_protocol(out, outlen, in, inlen) <= 0) {
+  if (!util::select_h2(const_cast<const unsigned char **>(out), outlen, in,
+                       inlen)) {
     print_protocol_nego_error();
     return SSL_TLSEXT_ERR_NOACK;
   }
@@ -1650,128 +1973,21 @@ int client_select_next_proto_cb(SSL *ssl, unsigned char **out,
 } // namespace
 
 namespace {
-void upgrade_readcb(bufferevent *bev, void *ptr) {
-  int rv;
-  auto client = static_cast<HttpClient *>(ptr);
-  rv = client->on_upgrade_read();
-  if (rv != 0) {
-    client->disconnect();
-  }
-}
-} // namespace
-
-namespace {
-void readcb(bufferevent *bev, void *ptr) {
-  int rv;
-  auto client = static_cast<HttpClient *>(ptr);
-  rv = client->on_read();
-  if (rv != 0) {
-    client->disconnect();
-  }
-}
-} // namespace
-
-namespace {
-void writecb(bufferevent *bev, void *ptr) {
-  if (evbuffer_get_length(bufferevent_get_output(bev)) > 0) {
-    return;
-  }
-  int rv;
-  auto client = static_cast<HttpClient *>(ptr);
-  rv = client->on_write();
-  if (rv != 0) {
-    client->disconnect();
-  }
-}
-} // namespace
-
-namespace {
-void eventcb(bufferevent *bev, short events, void *ptr) {
-  int rv;
-  auto client = static_cast<HttpClient *>(ptr);
-  if (events & BEV_EVENT_CONNECTED) {
-    client->record_connect_time();
-    client->state = STATE_CONNECTED;
-    int fd = bufferevent_getfd(bev);
-    int val = 1;
-    if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<char *>(&val),
-                   sizeof(val)) == -1) {
-      std::cerr << "[ERROR] Setting option TCP_NODELAY failed: errno=" << errno
-                << std::endl;
-    }
-    if (client->need_upgrade()) {
-      rv = client->on_upgrade_connect();
-    } else {
-      if (client->ssl) {
-        // Check NPN or ALPN result
-        const unsigned char *next_proto = nullptr;
-        unsigned int next_proto_len;
-        SSL_get0_next_proto_negotiated(client->ssl, &next_proto,
-                                       &next_proto_len);
-        for (int i = 0; i < 2; ++i) {
-          if (next_proto) {
-            if (config.verbose) {
-              std::cout << "The negotiated protocol: ";
-              std::cout.write(reinterpret_cast<const char *>(next_proto),
-                              next_proto_len);
-              std::cout << std::endl;
-            }
-            if (!util::check_h2_is_selected(next_proto, next_proto_len)) {
-              next_proto = nullptr;
-            }
-            break;
-          }
-#if OPENSSL_VERSION_NUMBER >= 0x10002000L
-          SSL_get0_alpn_selected(client->ssl, &next_proto, &next_proto_len);
-#else  // OPENSSL_VERSION_NUMBER < 0x10002000L
-          break;
-#endif // OPENSSL_VERSION_NUMBER < 0x10002000L
-        }
-        if (!next_proto) {
-          print_protocol_nego_error();
-          client->disconnect();
-          return;
-        }
-      }
-      rv = client->on_connect();
-    }
-    if (rv != 0) {
-      client->disconnect();
-      return;
-    }
-    return;
-  }
-  if (events & BEV_EVENT_EOF) {
-    std::cerr << "EOF" << std::endl;
-    auto state = client->state;
-    client->disconnect();
-    if (state == STATE_IDLE) {
-      if (client->initiate_connection() == 0) {
-        std::cerr << "Trying next address" << std::endl;
-      }
-    }
-    return;
-  }
-  if (events & (BEV_EVENT_ERROR | BEV_EVENT_TIMEOUT)) {
-    if (events & BEV_EVENT_ERROR) {
-      if (client->state == STATE_IDLE) {
-        std::cerr << "[ERROR] Could not connect to the host" << std::endl;
-      } else {
-        std::cerr << "[ERROR] Network error" << std::endl;
-      }
-    } else {
-      std::cerr << "[ERROR] Timeout" << std::endl;
-    }
-    auto state = client->state;
-    client->disconnect();
-    if (state == STATE_IDLE) {
-      if (client->initiate_connection() == 0) {
-        std::cerr << "Trying next address" << std::endl;
-      }
-    }
-    return;
-  }
-}
+// Recommended general purpose "Intermediate compatibility" cipher by
+// mozilla.
+//
+// https://wiki.mozilla.org/Security/Server_Side_TLS
+const char *const CIPHER_LIST =
+    "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-"
+    "AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:"
+    "DHE-DSS-AES128-GCM-SHA256:kEDH+AESGCM:ECDHE-RSA-AES128-SHA256:ECDHE-ECDSA-"
+    "AES128-SHA256:ECDHE-RSA-AES128-SHA:ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-"
+    "AES256-SHA384:ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA:ECDHE-ECDSA-"
+    "AES256-SHA:DHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA:DHE-DSS-AES128-SHA256:"
+    "DHE-RSA-AES256-SHA256:DHE-DSS-AES256-SHA:DHE-RSA-AES256-SHA:AES128-GCM-"
+    "SHA256:AES256-GCM-SHA384:AES128-SHA256:AES256-SHA256:AES128-SHA:AES256-"
+    "SHA:AES:CAMELLIA:DES-CBC3-SHA:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!"
+    "aECDH:!EDH-DSS-DES-CBC3-SHA:!EDH-RSA-DES-CBC3-SHA:!KRB5-DES-CBC3-SHA";
 } // namespace
 
 namespace {
@@ -1780,7 +1996,7 @@ int communicate(
     std::vector<std::tuple<std::string, nghttp2_data_provider *, int64_t>>
         requests, const nghttp2_session_callbacks *callbacks) {
   int result = 0;
-  auto evbase = event_base_new();
+  auto loop = EV_DEFAULT;
   SSL_CTX *ssl_ctx = nullptr;
   if (scheme == "https") {
     ssl_ctx = SSL_CTX_new(SSLv23_client_method());
@@ -1790,12 +2006,20 @@ int communicate(
       result = -1;
       goto fin;
     }
-    SSL_CTX_set_options(ssl_ctx,
-                        SSL_OP_ALL | SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 |
-                            SSL_OP_NO_COMPRESSION |
-                            SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION);
+
+    auto ssl_opts = (SSL_OP_ALL & ~SSL_OP_DONT_INSERT_EMPTY_FRAGMENTS) |
+                    SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_COMPRESSION |
+                    SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION;
+
+    SSL_CTX_set_options(ssl_ctx, ssl_opts);
     SSL_CTX_set_mode(ssl_ctx, SSL_MODE_AUTO_RETRY);
     SSL_CTX_set_mode(ssl_ctx, SSL_MODE_RELEASE_BUFFERS);
+    if (SSL_CTX_set_cipher_list(ssl_ctx, CIPHER_LIST) == 0) {
+      std::cerr << "[ERROR] " << ERR_error_string(ERR_get_error(), nullptr)
+                << std::endl;
+      result = -1;
+      goto fin;
+    }
     if (!config.keyfile.empty()) {
       if (SSL_CTX_use_PrivateKey_file(ssl_ctx, config.keyfile.c_str(),
                                       SSL_FILETYPE_PEM) != 1) {
@@ -1824,37 +2048,39 @@ int communicate(
 #endif // OPENSSL_VERSION_NUMBER >= 0x10002000L
   }
   {
-    HttpClient client{callbacks, evbase, ssl_ctx};
+    HttpClient client{callbacks, loop, ssl_ctx};
 
     nghttp2_priority_spec pri_spec;
+    int32_t dep_stream_id = 0;
 
-    if (config.weight != NGHTTP2_DEFAULT_WEIGHT) {
-      nghttp2_priority_spec_init(&pri_spec, 0, config.weight, 0);
-    } else {
-      nghttp2_priority_spec_default_init(&pri_spec);
+    if (!config.no_dep) {
+      dep_stream_id = anchors[ANCHOR_FOLLOWERS].stream_id;
     }
+
+    nghttp2_priority_spec_init(&pri_spec, dep_stream_id, config.weight, 0);
 
     for (auto req : requests) {
       for (int i = 0; i < config.multiply; ++i) {
-        auto dep = std::make_shared<Dependency>();
         client.add_request(std::get<0>(req), std::get<1>(req), std::get<2>(req),
-                           pri_spec, std::move(dep));
+                           pri_spec);
       }
     }
     client.update_hostport();
 
-    client.record_started_time();
+    client.record_start_time();
 
     if (client.resolve_host(host, port) != 0) {
       goto fin;
     }
 
-    client.record_dns_complete_time();
+    client.record_domain_lookup_end_time();
 
     if (client.initiate_connection() != 0) {
+      std::cerr << "[ERROR] Could not connect to " << host << ", port " << port
+                << std::endl;
       goto fin;
     }
-    event_base_loop(evbase, 0);
+    ev_run(loop, 0);
 
 #ifdef HAVE_JANSSON
     if (!config.harfile.empty()) {
@@ -1878,9 +2104,9 @@ int communicate(
     }
 #endif // HAVE_JANSSON
 
-    if (!client.all_requests_processed()) {
+    if (client.success != client.reqvec.size()) {
       std::cerr << "Some requests were not processed. total="
-                << client.reqvec.size() << ", processed=" << client.complete
+                << client.reqvec.size() << ", processed=" << client.success
                 << std::endl;
     }
     if (config.stat) {
@@ -1891,9 +2117,6 @@ fin:
   if (ssl_ctx) {
     SSL_CTX_free(ssl_ctx);
   }
-  if (evbase) {
-    event_base_free(evbase);
-  }
   return result;
 }
 } // namespace
@@ -1902,6 +2125,7 @@ namespace {
 ssize_t file_read_callback(nghttp2_session *session, int32_t stream_id,
                            uint8_t *buf, size_t length, uint32_t *data_flags,
                            nghttp2_data_source *source, void *user_data) {
+  int rv;
   auto req = static_cast<Request *>(
       nghttp2_session_get_stream_user_data(session, stream_id));
   assert(req);
@@ -1918,6 +2142,21 @@ ssize_t file_read_callback(nghttp2_session *session, int32_t stream_id,
 
   if (nread == 0) {
     *data_flags |= NGHTTP2_DATA_FLAG_EOF;
+    if (!config.trailer.empty()) {
+      std::vector<nghttp2_nv> nva;
+      nva.reserve(config.trailer.size());
+      for (auto &kv : config.trailer) {
+        nva.push_back(http2::make_nv(kv.name, kv.value, kv.no_index));
+      }
+      rv = nghttp2_submit_trailer(session, stream_id, nva.data(), nva.size());
+      if (rv != 0) {
+        if (nghttp2_is_fatal(rv)) {
+          return NGHTTP2_ERR_CALLBACK_FAILURE;
+        }
+      } else {
+        *data_flags |= NGHTTP2_DATA_FLAG_NO_END_STREAM;
+      }
+    }
   } else {
     req->data_offset += nread;
   }
@@ -1927,11 +2166,25 @@ ssize_t file_read_callback(nghttp2_session *session, int32_t stream_id,
 } // namespace
 
 namespace {
+ssize_t send_callback(nghttp2_session *session, const uint8_t *data,
+                      size_t length, int flags, void *user_data) {
+  auto client = static_cast<HttpClient *>(user_data);
+  auto &wb = client->wb;
+
+  if (wb.wleft() == 0) {
+    return NGHTTP2_ERR_WOULDBLOCK;
+  }
+
+  return wb.write(data, length);
+}
+} // namespace
+
+namespace {
 int run(char **uris, int n) {
   nghttp2_session_callbacks *callbacks;
 
   nghttp2_session_callbacks_new(&callbacks);
-  auto cbsdel = util::defer(callbacks, nghttp2_session_callbacks_del);
+  auto cbsdel = defer(nghttp2_session_callbacks_del, callbacks);
 
   nghttp2_session_callbacks_set_on_stream_close_callback(
       callbacks, on_stream_close_callback);
@@ -1956,6 +2209,11 @@ int run(char **uris, int n) {
   nghttp2_session_callbacks_set_on_header_callback(callbacks,
                                                    on_header_callback);
 
+  nghttp2_session_callbacks_set_before_frame_send_callback(
+      callbacks, before_frame_send_callback);
+
+  nghttp2_session_callbacks_set_send_callback(callbacks, send_callback);
+
   if (config.padding) {
     nghttp2_session_callbacks_set_select_padding_callback(
         callbacks, select_padding_callback);
@@ -1970,17 +2228,65 @@ int run(char **uris, int n) {
   struct stat data_stat;
 
   if (!config.datafile.empty()) {
-    data_fd = open(config.datafile.c_str(), O_RDONLY | O_BINARY);
-    if (data_fd == -1) {
-      std::cerr << "[ERROR] Could not open file " << config.datafile
-                << std::endl;
-      return 1;
-    }
-    if (fstat(data_fd, &data_stat) == -1) {
-      close(data_fd);
-      std::cerr << "[ERROR] Could not stat file " << config.datafile
-                << std::endl;
-      return 1;
+    if (config.datafile == "-") {
+      if (fstat(0, &data_stat) == 0 &&
+          (data_stat.st_mode & S_IFMT) == S_IFREG) {
+        // use STDIN if it is a regular file
+        data_fd = 0;
+      } else {
+        // copy the contents of STDIN to a temporary file
+        char tempfn[] = "/tmp/nghttp.temp.XXXXXX";
+        data_fd = mkstemp(tempfn);
+        if (data_fd == -1) {
+          std::cerr << "[ERROR] Could not create a temporary file in /tmp"
+                    << std::endl;
+          return 1;
+        }
+        if (unlink(tempfn) != 0) {
+          std::cerr << "[WARNING] failed to unlink temporary file:" << tempfn
+                    << std::endl;
+        }
+        while (1) {
+          std::array<char, 1_k> buf;
+          ssize_t rret, wret;
+          while ((rret = read(0, buf.data(), buf.size())) == -1 &&
+                 errno == EINTR)
+            ;
+          if (rret == 0)
+            break;
+          if (rret == -1) {
+            std::cerr << "[ERROR] I/O error while reading from STDIN"
+                      << std::endl;
+            return 1;
+          }
+          while ((wret = write(data_fd, buf.data(), rret)) == -1 &&
+                 errno == EINTR)
+            ;
+          if (wret != rret) {
+            std::cerr << "[ERROR] I/O error while writing to temporary file"
+                      << std::endl;
+            return 1;
+          }
+        }
+        if (fstat(data_fd, &data_stat) == -1) {
+          close(data_fd);
+          std::cerr << "[ERROR] Could not stat temporary file" << std::endl;
+          return 1;
+        }
+      }
+    } else {
+      data_fd = open(config.datafile.c_str(), O_RDONLY | O_BINARY);
+      if (data_fd == -1) {
+        std::cerr << "[ERROR] Could not open file " << config.datafile
+                  << std::endl;
+        return 1;
+      }
+      if (fstat(data_fd, &data_stat) == -1) {
+        close(data_fd);
+        std::cerr << "[ERROR] Could not stat file " << config.datafile
+                  << std::endl;
+        return 1;
+      }
     }
     data_prd.source.fd = data_fd;
     data_prd.read_callback = file_read_callback;
@@ -1988,31 +2294,36 @@ int run(char **uris, int n) {
   std::vector<std::tuple<std::string, nghttp2_data_provider *, int64_t>>
       requests;
   for (int i = 0; i < n; ++i) {
-    http_parser_url u;
-    memset(&u, 0, sizeof(u));
+    http_parser_url u{};
     auto uri = strip_fragment(uris[i]);
-    if (http_parser_parse_url(uri.c_str(), uri.size(), 0, &u) == 0 &&
-        util::has_uri_field(u, UF_SCHEMA)) {
-      uint16_t port = util::has_uri_field(u, UF_PORT)
-                          ? u.port
-                          : util::get_default_port(uri.c_str(), u);
-      if (!util::fieldeq(uri.c_str(), u, UF_SCHEMA, prev_scheme.c_str()) ||
-          !util::fieldeq(uri.c_str(), u, UF_HOST, prev_host.c_str()) ||
-          port != prev_port) {
-        if (!requests.empty()) {
-          if (communicate(prev_scheme, prev_host, prev_port,
-                          std::move(requests), callbacks) != 0) {
-            ++failures;
-          }
-          requests.clear();
-        }
-        prev_scheme = util::get_uri_field(uri.c_str(), u, UF_SCHEMA);
-        prev_host = util::get_uri_field(uri.c_str(), u, UF_HOST);
-        prev_port = port;
-      }
-      requests.emplace_back(uri, data_fd == -1 ? nullptr : &data_prd,
-                            data_stat.st_size);
+    if (http_parser_parse_url(uri.c_str(), uri.size(), 0, &u) != 0) {
+      std::cerr << "[ERROR] Could not parse URI " << uri << std::endl;
+      continue;
     }
+    if (!util::has_uri_field(u, UF_SCHEMA)) {
+      std::cerr << "[ERROR] URI " << uri << " does not have scheme part"
+                << std::endl;
+      continue;
+    }
+    auto port = util::has_uri_field(u, UF_PORT)
+                    ? u.port
+                    : util::get_default_port(uri.c_str(), u);
+    auto host = decode_host(util::get_uri_field(uri.c_str(), u, UF_HOST));
+    if (!util::fieldeq(uri.c_str(), u, UF_SCHEMA, prev_scheme.c_str()) ||
+        host != prev_host || port != prev_port) {
+      if (!requests.empty()) {
+        if (communicate(prev_scheme, prev_host, prev_port, std::move(requests),
+                        callbacks) != 0) {
+          ++failures;
+        }
+        requests.clear();
+      }
+      prev_scheme = util::get_uri_field(uri.c_str(), u, UF_SCHEMA);
+      prev_host = std::move(host);
+      prev_port = port;
+    }
+    requests.emplace_back(uri, data_fd == -1 ? nullptr : &data_prd,
+                          data_stat.st_size);
   }
   if (!requests.empty()) {
     if (communicate(prev_scheme, prev_host, prev_port, std::move(requests),
@@ -2041,77 +2352,109 @@ namespace {
 void print_help(std::ostream &out) {
   print_usage(out);
   out << R"(
-  <URI>              Specify URI to access.
+  <URI>       Specify URI to access.
 Options:
-  -v, --verbose      Print  debug information  such  as reception  and
-                     transmission  of  frames  and  name/value  pairs.
-                     Specifying this  option multiple  times increases
-                     verbosity.
-  -n, --null-out     Discard downloaded data.
-  -O, --remote-name  Save download data in the current directory.  The
-                     filename is dereived from  URI.  If URI ends with
-                     '/',  'index.html' is  used as  a filename.   Not
-                     implemented yet.
-  -t, --timeout=<N>  Timeout each request after <N> seconds.
+  -v, --verbose
+              Print   debug   information   such  as   reception   and
+              transmission of frames and name/value pairs.  Specifying
+              this option multiple times increases verbosity.
+  -n, --null-out
+              Discard downloaded data.
+  -O, --remote-name
+              Save  download  data  in  the  current  directory.   The
+              filename is  dereived from URI.   If URI ends  with '/',
+              'index.html'  is used  as a  filename.  Not  implemented
+              yet.
+  -t, --timeout=<DURATION>
+              Timeout each request after <DURATION>.  Set 0 to disable
+              timeout.
   -w, --window-bits=<N>
-                     Sets  the stream  level  initial  window size  to
-                     2**<N>-1.
+              Sets the stream level initial window size to 2**<N>-1.
   -W, --connection-window-bits=<N>
-                     Sets the connection level  initial window size to
-                     2**<N>-1.
-  -a, --get-assets   Download assets  such as stylesheets,  images and
-                     script files linked from the downloaded resource.
-                     Only links  whose origins  are the same  with the
-                     linking  resource  will  be  downloaded.   nghttp
-                     prioritizes  resources  using  HTTP/2  dependency
-                     based priority.  The priority order, from highest
-                     to lowest,  is html  itself, css,  javascript and
-                     images.
-  -s, --stat         Print statistics.
+              Sets  the  connection  level   initial  window  size  to
+              2**<N>-1.
+  -a, --get-assets
+              Download assets  such as stylesheets, images  and script
+              files linked  from the downloaded resource.   Only links
+              whose  origins are  the same  with the  linking resource
+              will be downloaded.   nghttp prioritizes resources using
+              HTTP/2 dependency  based priority.  The  priority order,
+              from highest to lowest,  is html itself, css, javascript
+              and images.
+  -s, --stat  Print statistics.
   -H, --header=<HEADER>
-                     Add   a  header   to   the  requests.    Example:
-                     -H':method: PUT'
-  --cert=<CERT>      Use the  specified client certificate  file.  The
-                     file must be in PEM format.
-  --key=<KEY>        Use the  client private key file.   The file must
-                     be in PEM format.
-  -d, --data=<FILE>  Post FILE to  server. If '-' is  given, data will
-                     be read from stdin.
-  -m, --multiply=<N> Request each URI <N> times.  By default, same URI
-                     is not requested twice.   This option disables it
-                     too.
-  -u, --upgrade      Perform HTTP Upgrade for  HTTP/2.  This option is
-                     ignored if the request  URI has https scheme.  If
-                     -d is used, the HTTP upgrade request is performed
-                     with OPTIONS method.
+              Add a header to the requests.  Example: -H':method: PUT'
+  --trailer=<HEADER>
+              Add a trailer header to the requests.  <HEADER> must not
+              include pseudo header field  (header field name starting
+              with ':').  To  send trailer, one must use  -d option to
+              send request body.  Example: --trailer 'foo: bar'.
+  --cert=<CERT>
+              Use  the specified  client certificate  file.  The  file
+              must be in PEM format.
+  --key=<KEY> Use the  client private key  file.  The file must  be in
+              PEM format.
+  -d, --data=<PATH>
+              Post FILE to server. If '-'  is given, data will be read
+              from stdin.
+  -m, --multiply=<N>
+              Request each URI <N> times.  By default, same URI is not
+              requested twice.  This option disables it too.
+  -u, --upgrade
+              Perform HTTP Upgrade for HTTP/2.  This option is ignored
+              if the request URI has https scheme.  If -d is used, the
+              HTTP upgrade request is performed with OPTIONS method.
   -p, --weight=<WEIGHT>
-                     Sets  priority  group  weight.  The  valid  value
-                     range is [)" << NGHTTP2_MIN_WEIGHT << ", "
-      << NGHTTP2_MAX_WEIGHT << R"(], inclusive.
-                     Default: )" << NGHTTP2_DEFAULT_WEIGHT << R"(
+              Sets priority group weight.  The valid value range is
+              [)" << NGHTTP2_MIN_WEIGHT << ", " << NGHTTP2_MAX_WEIGHT
+      << R"(], inclusive.
+              Default: )" << NGHTTP2_DEFAULT_WEIGHT << R"(
   -M, --peer-max-concurrent-streams=<N>
-                     Use <N>  as SETTINGS_MAX_CONCURRENT_STREAMS value
-                     of  remote  endpoint  as  if it  is  received  in
-                     SETTINGS frame.   The default is large  enough as
-                     it is seen as unlimited.
-  -c, --header-table-size=<N>
-                     Specify decoder header table size.
-  -b, --padding=<N>  Add  at most  <N>  bytes to  a  frame payload  as
-                     padding.  Specify 0 to disable padding.
-  -r, --har=<FILE>   Output  HTTP transactions  <FILE> in  HAR format.
-                     If '-' is given, data is written to stdout.
-  --color            Force colored log output.
-  --continuation     Send large header to test CONTINUATION.
+              Use  <N>  as  SETTINGS_MAX_CONCURRENT_STREAMS  value  of
+              remote endpoint as if it  is received in SETTINGS frame.
+              The default is large enough as it is seen as unlimited.
+  -c, --header-table-size=<SIZE>
+              Specify decoder header table size.
+  -b, --padding=<N>
+              Add at  most <N>  bytes to a  frame payload  as padding.
+              Specify 0 to disable padding.
+  -r, --har=<PATH>
+              Output HTTP  transactions <PATH> in HAR  format.  If '-'
+              is given, data is written to stdout.
+  --color     Force colored log output.
+  --continuation
+              Send large header to test CONTINUATION.
   --no-content-length
-                     Don't send content-length header field.
-  --no-dep           Don't  send  dependency  based priority  hint  to
-                     server.
-  --version          Display version information and exit.
-  -h, --help         Display this help and exit.)" << std::endl;
+              Don't send content-length header field.
+  --no-dep    Don't send dependency based priority hint to server.
+  --hexdump   Display the  incoming traffic in  hexadecimal (Canonical
+              hex+ASCII display).  If SSL/TLS  is used, decrypted data
+              are used.
+  --no-push   Disable server push.
+  --max-concurrent-streams=<N>
+              The  number of  concurrent  pushed  streams this  client
+              accepts.
+  --version   Display version information and exit.
+  -h, --help  Display this help and exit.
+
+--
+
+  The <SIZE> argument is an integer and an optional unit (e.g., 10K is
+  10 * 1024).  Units are K, M and G (powers of 1024).
+
+  The <DURATION> argument is an integer and an optional unit (e.g., 1s
+  is 1 second and 500ms is 500 milliseconds).  Units are h, m, s or ms
+  (hours, minutes, seconds and milliseconds, respectively).  If a unit
+  is omitted, a second is used as unit.)" << std::endl;
 }
 } // namespace
 
 int main(int argc, char **argv) {
+  SSL_load_error_strings();
+  SSL_library_init();
+  OpenSSL_add_all_algorithms();
+  OPENSSL_config(nullptr);
+
   bool color = false;
   while (1) {
     static int flag = 0;
@@ -2141,11 +2484,14 @@ int main(int argc, char **argv) {
         {"version", no_argument, &flag, 5},
         {"no-content-length", no_argument, &flag, 6},
         {"no-dep", no_argument, &flag, 7},
+        {"trailer", required_argument, &flag, 9},
+        {"hexdump", no_argument, &flag, 10},
+        {"no-push", no_argument, &flag, 11},
+        {"max-concurrent-streams", required_argument, &flag, 12},
         {nullptr, 0, nullptr, 0}};
     int option_index = 0;
     int c = getopt_long(argc, argv, "M:Oab:c:d:gm:np:r:hH:vst:uw:W:",
                         long_options, &option_index);
-    char *end;
     if (c == -1) {
       break;
     }
@@ -2191,7 +2537,11 @@ int main(int argc, char **argv) {
       ++config.verbose;
       break;
     case 't':
-      config.timeout = atoi(optarg) * 1000;
+      config.timeout = util::parse_duration_with_unit(optarg);
+      if (config.timeout == std::numeric_limits<double>::infinity()) {
+        std::cerr << "-t: bad timeout value: " << optarg << std::endl;
+        exit(EXIT_FAILURE);
+      }
       break;
     case 'u':
       config.upgrade = true;
@@ -2235,10 +2585,7 @@ int main(int argc, char **argv) {
                   << std::endl;
         exit(EXIT_FAILURE);
       }
-      // To test "never index" repr, don't index authorization header
-      // field unconditionally.
-      auto no_index = util::strieq("authorization", header);
-      config.headers.emplace_back(header, value, no_index);
+      config.headers.emplace_back(header, value, false);
       util::inp_strlower(config.headers.back().name);
       break;
     }
@@ -2254,15 +2601,15 @@ int main(int argc, char **argv) {
       config.stat = true;
       break;
     case 'd':
-      config.datafile = strcmp("-", optarg) == 0 ? "/dev/stdin" : optarg;
+      config.datafile = optarg;
       break;
     case 'm':
       config.multiply = strtoul(optarg, nullptr, 10);
       break;
     case 'c':
       errno = 0;
-      config.header_table_size = strtol(optarg, &end, 10);
-      if (errno == ERANGE || *end != '\0') {
+      config.header_table_size = util::parse_uint_with_unit(optarg);
+      if (config.header_table_size == -1) {
         std::cerr << "-c: Bad option value: " << optarg << std::endl;
         exit(EXIT_FAILURE);
       }
@@ -2300,6 +2647,42 @@ int main(int argc, char **argv) {
         // no-dep option
         config.no_dep = true;
         break;
+      case 9: {
+        // trailer option
+        auto header = optarg;
+        auto value = strchr(optarg, ':');
+        if (!value) {
+          std::cerr << "--trailer: invalid header: " << optarg << std::endl;
+          exit(EXIT_FAILURE);
+        }
+        *value = 0;
+        value++;
+        while (isspace(*value)) {
+          value++;
+        }
+        if (*value == 0) {
+          // This could also be a valid case for suppressing a header
+          // similar to curl
+          std::cerr << "--trailer: invalid header - value missing: " << optarg
+                    << std::endl;
+          exit(EXIT_FAILURE);
+        }
+        config.trailer.emplace_back(header, value, false);
+        util::inp_strlower(config.trailer.back().name);
+        break;
+      }
+      case 10:
+        // hexdump option
+        config.hexdump = true;
+        break;
+      case 11:
+        // no-push option
+        config.no_push = true;
+        break;
+      case 12:
+        // max-concurrent-streams option
+        config.max_concurrent_streams = strtoul(optarg, nullptr, 10);
+        break;
       }
       break;
     default:
@@ -2312,14 +2695,9 @@ int main(int argc, char **argv) {
   nghttp2_option_set_peer_max_concurrent_streams(
       config.http2_option, config.peer_max_concurrent_streams);
 
-  struct sigaction act;
-  memset(&act, 0, sizeof(struct sigaction));
+  struct sigaction act {};
   act.sa_handler = SIG_IGN;
   sigaction(SIGPIPE, &act, nullptr);
-  OPENSSL_config(nullptr);
-  OpenSSL_add_all_algorithms();
-  SSL_load_error_strings();
-  SSL_library_init();
   reset_timer();
   return run(argv + optind, argc - optind);
 }

@@ -30,7 +30,6 @@
 #include <spdylay/spdylay.h>
 
 #include "util.h"
-#include "libevent_util.h"
 
 namespace h2load {
 
@@ -41,13 +40,11 @@ public:
   SpdySession(Client *client, uint16_t spdy_version);
   virtual ~SpdySession();
   virtual void on_connect();
-  virtual void submit_request();
-  virtual ssize_t on_read();
+  virtual void submit_request(RequestStat *req_stat);
+  virtual int on_read(const uint8_t *data, size_t len);
   virtual int on_write();
   virtual void terminate();
   void handle_window_update(int32_t stream_id, size_t recvlen);
-
-  nghttp2::util::EvbufferBuffer sendbuf;
 
 private:
   Client *client_;

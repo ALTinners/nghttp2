@@ -28,26 +28,36 @@
 #include "nghttp2_config.h"
 
 #include <sys/types.h>
+#ifdef HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
+#endif // HAVE_SYS_SOCKET_H
+#ifdef HAVE_NETDB_H
 #include <netdb.h>
+#endif // HAVE_NETDB_H
 
 #include <vector>
 #include <string>
 #include <unordered_map>
 #include <memory>
+#include <chrono>
+#include <array>
 
 #include <nghttp2/nghttp2.h>
 
-#include <event.h>
-#include <event2/event.h>
+#include <ev.h>
 
 #include <openssl/ssl.h>
 
 #include "http2.h"
+#include "buffer.h"
+#include "template.h"
+
+using namespace nghttp2;
 
 namespace h2load {
 
 class Session;
+struct Worker;
 
 struct Config {
   std::vector<std::vector<nghttp2_nv>> nva;
@@ -56,6 +66,9 @@ struct Config {
   std::string scheme;
   std::string host;
   std::string ifile;
+  std::string ciphers;
+  // length of upload data
+  int64_t data_length;
   addrinfo *addrs;
   size_t nreqs;
   size_t nclients;
@@ -64,25 +77,68 @@ struct Config {
   ssize_t max_concurrent_streams;
   size_t window_bits;
   size_t connection_window_bits;
+  // rate at which connections should be made
+  size_t rate;
+  // number of connections made
+  size_t nconns;
   enum { PROTO_HTTP2, PROTO_SPDY2, PROTO_SPDY3, PROTO_SPDY3_1 } no_tls_proto;
+  // file descriptor for upload data
+  int data_fd;
   uint16_t port;
   uint16_t default_port;
   bool verbose;
 
   Config();
   ~Config();
+
+  bool is_rate_mode() const;
 };
 
+struct RequestStat {
+  RequestStat();
+  // time point when request was sent
+  std::chrono::steady_clock::time_point request_time;
+  // time point when stream was closed
+  std::chrono::steady_clock::time_point stream_close_time;
+  // upload data length sent so far
+  int64_t data_offset;
+  // true if stream was successfully closed.  This means stream was
+  // not reset, but it does not mean HTTP level error (e.g., 404).
+  bool completed;
+};
+
+template <typename Duration> struct TimeStat {
+  // min, max, mean and sd (standard deviation)
+  Duration min, max, mean, sd;
+  // percentage of samples inside mean -/+ sd
+  double within_sd;
+};
+
+struct TimeStats {
+  // time for request
+  TimeStat<std::chrono::microseconds> request;
+  // time for connect
+  TimeStat<std::chrono::microseconds> connect;
+  // time to first byte (TTFB)
+  TimeStat<std::chrono::microseconds> ttfb;
+};
+
+enum TimeStatType { STAT_REQUEST, STAT_CONNECT, STAT_FIRST_BYTE };
+
 struct Stats {
+  Stats(size_t req_todo);
   // The total number of requests
   size_t req_todo;
   // The number of requests issued so far
   size_t req_started;
   // The number of requests finished
   size_t req_done;
-  // The number of requests marked as success. This is subset of
-  // req_done.
+  // The number of requests completed successfull, but not necessarily
+  // means successful HTTP status code.
   size_t req_success;
+  // The number of requests marked as success.  HTTP status code is
+  // also considered as success. This is subset of req_done.
+  size_t req_status_success;
   // The number of requests failed. This is subset of req_done.
   size_t req_failed;
   // The number of requests failed due to network errors. This is
@@ -97,7 +153,15 @@ struct Stats {
   int64_t bytes_body;
   // The number of each HTTP status category, status[i] is status code
   // in the range [i*100, (i+1)*100).
-  size_t status[6];
+  std::array<size_t, 6> status;
+  // The statistics per request
+  std::vector<RequestStat> req_stats;
+  // time connect starts
+  std::vector<std::chrono::steady_clock::time_point> start_times;
+  // time to connect
+  std::vector<std::chrono::steady_clock::time_point> connect_times;
+  // time to first byte (TTFB)
+  std::vector<std::chrono::steady_clock::time_point> ttfbs;
 };
 
 enum ClientState { CLIENT_IDLE, CLIENT_CONNECTED };
@@ -107,16 +171,21 @@ struct Client;
 struct Worker {
   std::vector<std::unique_ptr<Client>> clients;
   Stats stats;
-  event_base *evbase;
+  struct ev_loop *loop;
   SSL_CTX *ssl_ctx;
   Config *config;
   size_t progress_interval;
   uint32_t id;
   bool tls_info_report_done;
+  size_t nconns_made;
+  size_t nclients;
+  size_t rate;
+  ev_timer timeout_watcher;
 
   Worker(uint32_t id, SSL_CTX *ssl_ctx, size_t nreq_todo, size_t nclients,
-         Config *config);
+         size_t rate, Config *config);
   ~Worker();
+  Worker(Worker &&o) = default;
   void run();
 };
 
@@ -128,18 +197,25 @@ struct Stream {
 struct Client {
   std::unordered_map<int32_t, Stream> streams;
   std::unique_ptr<Session> session;
+  ev_io wev;
+  ev_io rev;
+  std::function<int(Client &)> readfn, writefn;
   Worker *worker;
   SSL *ssl;
-  bufferevent *bev;
   addrinfo *next_addr;
   size_t reqidx;
   ClientState state;
+  bool first_byte_received;
   // The number of requests this client has to issue.
   size_t req_todo;
   // The number of requests this client has issued so far.
   size_t req_started;
   // The number of requests this client has done so far.
   size_t req_done;
+  int fd;
+  Buffer<64_k> wb;
+
+  enum { ERR_CONNECT_FAIL = -100 };
 
   Client(Worker *worker, size_t req_todo);
   ~Client();
@@ -151,13 +227,34 @@ struct Client {
   void report_progress();
   void report_tls_info();
   void terminate_session();
-  int on_connect();
-  int on_read();
+
+  int do_read();
+  int do_write();
+
+  // low-level I/O callback functions called by do_read/do_write
+  int connected();
+  int read_clear();
+  int write_clear();
+  int tls_handshake();
+  int read_tls();
+  int write_tls();
+
+  int on_read(const uint8_t *data, size_t len);
   int on_write();
+
+  int connection_made();
+
   void on_request(int32_t stream_id);
   void on_header(int32_t stream_id, const uint8_t *name, size_t namelen,
                  const uint8_t *value, size_t valuelen);
-  void on_stream_close(int32_t stream_id, bool success);
+  void on_stream_close(int32_t stream_id, bool success, RequestStat *req_stat);
+
+  void record_request_time(RequestStat *req_stat);
+  void record_start_time(Stats *stat);
+  void record_connect_time(Stats *stat);
+  void record_ttfb(Stats *stat);
+
+  void signal_write();
 };
 
 } // namespace h2load

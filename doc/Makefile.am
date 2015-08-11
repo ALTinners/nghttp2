@@ -23,10 +23,111 @@
 
 man_MANS = nghttp.1 nghttpd.1 nghttpx.1 h2load.1
 
+APIDOCS= \
+	apiref.rst \
+	macros.rst \
+	enums.rst \
+	types.rst \
+	nghttp2_check_header_name.rst \
+	nghttp2_check_header_value.rst \
+	nghttp2_hd_deflate_bound.rst \
+	nghttp2_hd_deflate_change_table_size.rst \
+	nghttp2_hd_deflate_del.rst \
+	nghttp2_hd_deflate_hd.rst \
+	nghttp2_hd_deflate_new.rst \
+	nghttp2_hd_deflate_new2.rst \
+	nghttp2_hd_inflate_change_table_size.rst \
+	nghttp2_hd_inflate_del.rst \
+	nghttp2_hd_inflate_end_headers.rst \
+	nghttp2_hd_inflate_hd.rst \
+	nghttp2_hd_inflate_new.rst \
+	nghttp2_hd_inflate_new2.rst \
+	nghttp2_is_fatal.rst \
+	nghttp2_nv_compare_name.rst \
+	nghttp2_option_del.rst \
+	nghttp2_option_new.rst \
+	nghttp2_option_set_no_auto_window_update.rst \
+	nghttp2_option_set_no_http_messaging.rst \
+	nghttp2_option_set_peer_max_concurrent_streams.rst \
+	nghttp2_option_set_no_recv_client_magic.rst \
+	nghttp2_pack_settings_payload.rst \
+	nghttp2_priority_spec_check_default.rst \
+	nghttp2_priority_spec_default_init.rst \
+	nghttp2_priority_spec_init.rst \
+	nghttp2_select_next_protocol.rst \
+	nghttp2_session_callbacks_del.rst \
+	nghttp2_session_callbacks_new.rst \
+	nghttp2_session_callbacks_set_before_frame_send_callback.rst \
+	nghttp2_session_callbacks_set_data_source_read_length_callback.rst \
+	nghttp2_session_callbacks_set_on_begin_frame_callback.rst \
+	nghttp2_session_callbacks_set_on_begin_headers_callback.rst \
+	nghttp2_session_callbacks_set_on_data_chunk_recv_callback.rst \
+	nghttp2_session_callbacks_set_on_frame_not_send_callback.rst \
+	nghttp2_session_callbacks_set_on_frame_recv_callback.rst \
+	nghttp2_session_callbacks_set_on_frame_send_callback.rst \
+	nghttp2_session_callbacks_set_on_header_callback.rst \
+	nghttp2_session_callbacks_set_on_invalid_frame_recv_callback.rst \
+	nghttp2_session_callbacks_set_on_stream_close_callback.rst \
+	nghttp2_session_callbacks_set_recv_callback.rst \
+	nghttp2_session_callbacks_set_select_padding_callback.rst \
+	nghttp2_session_callbacks_set_send_callback.rst \
+	nghttp2_session_callbacks_set_send_data_callback.rst \
+	nghttp2_session_client_new.rst \
+	nghttp2_session_client_new2.rst \
+	nghttp2_session_client_new3.rst \
+	nghttp2_session_consume.rst \
+	nghttp2_session_consume_connection.rst \
+	nghttp2_session_consume_stream.rst \
+	nghttp2_session_del.rst \
+	nghttp2_session_get_effective_local_window_size.rst \
+	nghttp2_session_get_effective_recv_data_length.rst \
+	nghttp2_session_get_last_proc_stream_id.rst \
+	nghttp2_session_get_next_stream_id.rst \
+	nghttp2_session_get_outbound_queue_size.rst \
+	nghttp2_session_get_remote_settings.rst \
+	nghttp2_session_get_remote_window_size.rst \
+	nghttp2_session_get_stream_effective_local_window_size.rst \
+	nghttp2_session_get_stream_effective_recv_data_length.rst \
+	nghttp2_session_get_stream_local_close.rst \
+	nghttp2_session_get_stream_remote_close.rst \
+	nghttp2_session_get_stream_remote_window_size.rst \
+	nghttp2_session_get_stream_user_data.rst \
+	nghttp2_session_mem_recv.rst \
+	nghttp2_session_mem_send.rst \
+	nghttp2_session_recv.rst \
+	nghttp2_session_resume_data.rst \
+	nghttp2_session_send.rst \
+	nghttp2_session_server_new.rst \
+	nghttp2_session_server_new2.rst \
+	nghttp2_session_server_new3.rst \
+	nghttp2_session_set_next_stream_id.rst \
+	nghttp2_session_set_stream_user_data.rst \
+	nghttp2_session_terminate_session.rst \
+	nghttp2_session_terminate_session2.rst \
+	nghttp2_session_upgrade.rst \
+	nghttp2_session_want_read.rst \
+	nghttp2_session_want_write.rst \
+	nghttp2_strerror.rst \
+	nghttp2_submit_data.rst \
+	nghttp2_submit_goaway.rst \
+	nghttp2_submit_headers.rst \
+	nghttp2_submit_ping.rst \
+	nghttp2_submit_priority.rst \
+	nghttp2_submit_push_promise.rst \
+	nghttp2_submit_request.rst \
+	nghttp2_submit_response.rst \
+	nghttp2_submit_rst_stream.rst \
+	nghttp2_submit_settings.rst \
+	nghttp2_submit_shutdown_notice.rst \
+	nghttp2_submit_trailer.rst \
+	nghttp2_submit_window_update.rst \
+	nghttp2_version.rst
+
 EXTRA_DIST = \
 	mkapiref.py \
 	README.rst \
-	apiref-header.rst \
+	programmers-guide.rst \
+	$(APIDOCS) \
 	nghttp.1.rst \
 	nghttpd.1.rst \
 	nghttpx.1.rst \
@@ -41,24 +142,28 @@ EXTRA_DIST = \
 	sources/python-apiref.rst \
 	sources/building-android-binary.rst \
 	sources/contribute.rst \
-	_themes/sphinx_rtd_theme/footer.html \
-	_themes/sphinx_rtd_theme/theme.conf \
-	_themes/sphinx_rtd_theme/layout_old.html \
 	_themes/sphinx_rtd_theme/__init__.py \
-	_themes/sphinx_rtd_theme/layout.html \
-	_themes/sphinx_rtd_theme/search.html \
 	_themes/sphinx_rtd_theme/breadcrumbs.html \
-	_themes/sphinx_rtd_theme/versions.html \
+	_themes/sphinx_rtd_theme/footer.html \
+	_themes/sphinx_rtd_theme/layout.html \
+	_themes/sphinx_rtd_theme/layout_old.html \
+	_themes/sphinx_rtd_theme/search.html \
 	_themes/sphinx_rtd_theme/searchbox.html \
-	_themes/sphinx_rtd_theme/static/fonts/FontAwesome.otf \
-	_themes/sphinx_rtd_theme/static/fonts/fontawesome-webfont.svg \
-	_themes/sphinx_rtd_theme/static/fonts/fontawesome-webfont.woff \
-	_themes/sphinx_rtd_theme/static/fonts/fontawesome-webfont.eot \
-	_themes/sphinx_rtd_theme/static/fonts/fontawesome-webfont.ttf \
-	_themes/sphinx_rtd_theme/static/js/theme.js \
-	_themes/sphinx_rtd_theme/static/css/theme.css \
 	_themes/sphinx_rtd_theme/static/css/badge_only.css \
-	$(man_MANS)
+	_themes/sphinx_rtd_theme/static/css/theme.css \
+	_themes/sphinx_rtd_theme/static/fonts/FontAwesome.otf \
+	_themes/sphinx_rtd_theme/static/fonts/fontawesome-webfont.eot \
+	_themes/sphinx_rtd_theme/static/fonts/fontawesome-webfont.svg \
+	_themes/sphinx_rtd_theme/static/fonts/fontawesome-webfont.ttf \
+	_themes/sphinx_rtd_theme/static/fonts/fontawesome-webfont.woff \
+	_themes/sphinx_rtd_theme/static/js/theme.js \
+	_themes/sphinx_rtd_theme/theme.conf \
+	_themes/sphinx_rtd_theme/versions.html \
+	$(man_MANS) \
+	bash_completion/nghttp \
+	bash_completion/nghttpd \
+	bash_completion/nghttpx \
+	bash_completion/h2load
 
 # Makefile for Sphinx documentation
 #
@@ -95,16 +200,33 @@ help:
 	@echo "  linkcheck  to check all external links for integrity"
 	@echo "  doctest    to run all doctests embedded in the documentation (if enabled)"
 
-apiref.rst: $(top_builddir)/lib/includes/nghttp2/nghttp2ver.h \
+apiref.rst macros.rst enums.rst types.rst: \
+	$(top_builddir)/lib/includes/nghttp2/nghttp2ver.h \
 	$(top_builddir)/lib/includes/nghttp2/nghttp2.h
 	$(PYTHON) $(top_srcdir)/doc/mkapiref.py \
-	--header $(top_srcdir)/doc/apiref-header.rst $^ > $@
+	$@ macros.rst enums.rst types.rst . $^
+
+# Inspired by
+# http://www.gnu.org/savannah-checkouts/gnu/automake/manual/html_node/Multiple-Outputs.html
+apidoc.stamp: $(top_builddir)/lib/includes/nghttp2/nghttp2ver.h \
+	$(top_builddir)/lib/includes/nghttp2/nghttp2.h
+	@rm -f apidoc.tmp
+	@touch apidoc.tmp
+	$(PYTHON) $(top_srcdir)/doc/mkapiref.py \
+	$@ macros.rst enums.rst types.rst . $^
+	@mv -f apidoc.tmp $@
+$(APIDOC): apidoc.stamp
+## Recover from the removal of $@
+	@if test -f $@; then :; else \
+	  rm -f apidoc.stamp; \
+	  $(MAKE) $(AM_MAKEFLAGS) apidoc.stamp; \
+	fi
 
 clean-local:
-	-rm apiref.rst
+	-rm -f $(APIDOCS)
 	-rm -rf $(BUILDDIR)/*
 
-html: apiref.rst
+html-local: apiref.rst
 	$(SPHINXBUILD) -b html $(ALLSPHINXOPTS) $(BUILDDIR)/html
 	@echo
 	@echo "Build finished. The HTML pages are in $(BUILDDIR)/html."
@@ -176,7 +298,7 @@ text:
 	@echo
 	@echo "Build finished. The text files are in $(BUILDDIR)/text."
 
-man:
+man: apiref.rst
 	$(SPHINXBUILD) -b man $(ALLSPHINXOPTS) $(BUILDDIR)/man
 	@echo
 	@echo "Build finished. The manual pages are in $(BUILDDIR)/man."

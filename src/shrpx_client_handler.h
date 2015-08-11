@@ -29,36 +29,59 @@
 
 #include <memory>
 
-#include <event.h>
-#include <event2/bufferevent.h>
+#include <ev.h>
 
 #include <openssl/ssl.h>
+
+#include "shrpx_rate_limit.h"
+#include "shrpx_connection.h"
+#include "buffer.h"
+#include "memchunk.h"
+
+using namespace nghttp2;
 
 namespace shrpx {
 
 class Upstream;
 class DownstreamConnection;
-class Http2Session;
 class HttpsUpstream;
 class ConnectBlocker;
 class DownstreamConnectionPool;
+class Worker;
 struct WorkerStat;
 
 class ClientHandler {
 public:
-  ClientHandler(bufferevent *bev,
-                bufferevent_rate_limit_group *rate_limit_group, int fd,
-                SSL *ssl, const char *ipaddr, const char *port,
-                WorkerStat *worker_stat, DownstreamConnectionPool *dconn_pool);
+  ClientHandler(Worker *worker, int fd, SSL *ssl, const char *ipaddr,
+                const char *port);
   ~ClientHandler();
+
+  // Performs clear text I/O
+  int read_clear();
+  int write_clear();
+  // Performs TLS handshake
+  int tls_handshake();
+  // Performs TLS I/O
+  int read_tls();
+  int write_tls();
+
+  int upstream_noop();
+  int upstream_read();
+  int upstream_http2_connhd_read();
+  int upstream_http1_connhd_read();
+  int upstream_write();
+
+  // Performs I/O operation.  Internally calls on_read()/on_write().
+  int do_read();
+  int do_write();
+
+  // Processes buffers.  No underlying I/O operation will be done.
   int on_read();
-  int on_event();
-  bufferevent *get_bev() const;
-  event_base *get_evbase() const;
-  void set_bev_cb(bufferevent_data_cb readcb, bufferevent_data_cb writecb,
-                  bufferevent_event_cb eventcb);
-  void set_upstream_timeouts(const timeval *read_timeout,
-                             const timeval *write_timeout);
+  int on_write();
+
+  struct ev_loop *get_loop() const;
+  void reset_upstream_read_timeout(ev_tstamp t);
+  void reset_upstream_write_timeout(ev_tstamp t);
   int validate_next_proto();
   const std::string &get_ipaddr() const;
   const std::string &get_port() const;
@@ -68,13 +91,11 @@ public:
 
   void pool_downstream_connection(std::unique_ptr<DownstreamConnection> dconn);
   void remove_downstream_connection(DownstreamConnection *dconn);
-  std::unique_ptr<DownstreamConnection> get_downstream_connection();
-  size_t get_outbuf_length();
+  std::unique_ptr<DownstreamConnection>
+  get_downstream_connection(Downstream *downstream);
+  MemchunkPool *get_mcpool();
   SSL *get_ssl() const;
-  void set_http2_session(Http2Session *http2session);
-  Http2Session *get_http2_session() const;
-  void set_http1_connect_blocker(ConnectBlocker *http1_connect_blocker);
-  ConnectBlocker *get_http1_connect_blocker() const;
+  ConnectBlocker *get_connect_blocker() const;
   // Call this function when HTTP/2 connection header is received at
   // the start of the connection.
   void direct_http2_upgrade();
@@ -85,26 +106,7 @@ public:
   bool get_http2_upgrade_allowed() const;
   // Returns upstream scheme, either "http" or "https"
   std::string get_upstream_scheme() const;
-  void set_tls_handshake(bool f);
-  bool get_tls_handshake() const;
-  void set_tls_renegotiation(bool f);
-  bool get_tls_renegotiation() const;
-  int on_http2_connhd_read();
-  int on_http1_connhd_read();
-  // Returns maximum chunk size for one evbuffer_add().  The intention
-  // of this chunk size is control the TLS record size.  The actual
-  // SSL_write() call is done under libevent control.  In
-  // libevent-2.0.21, libevent calls SSL_write() for each chunk inside
-  // evbuffer.  This means that we can control TLS record size by
-  // adjusting the chunk size to evbuffer_add().
-  //
-  // This function returns -1, if TLS is not enabled or no limitation
-  // is required.
-  ssize_t get_write_limit();
-  // Updates the number of bytes written in warm up period.
-  void update_warmup_writelen(size_t n);
-  // Updates the time when last write was done.
-  void update_last_write_time();
+  void start_immediate_shutdown();
 
   // Writes upstream accesslog using |downstream|.  The |downstream|
   // must not be nullptr.
@@ -114,30 +116,39 @@ public:
   // corresponding Downstream object is not available.
   void write_accesslog(int major, int minor, unsigned int status,
                        int64_t body_bytes_sent);
+  Worker *get_worker() const;
+
+  using WriteBuf = Buffer<32768>;
+  using ReadBuf = Buffer<8_k>;
+
+  WriteBuf *get_wb();
+  ReadBuf *get_rb();
+
+  RateLimit *get_rlimit();
+  RateLimit *get_wlimit();
+
+  void signal_write();
+  ev_io *get_wev();
+
+  Connection *get_connection();
 
 private:
+  Connection conn_;
+  ev_timer reneg_shutdown_timer_;
   std::unique_ptr<Upstream> upstream_;
+  std::unique_ptr<std::vector<ssize_t>> pinned_http2sessions_;
   std::string ipaddr_;
   std::string port_;
   // The ALPN identifier negotiated for this connection.
   std::string alpn_;
-  DownstreamConnectionPool *dconn_pool_;
-  bufferevent *bev_;
-  // Shared HTTP2 session for each thread. NULL if backend is not
-  // HTTP2. Not deleted by this object.
-  Http2Session *http2session_;
-  ConnectBlocker *http1_connect_blocker_;
-  SSL *ssl_;
-  event *reneg_shutdown_timerev_;
-  WorkerStat *worker_stat_;
-  int64_t last_write_time_;
-  size_t warmup_writelen_;
+  std::function<int(ClientHandler &)> read_, write_;
+  std::function<int(ClientHandler &)> on_read_, on_write_;
+  Worker *worker_;
   // The number of bytes of HTTP/2 client connection header to read
   size_t left_connhd_len_;
-  int fd_;
   bool should_close_after_write_;
-  bool tls_handshake_;
-  bool tls_renegotiation_;
+  WriteBuf wb_;
+  ReadBuf rb_;
 };
 
 } // namespace shrpx

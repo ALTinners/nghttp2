@@ -29,11 +29,15 @@
 
 #include <memory>
 
+#include <ev.h>
+
 #include <nghttp2/nghttp2.h>
 
 #include "shrpx_upstream.h"
 #include "shrpx_downstream_queue.h"
-#include "libevent_util.h"
+#include "memchunk.h"
+
+using namespace nghttp2;
 
 namespace shrpx {
 
@@ -46,20 +50,18 @@ public:
   virtual ~Http2Upstream();
   virtual int on_read();
   virtual int on_write();
-  virtual int on_event();
   virtual int on_timeout(Downstream *downstream);
   virtual int on_downstream_abort_request(Downstream *downstream,
                                           unsigned int status_code);
-  int send();
   virtual ClientHandler *get_client_handler() const;
-  virtual bufferevent_data_cb get_downstream_readcb();
-  virtual bufferevent_data_cb get_downstream_writecb();
-  virtual bufferevent_event_cb get_downstream_eventcb();
+
+  virtual int downstream_read(DownstreamConnection *dconn);
+  virtual int downstream_write(DownstreamConnection *dconn);
+  virtual int downstream_eof(DownstreamConnection *dconn);
+  virtual int downstream_error(DownstreamConnection *dconn, int events);
+
   void add_pending_downstream(std::unique_ptr<Downstream> downstream);
   void remove_downstream(Downstream *downstream);
-  Downstream *find_downstream(int32_t stream_id);
-
-  nghttp2_session *get_http2_session();
 
   int rst_stream(Downstream *downstream, uint32_t error_code);
   int terminate_session(uint32_t error_code);
@@ -75,32 +77,44 @@ public:
   virtual int on_downstream_body_complete(Downstream *downstream);
 
   virtual void on_handler_delete();
-
-  virtual void reset_timeouts();
+  virtual int on_downstream_reset(bool no_retry);
 
   bool get_flow_control() const;
   // Perform HTTP/2 upgrade from |upstream|. On success, this object
   // takes ownership of the |upstream|. This function returns 0 if it
   // succeeds, or -1.
   int upgrade_upstream(HttpsUpstream *upstream);
-  int start_settings_timer();
+  void start_settings_timer();
   void stop_settings_timer();
   int consume(int32_t stream_id, size_t len);
   void log_response_headers(Downstream *downstream,
                             const std::vector<nghttp2_nv> &nva) const;
-  void maintain_downstream_concurrency();
-  void initiate_downstream(std::unique_ptr<Downstream> downstream);
+  void start_downstream(Downstream *downstream);
+  void initiate_downstream(Downstream *downstream);
 
-  nghttp2::util::EvbufferBuffer sendbuf;
+  void submit_goaway();
+  void check_shutdown();
+
+  int prepare_push_promise(Downstream *downstream);
+  int submit_push_promise(const std::string &path, Downstream *downstream);
+
+  int on_request_headers(Downstream *downstream, const nghttp2_frame *frame);
 
 private:
-  DownstreamQueue downstream_queue_;
   std::unique_ptr<HttpsUpstream> pre_upstream_;
+  DownstreamQueue downstream_queue_;
+  ev_timer settings_timer_;
+  ev_timer shutdown_timer_;
+  ev_prepare prep_;
   ClientHandler *handler_;
   nghttp2_session *session_;
-  event *settings_timerev_;
+  const uint8_t *data_pending_;
+  size_t data_pendinglen_;
   bool flow_control_;
+  bool shutdown_handled_;
 };
+
+nghttp2_session_callbacks *create_http2_upstream_callbacks();
 
 } // namespace shrpx
 

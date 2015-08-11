@@ -51,14 +51,16 @@ public:
   virtual int resume_read(IOCtrlReason reason, size_t consumed) = 0;
   virtual void force_resume_read() = 0;
 
-  virtual bool get_output_buffer_full() = 0;
-
   virtual int on_read() = 0;
   virtual int on_write() = 0;
   virtual int on_timeout() { return 0; }
 
   virtual void on_upstream_change(Upstream *uptream) = 0;
   virtual int on_priority_change(int32_t pri) = 0;
+  virtual size_t get_group() const = 0;
+
+  // true if this object is poolable.
+  virtual bool poolable() const = 0;
 
   void set_client_handler(ClientHandler *client_handler);
   ClientHandler *get_client_handler();

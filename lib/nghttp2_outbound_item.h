@@ -31,18 +31,18 @@
 
 #include <nghttp2/nghttp2.h>
 #include "nghttp2_frame.h"
-
-/* A bit higher weight for non-DATA frames */
-#define NGHTTP2_OB_EX_WEIGHT 300
-/* Higher weight for SETTINGS */
-#define NGHTTP2_OB_SETTINGS_WEIGHT 301
-/* Highest weight for PING */
-#define NGHTTP2_OB_PING_WEIGHT 302
+#include "nghttp2_mem.h"
 
 /* struct used for HEADERS and PUSH_PROMISE frame */
 typedef struct {
   nghttp2_data_provider data_prd;
   void *stream_user_data;
+  /* error code when request HEADERS is canceled by RST_STREAM while
+     it is in queue. */
+  uint32_t error_code;
+  /* nonzero if request HEADERS is canceled.  The error code is stored
+     in |error_code|. */
+  uint8_t canceled;
   /* nonzero if this item should be attached to stream object to make
      it under priority control */
   uint8_t attach_stream;
@@ -67,13 +67,27 @@ typedef struct {
    * |eof| is 0. It becomes 1 after all data were read.
    */
   uint8_t eof;
+  /**
+   * The flag to indicate that NGHTTP2_DATA_FLAG_NO_COPY is used.
+   */
+  uint8_t no_copy;
 } nghttp2_data_aux_data;
+
+typedef enum {
+  NGHTTP2_GOAWAY_AUX_NONE = 0x0,
+  /* indicates that session should be terminated after the
+     transmission of this frame. */
+  NGHTTP2_GOAWAY_AUX_TERM_ON_SEND = 0x1,
+  /* indicates that this GOAWAY is just a notification for graceful
+     shutdown.  No nghttp2_session.goaway_flags should be updated on
+     the reaction to this frame. */
+  NGHTTP2_GOAWAY_AUX_SHUTDOWN_NOTICE = 0x2
+} nghttp2_goaway_aux_flag;
 
 /* struct used for GOAWAY frame */
 typedef struct {
-  /* nonzero if session should be terminated after the transmission of
-     this frame. */
-  int terminate_on_send;
+  /* bitwise-OR of one or more of nghttp2_goaway_aux_flag. */
+  uint8_t flags;
 } nghttp2_goaway_aux_data;
 
 /* Additional data which cannot be stored in nghttp2_frame struct */
@@ -83,24 +97,61 @@ typedef union {
   nghttp2_goaway_aux_data goaway;
 } nghttp2_aux_data;
 
-typedef struct {
+struct nghttp2_outbound_item;
+typedef struct nghttp2_outbound_item nghttp2_outbound_item;
+
+struct nghttp2_outbound_item {
   nghttp2_frame frame;
   nghttp2_aux_data aux_data;
-  int64_t seq;
-  /* Reset count of weight. See comment for last_cycle in
-     nghttp2_session.h */
+  /* The priority used in priority comparion.  Smaller is served
+     ealier.  For PING, SETTINGS and non-DATA frames (excluding
+     response HEADERS frame) have dedicated cycle value defined above.
+     For DATA frame, cycle is computed by taking into account of
+     effective weight and frame payload length previously sent, so
+     that the amount of transmission is distributed across streams
+     proportional to effective weight (inside a tree). */
   uint64_t cycle;
-  /* The priority used in priority comparion.  Larger is served
-     ealier. */
-  int32_t weight;
+  nghttp2_outbound_item *qnext;
   /* nonzero if this object is queued. */
   uint8_t queued;
-} nghttp2_outbound_item;
+};
+
+/*
+ * Initializes |item|.  No memory allocation is done in this function.
+ * Don't call nghttp2_outbound_item_free() until frame member is
+ * initialized.
+ */
+void nghttp2_outbound_item_init(nghttp2_outbound_item *item);
 
 /*
  * Deallocates resource for |item|. If |item| is NULL, this function
  * does nothing.
  */
-void nghttp2_outbound_item_free(nghttp2_outbound_item *item);
+void nghttp2_outbound_item_free(nghttp2_outbound_item *item, nghttp2_mem *mem);
+
+/*
+ * queue for nghttp2_outbound_item.
+ */
+typedef struct {
+  nghttp2_outbound_item *head, *tail;
+  /* number of items in this queue. */
+  size_t n;
+} nghttp2_outbound_queue;
+
+void nghttp2_outbound_queue_init(nghttp2_outbound_queue *q);
+
+/* Pushes |item| into |q| */
+void nghttp2_outbound_queue_push(nghttp2_outbound_queue *q,
+                                 nghttp2_outbound_item *item);
+
+/* Pops |item| at the top from |q|.  If |q| is empty, nothing
+   happens. */
+void nghttp2_outbound_queue_pop(nghttp2_outbound_queue *q);
+
+/* Returns the top item. */
+#define nghttp2_outbound_queue_top(Q) ((Q)->head)
+
+/* Returns the size of the queue */
+#define nghttp2_outbound_queue_size(Q) ((Q)->n)
 
 #endif /* NGHTTP2_OUTBOUND_ITEM_H */

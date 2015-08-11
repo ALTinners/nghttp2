@@ -41,7 +41,7 @@ static void strentry_init(strentry *entry, key_type key, const char *str) {
 void test_nghttp2_map(void) {
   strentry foo, FOO, bar, baz, shrubbery;
   nghttp2_map map;
-  nghttp2_map_init(&map);
+  nghttp2_map_init(&map, nghttp2_mem_default());
 
   strentry_init(&foo, 1, "foo");
   strentry_init(&FOO, 1, "FOO");
@@ -110,7 +110,7 @@ void test_nghttp2_map_functional(void) {
   nghttp2_map map;
   int i;
 
-  nghttp2_map_init(&map);
+  nghttp2_map_init(&map, nghttp2_mem_default());
   for (i = 0; i < NUM_ENT; ++i) {
     strentry_init(&arr[i], i + 1, "foo");
     order[i] = i + 1;
@@ -145,17 +145,21 @@ void test_nghttp2_map_functional(void) {
   nghttp2_map_free(&map);
 }
 
-static int entry_free(nghttp2_map_entry *entry, void *ptr _U_) {
-  free(entry);
+static int entry_free(nghttp2_map_entry *entry, void *ptr) {
+  nghttp2_mem *mem = ptr;
+
+  mem->free(entry, NULL);
   return 0;
 }
 
 void test_nghttp2_map_each_free(void) {
-  strentry *foo = malloc(sizeof(strentry)), *bar = malloc(sizeof(strentry)),
-           *baz = malloc(sizeof(strentry)),
-           *shrubbery = malloc(sizeof(strentry));
+  nghttp2_mem *mem = nghttp2_mem_default();
+  strentry *foo = mem->malloc(sizeof(strentry), NULL),
+           *bar = mem->malloc(sizeof(strentry), NULL),
+           *baz = mem->malloc(sizeof(strentry), NULL),
+           *shrubbery = mem->malloc(sizeof(strentry), NULL);
   nghttp2_map map;
-  nghttp2_map_init(&map);
+  nghttp2_map_init(&map, nghttp2_mem_default());
 
   strentry_init(foo, 1, "foo");
   strentry_init(bar, 2, "bar");
@@ -167,6 +171,6 @@ void test_nghttp2_map_each_free(void) {
   nghttp2_map_insert(&map, &baz->map_entry);
   nghttp2_map_insert(&map, &shrubbery->map_entry);
 
-  nghttp2_map_each_free(&map, entry_free, NULL);
+  nghttp2_map_each_free(&map, entry_free, mem);
   nghttp2_map_free(&map);
 }

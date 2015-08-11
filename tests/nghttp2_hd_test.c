@@ -52,24 +52,26 @@ void test_nghttp2_hd_deflate(void) {
   ssize_t blocklen;
   nva_out out;
   int rv;
+  nghttp2_mem *mem;
 
+  mem = nghttp2_mem_default();
   frame_pack_bufs_init(&bufs);
 
   nva_out_init(&out);
-  CU_ASSERT(0 == nghttp2_hd_deflate_init(&deflater));
-  CU_ASSERT(0 == nghttp2_hd_inflate_init(&inflater));
+  CU_ASSERT(0 == nghttp2_hd_deflate_init(&deflater, mem));
+  CU_ASSERT(0 == nghttp2_hd_inflate_init(&inflater, mem));
 
   rv = nghttp2_hd_deflate_hd_bufs(&deflater, &bufs, nva1, ARRLEN(nva1));
   blocklen = nghttp2_bufs_len(&bufs);
 
   CU_ASSERT(0 == rv);
   CU_ASSERT(blocklen > 0);
-  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0));
+  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0, mem));
 
   CU_ASSERT(3 == out.nvlen);
-  assert_nv_equal(nva1, out.nva, 3);
+  assert_nv_equal(nva1, out.nva, 3, mem);
 
-  nva_out_reset(&out);
+  nva_out_reset(&out, mem);
   nghttp2_bufs_reset(&bufs);
 
   /* Second headers */
@@ -78,12 +80,12 @@ void test_nghttp2_hd_deflate(void) {
 
   CU_ASSERT(0 == rv);
   CU_ASSERT(blocklen > 0);
-  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0));
+  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0, mem));
 
   CU_ASSERT(2 == out.nvlen);
-  assert_nv_equal(nva2, out.nva, 2);
+  assert_nv_equal(nva2, out.nva, 2, mem);
 
-  nva_out_reset(&out);
+  nva_out_reset(&out, mem);
   nghttp2_bufs_reset(&bufs);
 
   /* Third headers, including same header field name, but value is not
@@ -93,12 +95,12 @@ void test_nghttp2_hd_deflate(void) {
 
   CU_ASSERT(0 == rv);
   CU_ASSERT(blocklen > 0);
-  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0));
+  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0, mem));
 
   CU_ASSERT(3 == out.nvlen);
-  assert_nv_equal(nva3, out.nva, 3);
+  assert_nv_equal(nva3, out.nva, 3, mem);
 
-  nva_out_reset(&out);
+  nva_out_reset(&out, mem);
   nghttp2_bufs_reset(&bufs);
 
   /* Fourth headers, including duplicate header fields. */
@@ -107,12 +109,12 @@ void test_nghttp2_hd_deflate(void) {
 
   CU_ASSERT(0 == rv);
   CU_ASSERT(blocklen > 0);
-  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0));
+  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0, mem));
 
   CU_ASSERT(3 == out.nvlen);
-  assert_nv_equal(nva4, out.nva, 3);
+  assert_nv_equal(nva4, out.nva, 3, mem);
 
-  nva_out_reset(&out);
+  nva_out_reset(&out, mem);
   nghttp2_bufs_reset(&bufs);
 
   /* Fifth headers includes empty value */
@@ -121,12 +123,12 @@ void test_nghttp2_hd_deflate(void) {
 
   CU_ASSERT(0 == rv);
   CU_ASSERT(blocklen > 0);
-  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0));
+  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0, mem));
 
   CU_ASSERT(2 == out.nvlen);
-  assert_nv_equal(nva5, out.nva, 2);
+  assert_nv_equal(nva5, out.nva, 2, mem);
 
-  nva_out_reset(&out);
+  nva_out_reset(&out, mem);
   nghttp2_bufs_reset(&bufs);
 
   /* Cleanup */
@@ -138,19 +140,21 @@ void test_nghttp2_hd_deflate(void) {
 void test_nghttp2_hd_deflate_same_indexed_repr(void) {
   nghttp2_hd_deflater deflater;
   nghttp2_hd_inflater inflater;
-  nghttp2_nv nva1[] = {MAKE_NV("cookie", "alpha"), MAKE_NV("cookie", "alpha")};
-  nghttp2_nv nva2[] = {MAKE_NV("cookie", "alpha"), MAKE_NV("cookie", "alpha"),
-                       MAKE_NV("cookie", "alpha")};
+  nghttp2_nv nva1[] = {MAKE_NV("host", "alpha"), MAKE_NV("host", "alpha")};
+  nghttp2_nv nva2[] = {MAKE_NV("host", "alpha"), MAKE_NV("host", "alpha"),
+                       MAKE_NV("host", "alpha")};
   nghttp2_bufs bufs;
   ssize_t blocklen;
   nva_out out;
   int rv;
+  nghttp2_mem *mem;
 
+  mem = nghttp2_mem_default();
   frame_pack_bufs_init(&bufs);
 
   nva_out_init(&out);
-  CU_ASSERT(0 == nghttp2_hd_deflate_init(&deflater));
-  CU_ASSERT(0 == nghttp2_hd_inflate_init(&inflater));
+  CU_ASSERT(0 == nghttp2_hd_deflate_init(&deflater, mem));
+  CU_ASSERT(0 == nghttp2_hd_inflate_init(&inflater, mem));
 
   /* Encode 2 same headers.  Emit 1 literal reprs and 1 index repr. */
   rv = nghttp2_hd_deflate_hd_bufs(&deflater, &bufs, nva1, ARRLEN(nva1));
@@ -158,12 +162,12 @@ void test_nghttp2_hd_deflate_same_indexed_repr(void) {
 
   CU_ASSERT(0 == rv);
   CU_ASSERT(blocklen > 0);
-  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0));
+  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0, mem));
 
   CU_ASSERT(2 == out.nvlen);
-  assert_nv_equal(nva1, out.nva, 2);
+  assert_nv_equal(nva1, out.nva, 2, mem);
 
-  nva_out_reset(&out);
+  nva_out_reset(&out, mem);
   nghttp2_bufs_reset(&bufs);
 
   /* Encode 3 same headers.  This time, emits 3 index reprs. */
@@ -172,12 +176,12 @@ void test_nghttp2_hd_deflate_same_indexed_repr(void) {
 
   CU_ASSERT(0 == rv);
   CU_ASSERT(blocklen == 3);
-  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0));
+  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0, mem));
 
   CU_ASSERT(3 == out.nvlen);
-  assert_nv_equal(nva2, out.nva, 3);
+  assert_nv_equal(nva2, out.nva, 3, mem);
 
-  nva_out_reset(&out);
+  nva_out_reset(&out, mem);
   nghttp2_bufs_reset(&bufs);
 
   /* Cleanup */
@@ -192,24 +196,26 @@ void test_nghttp2_hd_inflate_indexed(void) {
   ssize_t blocklen;
   nghttp2_nv nv = MAKE_NV(":path", "/");
   nva_out out;
+  nghttp2_mem *mem;
 
+  mem = nghttp2_mem_default();
   frame_pack_bufs_init(&bufs);
 
   nva_out_init(&out);
-  nghttp2_hd_inflate_init(&inflater);
+  nghttp2_hd_inflate_init(&inflater, mem);
 
   nghttp2_bufs_addb(&bufs, (1 << 7) | 4);
 
   blocklen = nghttp2_bufs_len(&bufs);
 
   CU_ASSERT(1 == blocklen);
-  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0));
+  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0, mem));
 
   CU_ASSERT(1 == out.nvlen);
 
-  assert_nv_equal(&nv, out.nva, 1);
+  assert_nv_equal(&nv, out.nva, 1, mem);
 
-  nva_out_reset(&out);
+  nva_out_reset(&out, mem);
   nghttp2_bufs_reset(&bufs);
 
   /* index = 0 is error */
@@ -218,7 +224,8 @@ void test_nghttp2_hd_inflate_indexed(void) {
   blocklen = nghttp2_bufs_len(&bufs);
 
   CU_ASSERT(1 == blocklen);
-  CU_ASSERT(NGHTTP2_ERR_HEADER_COMP == inflate_hd(&inflater, &out, &bufs, 0));
+  CU_ASSERT(NGHTTP2_ERR_HEADER_COMP ==
+            inflate_hd(&inflater, &out, &bufs, 0, mem));
 
   nghttp2_bufs_free(&bufs);
   nghttp2_hd_inflate_free(&inflater);
@@ -234,25 +241,28 @@ void test_nghttp2_hd_inflate_indname_noinc(void) {
                      MAKE_NV("user-agent", "x")};
   size_t i;
   nva_out out;
+  nghttp2_mem *mem;
 
+  mem = nghttp2_mem_default();
   frame_pack_bufs_init(&bufs);
 
   nva_out_init(&out);
-  nghttp2_hd_inflate_init(&inflater);
+  nghttp2_hd_inflate_init(&inflater, mem);
 
   for (i = 0; i < ARRLEN(nv); ++i) {
-    CU_ASSERT(0 == nghttp2_hd_emit_indname_block(&bufs, 57, &nv[i], 0));
+    CU_ASSERT(0 == nghttp2_hd_emit_indname_block(&bufs, 57, &nv[i],
+                                                 NGHTTP2_HD_WITHOUT_INDEXING));
 
     blocklen = nghttp2_bufs_len(&bufs);
 
     CU_ASSERT(blocklen > 0);
-    CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0));
+    CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0, mem));
 
     CU_ASSERT(1 == out.nvlen);
-    assert_nv_equal(&nv[i], out.nva, 1);
+    assert_nv_equal(&nv[i], out.nva, 1, mem);
     CU_ASSERT(0 == inflater.ctx.hd_table.len);
 
-    nva_out_reset(&out);
+    nva_out_reset(&out, mem);
     nghttp2_bufs_reset(&bufs);
   }
 
@@ -266,28 +276,31 @@ void test_nghttp2_hd_inflate_indname_inc(void) {
   ssize_t blocklen;
   nghttp2_nv nv = MAKE_NV("user-agent", "nghttp2");
   nva_out out;
+  nghttp2_mem *mem;
 
+  mem = nghttp2_mem_default();
   frame_pack_bufs_init(&bufs);
 
   nva_out_init(&out);
-  nghttp2_hd_inflate_init(&inflater);
+  nghttp2_hd_inflate_init(&inflater, mem);
 
-  CU_ASSERT(0 == nghttp2_hd_emit_indname_block(&bufs, 57, &nv, 1));
+  CU_ASSERT(0 == nghttp2_hd_emit_indname_block(&bufs, 57, &nv,
+                                               NGHTTP2_HD_WITH_INDEXING));
 
   blocklen = nghttp2_bufs_len(&bufs);
 
   CU_ASSERT(blocklen > 0);
-  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0));
+  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0, mem));
 
   CU_ASSERT(1 == out.nvlen);
-  assert_nv_equal(&nv, out.nva, 1);
+  assert_nv_equal(&nv, out.nva, 1, mem);
   CU_ASSERT(1 == inflater.ctx.hd_table.len);
   assert_nv_equal(
       &nv, &GET_TABLE_ENT(&inflater.ctx, NGHTTP2_STATIC_TABLE_LENGTH +
                                              inflater.ctx.hd_table.len - 1)->nv,
-      1);
+      1, mem);
 
-  nva_out_reset(&out);
+  nva_out_reset(&out, mem);
   nghttp2_bufs_free(&bufs);
   nghttp2_hd_inflate_free(&inflater);
 }
@@ -296,38 +309,45 @@ void test_nghttp2_hd_inflate_indname_inc_eviction(void) {
   nghttp2_hd_inflater inflater;
   nghttp2_bufs bufs;
   ssize_t blocklen;
-  uint8_t value[1024];
+  uint8_t value[1025];
   nva_out out;
   nghttp2_nv nv;
+  nghttp2_mem *mem;
 
+  mem = nghttp2_mem_default();
   frame_pack_bufs_init(&bufs);
 
   nva_out_init(&out);
-  nghttp2_hd_inflate_init(&inflater);
+  nghttp2_hd_inflate_init(&inflater, mem);
 
   memset(value, '0', sizeof(value));
+  value[sizeof(value) - 1] = '\0';
   nv.value = value;
-  nv.valuelen = sizeof(value);
+  nv.valuelen = sizeof(value) - 1;
 
   nv.flags = NGHTTP2_NV_FLAG_NONE;
 
-  CU_ASSERT(0 == nghttp2_hd_emit_indname_block(&bufs, 14, &nv, 1));
-  CU_ASSERT(0 == nghttp2_hd_emit_indname_block(&bufs, 15, &nv, 1));
-  CU_ASSERT(0 == nghttp2_hd_emit_indname_block(&bufs, 16, &nv, 1));
-  CU_ASSERT(0 == nghttp2_hd_emit_indname_block(&bufs, 17, &nv, 1));
+  CU_ASSERT(0 == nghttp2_hd_emit_indname_block(&bufs, 14, &nv,
+                                               NGHTTP2_HD_WITH_INDEXING));
+  CU_ASSERT(0 == nghttp2_hd_emit_indname_block(&bufs, 15, &nv,
+                                               NGHTTP2_HD_WITH_INDEXING));
+  CU_ASSERT(0 == nghttp2_hd_emit_indname_block(&bufs, 16, &nv,
+                                               NGHTTP2_HD_WITH_INDEXING));
+  CU_ASSERT(0 == nghttp2_hd_emit_indname_block(&bufs, 17, &nv,
+                                               NGHTTP2_HD_WITH_INDEXING));
 
   blocklen = nghttp2_bufs_len(&bufs);
 
   CU_ASSERT(blocklen > 0);
 
-  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0));
+  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0, mem));
 
   CU_ASSERT(4 == out.nvlen);
   CU_ASSERT(14 == out.nva[0].namelen);
   CU_ASSERT(0 == memcmp("accept-charset", out.nva[0].name, out.nva[0].namelen));
-  CU_ASSERT(sizeof(value) == out.nva[0].valuelen);
+  CU_ASSERT(sizeof(value) - 1 == out.nva[0].valuelen);
 
-  nva_out_reset(&out);
+  nva_out_reset(&out, mem);
   nghttp2_bufs_reset(&bufs);
 
   CU_ASSERT(3 == inflater.ctx.hd_table.len);
@@ -350,24 +370,27 @@ void test_nghttp2_hd_inflate_newname_noinc(void) {
                      MAKE_NV("x", "nghttp2")};
   size_t i;
   nva_out out;
+  nghttp2_mem *mem;
 
+  mem = nghttp2_mem_default();
   frame_pack_bufs_init(&bufs);
 
   nva_out_init(&out);
-  nghttp2_hd_inflate_init(&inflater);
+  nghttp2_hd_inflate_init(&inflater, mem);
   for (i = 0; i < ARRLEN(nv); ++i) {
-    CU_ASSERT(0 == nghttp2_hd_emit_newname_block(&bufs, &nv[i], 0));
+    CU_ASSERT(0 == nghttp2_hd_emit_newname_block(&bufs, &nv[i],
+                                                 NGHTTP2_HD_WITHOUT_INDEXING));
 
     blocklen = nghttp2_bufs_len(&bufs);
 
     CU_ASSERT(blocklen > 0);
-    CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0));
+    CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0, mem));
 
     CU_ASSERT(1 == out.nvlen);
-    assert_nv_equal(&nv[i], out.nva, 1);
+    assert_nv_equal(&nv[i], out.nva, 1, mem);
     CU_ASSERT(0 == inflater.ctx.hd_table.len);
 
-    nva_out_reset(&out);
+    nva_out_reset(&out, mem);
     nghttp2_bufs_reset(&bufs);
   }
 
@@ -381,28 +404,31 @@ void test_nghttp2_hd_inflate_newname_inc(void) {
   ssize_t blocklen;
   nghttp2_nv nv = MAKE_NV("x-rel", "nghttp2");
   nva_out out;
+  nghttp2_mem *mem;
 
+  mem = nghttp2_mem_default();
   frame_pack_bufs_init(&bufs);
 
   nva_out_init(&out);
-  nghttp2_hd_inflate_init(&inflater);
+  nghttp2_hd_inflate_init(&inflater, mem);
 
-  CU_ASSERT(0 == nghttp2_hd_emit_newname_block(&bufs, &nv, 1));
+  CU_ASSERT(
+      0 == nghttp2_hd_emit_newname_block(&bufs, &nv, NGHTTP2_HD_WITH_INDEXING));
 
   blocklen = nghttp2_bufs_len(&bufs);
 
   CU_ASSERT(blocklen > 0);
-  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0));
+  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0, mem));
 
   CU_ASSERT(1 == out.nvlen);
-  assert_nv_equal(&nv, out.nva, 1);
+  assert_nv_equal(&nv, out.nva, 1, mem);
   CU_ASSERT(1 == inflater.ctx.hd_table.len);
   assert_nv_equal(
       &nv, &GET_TABLE_ENT(&inflater.ctx, NGHTTP2_STATIC_TABLE_LENGTH +
                                              inflater.ctx.hd_table.len - 1)->nv,
-      1);
+      1, mem);
 
-  nva_out_reset(&out);
+  nva_out_reset(&out, mem);
   nghttp2_bufs_free(&bufs);
   nghttp2_hd_inflate_free(&inflater);
 }
@@ -412,9 +438,11 @@ void test_nghttp2_hd_inflate_clearall_inc(void) {
   nghttp2_bufs bufs;
   ssize_t blocklen;
   nghttp2_nv nv;
-  uint8_t value[4060];
+  uint8_t value[4061];
   nva_out out;
+  nghttp2_mem *mem;
 
+  mem = nghttp2_mem_default();
   bufs_large_init(&bufs, 8192);
 
   nva_out_init(&out);
@@ -422,52 +450,55 @@ void test_nghttp2_hd_inflate_clearall_inc(void) {
   nv.name = (uint8_t *)"alpha";
   nv.namelen = strlen((char *)nv.name);
   memset(value, '0', sizeof(value));
+  value[sizeof(value) - 1] = '\0';
   nv.value = value;
-  nv.valuelen = sizeof(value);
+  nv.valuelen = sizeof(value) - 1;
 
   nv.flags = NGHTTP2_NV_FLAG_NONE;
 
-  nghttp2_hd_inflate_init(&inflater);
+  nghttp2_hd_inflate_init(&inflater, mem);
 
-  CU_ASSERT(0 == nghttp2_hd_emit_newname_block(&bufs, &nv, 1));
+  CU_ASSERT(
+      0 == nghttp2_hd_emit_newname_block(&bufs, &nv, NGHTTP2_HD_WITH_INDEXING));
 
   blocklen = nghttp2_bufs_len(&bufs);
 
   CU_ASSERT(blocklen > 0);
-  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0));
+  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0, mem));
 
   CU_ASSERT(1 == out.nvlen);
-  assert_nv_equal(&nv, out.nva, 1);
+  assert_nv_equal(&nv, out.nva, 1, mem);
   CU_ASSERT(0 == inflater.ctx.hd_table.len);
 
-  nva_out_reset(&out);
+  nva_out_reset(&out, mem);
 
   /* Do it again */
-  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0));
+  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0, mem));
 
   CU_ASSERT(1 == out.nvlen);
-  assert_nv_equal(&nv, out.nva, 1);
+  assert_nv_equal(&nv, out.nva, 1, mem);
   CU_ASSERT(0 == inflater.ctx.hd_table.len);
 
-  nva_out_reset(&out);
+  nva_out_reset(&out, mem);
   nghttp2_bufs_reset(&bufs);
 
   /* This time, 4096 bytes space required, which is just fits in the
      header table */
-  nv.valuelen = sizeof(value) - 1;
+  nv.valuelen = sizeof(value) - 2;
 
-  CU_ASSERT(0 == nghttp2_hd_emit_newname_block(&bufs, &nv, 1));
+  CU_ASSERT(
+      0 == nghttp2_hd_emit_newname_block(&bufs, &nv, NGHTTP2_HD_WITH_INDEXING));
 
   blocklen = nghttp2_bufs_len(&bufs);
 
   CU_ASSERT(blocklen > 0);
-  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0));
+  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0, mem));
 
   CU_ASSERT(1 == out.nvlen);
-  assert_nv_equal(&nv, out.nva, 1);
+  assert_nv_equal(&nv, out.nva, 1, mem);
   CU_ASSERT(1 == inflater.ctx.hd_table.len);
 
-  nva_out_reset(&out);
+  nva_out_reset(&out, mem);
   nghttp2_bufs_reset(&bufs);
 
   nghttp2_bufs_free(&bufs);
@@ -480,7 +511,9 @@ void test_nghttp2_hd_inflate_zero_length_huffman(void) {
   /* Literal header without indexing - new name */
   uint8_t data[] = {0x40, 0x01, 0x78 /* 'x' */, 0x80};
   nva_out out;
+  nghttp2_mem *mem;
 
+  mem = nghttp2_mem_default();
   frame_pack_bufs_init(&bufs);
 
   nva_out_init(&out);
@@ -493,8 +526,8 @@ void test_nghttp2_hd_inflate_zero_length_huffman(void) {
   /* ptr[2] = 'x'; */
   /* ptr[3] = 0x80; */
 
-  nghttp2_hd_inflate_init(&inflater);
-  CU_ASSERT(4 == inflate_hd(&inflater, &out, &bufs, 0));
+  nghttp2_hd_inflate_init(&inflater, mem);
+  CU_ASSERT(4 == inflate_hd(&inflater, &out, &bufs, 0, mem));
 
   CU_ASSERT(1 == out.nvlen);
   CU_ASSERT(1 == out.nva[0].namelen);
@@ -502,7 +535,55 @@ void test_nghttp2_hd_inflate_zero_length_huffman(void) {
   CU_ASSERT(NULL == out.nva[0].value);
   CU_ASSERT(0 == out.nva[0].valuelen);
 
-  nva_out_reset(&out);
+  nva_out_reset(&out, mem);
+  nghttp2_bufs_free(&bufs);
+  nghttp2_hd_inflate_free(&inflater);
+}
+
+void test_nghttp2_hd_inflate_expect_table_size_update(void) {
+  nghttp2_hd_inflater inflater;
+  nghttp2_bufs bufs;
+  nghttp2_mem *mem;
+  /* Indexed Header: :method: GET */
+  uint8_t data[] = {0x82};
+  nva_out out;
+
+  mem = nghttp2_mem_default();
+  frame_pack_bufs_init(&bufs);
+  nva_out_init(&out);
+
+  nghttp2_bufs_add(&bufs, data, sizeof(data));
+  nghttp2_hd_inflate_init(&inflater, mem);
+  /* This will make inflater require table size update in the next
+     inflation. */
+  nghttp2_hd_inflate_change_table_size(&inflater, 4096);
+  CU_ASSERT(NGHTTP2_ERR_HEADER_COMP ==
+            inflate_hd(&inflater, &out, &bufs, 0, mem));
+
+  nva_out_reset(&out, mem);
+  nghttp2_bufs_free(&bufs);
+  nghttp2_hd_inflate_free(&inflater);
+}
+
+void test_nghttp2_hd_inflate_unexpected_table_size_update(void) {
+  nghttp2_hd_inflater inflater;
+  nghttp2_bufs bufs;
+  nghttp2_mem *mem;
+  /* Indexed Header: :method: GET, followed by table size update.
+     This violates RFC 7541. */
+  uint8_t data[] = {0x82, 0x20};
+  nva_out out;
+
+  mem = nghttp2_mem_default();
+  frame_pack_bufs_init(&bufs);
+  nva_out_init(&out);
+
+  nghttp2_bufs_add(&bufs, data, sizeof(data));
+  nghttp2_hd_inflate_init(&inflater, mem);
+  CU_ASSERT(NGHTTP2_ERR_HEADER_COMP ==
+            inflate_hd(&inflater, &out, &bufs, 0, mem));
+
+  nva_out_reset(&out, mem);
   nghttp2_bufs_free(&bufs);
   nghttp2_hd_inflate_free(&inflater);
 }
@@ -516,7 +597,9 @@ void test_nghttp2_hd_ringbuf_reserve(void) {
   int i;
   ssize_t rv;
   ssize_t blocklen;
+  nghttp2_mem *mem;
 
+  mem = nghttp2_mem_default();
   frame_pack_bufs_init(&bufs);
   nva_out_init(&out);
 
@@ -524,11 +607,11 @@ void test_nghttp2_hd_ringbuf_reserve(void) {
   nv.name = (uint8_t *)"a";
   nv.namelen = strlen((const char *)nv.name);
   nv.valuelen = 4;
-  nv.value = malloc(nv.valuelen);
+  nv.value = mem->malloc(nv.valuelen + 1, NULL);
   memset(nv.value, 0, nv.valuelen);
 
-  nghttp2_hd_deflate_init2(&deflater, 8000);
-  nghttp2_hd_inflate_init(&inflater);
+  nghttp2_hd_deflate_init2(&deflater, 8000, mem);
+  nghttp2_hd_inflate_init(&inflater, mem);
 
   nghttp2_hd_inflate_change_table_size(&inflater, 8000);
   nghttp2_hd_deflate_change_table_size(&deflater, 8000);
@@ -541,12 +624,12 @@ void test_nghttp2_hd_ringbuf_reserve(void) {
     CU_ASSERT(0 == rv);
     CU_ASSERT(blocklen > 0);
 
-    CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0));
+    CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0, mem));
 
     CU_ASSERT(1 == out.nvlen);
-    assert_nv_equal(&nv, out.nva, 1);
+    assert_nv_equal(&nv, out.nva, 1, mem);
 
-    nva_out_reset(&out);
+    nva_out_reset(&out, mem);
     nghttp2_bufs_reset(&bufs);
   }
 
@@ -554,7 +637,7 @@ void test_nghttp2_hd_ringbuf_reserve(void) {
   nghttp2_hd_inflate_free(&inflater);
   nghttp2_hd_deflate_free(&deflater);
 
-  free(nv.value);
+  mem->free(nv.value, NULL);
 }
 
 void test_nghttp2_hd_change_table_size(void) {
@@ -566,13 +649,15 @@ void test_nghttp2_hd_change_table_size(void) {
   ssize_t rv;
   nva_out out;
   ssize_t blocklen;
+  nghttp2_mem *mem;
 
+  mem = nghttp2_mem_default();
   frame_pack_bufs_init(&bufs);
 
   nva_out_init(&out);
 
-  nghttp2_hd_deflate_init(&deflater);
-  nghttp2_hd_inflate_init(&inflater);
+  nghttp2_hd_deflate_init(&deflater, mem);
+  nghttp2_hd_inflate_init(&inflater, mem);
 
   /* inflater changes notifies 8000 max header table size */
   CU_ASSERT(0 == nghttp2_hd_inflate_change_table_size(&inflater, 8000));
@@ -592,12 +677,12 @@ void test_nghttp2_hd_change_table_size(void) {
   CU_ASSERT(2 == deflater.ctx.hd_table.len);
   CU_ASSERT(4096 == deflater.ctx.hd_table_bufsize_max);
 
-  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0));
+  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0, mem));
   CU_ASSERT(2 == inflater.ctx.hd_table.len);
   CU_ASSERT(4096 == inflater.ctx.hd_table_bufsize_max);
   CU_ASSERT(8000 == inflater.settings_hd_table_bufsize_max);
 
-  nva_out_reset(&out);
+  nva_out_reset(&out, mem);
   nghttp2_bufs_reset(&bufs);
 
   /* inflater changes header table size to 1024 */
@@ -617,12 +702,12 @@ void test_nghttp2_hd_change_table_size(void) {
   CU_ASSERT(2 == deflater.ctx.hd_table.len);
   CU_ASSERT(1024 == deflater.ctx.hd_table_bufsize_max);
 
-  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0));
+  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0, mem));
   CU_ASSERT(2 == inflater.ctx.hd_table.len);
   CU_ASSERT(1024 == inflater.ctx.hd_table_bufsize_max);
   CU_ASSERT(1024 == inflater.settings_hd_table_bufsize_max);
 
-  nva_out_reset(&out);
+  nva_out_reset(&out, mem);
   nghttp2_bufs_reset(&bufs);
 
   /* inflater changes header table size to 0 */
@@ -644,12 +729,12 @@ void test_nghttp2_hd_change_table_size(void) {
   CU_ASSERT(0 == deflater.ctx.hd_table.len);
   CU_ASSERT(0 == deflater.ctx.hd_table_bufsize_max);
 
-  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0));
+  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0, mem));
   CU_ASSERT(0 == inflater.ctx.hd_table.len);
   CU_ASSERT(0 == inflater.ctx.hd_table_bufsize_max);
   CU_ASSERT(0 == inflater.settings_hd_table_bufsize_max);
 
-  nva_out_reset(&out);
+  nva_out_reset(&out, mem);
   nghttp2_bufs_reset(&bufs);
 
   nghttp2_bufs_free(&bufs);
@@ -659,8 +744,8 @@ void test_nghttp2_hd_change_table_size(void) {
   /* Check table buffer is expanded */
   frame_pack_bufs_init(&bufs);
 
-  nghttp2_hd_deflate_init2(&deflater, 8192);
-  nghttp2_hd_inflate_init(&inflater);
+  nghttp2_hd_deflate_init2(&deflater, 8192, mem);
+  nghttp2_hd_inflate_init(&inflater, mem);
 
   /* First inflater changes header table size to 8000 */
   CU_ASSERT(0 == nghttp2_hd_inflate_change_table_size(&inflater, 8000));
@@ -679,12 +764,12 @@ void test_nghttp2_hd_change_table_size(void) {
   CU_ASSERT(2 == deflater.ctx.hd_table.len);
   CU_ASSERT(8000 == deflater.ctx.hd_table_bufsize_max);
 
-  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0));
+  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0, mem));
   CU_ASSERT(2 == inflater.ctx.hd_table.len);
   CU_ASSERT(8000 == inflater.ctx.hd_table_bufsize_max);
   CU_ASSERT(8000 == inflater.settings_hd_table_bufsize_max);
 
-  nva_out_reset(&out);
+  nva_out_reset(&out, mem);
   nghttp2_bufs_reset(&bufs);
 
   CU_ASSERT(0 == nghttp2_hd_inflate_change_table_size(&inflater, 16383));
@@ -703,21 +788,22 @@ void test_nghttp2_hd_change_table_size(void) {
   CU_ASSERT(2 == deflater.ctx.hd_table.len);
   CU_ASSERT(8192 == deflater.ctx.hd_table_bufsize_max);
 
-  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0));
+  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0, mem));
   CU_ASSERT(2 == inflater.ctx.hd_table.len);
   CU_ASSERT(8192 == inflater.ctx.hd_table_bufsize_max);
   CU_ASSERT(16383 == inflater.settings_hd_table_bufsize_max);
 
-  nva_out_reset(&out);
+  nva_out_reset(&out, mem);
   nghttp2_bufs_reset(&bufs);
 
   /* Lastly, check the error condition */
 
   rv = nghttp2_hd_emit_table_size(&bufs, 25600);
   CU_ASSERT(rv == 0);
-  CU_ASSERT(NGHTTP2_ERR_HEADER_COMP == inflate_hd(&inflater, &out, &bufs, 0));
+  CU_ASSERT(NGHTTP2_ERR_HEADER_COMP ==
+            inflate_hd(&inflater, &out, &bufs, 0, mem));
 
-  nva_out_reset(&out);
+  nva_out_reset(&out, mem);
   nghttp2_bufs_reset(&bufs);
 
   nghttp2_hd_inflate_free(&inflater);
@@ -725,8 +811,8 @@ void test_nghttp2_hd_change_table_size(void) {
 
   /* Check that encoder can handle the case where its allowable buffer
      size is less than default size, 4096 */
-  nghttp2_hd_deflate_init2(&deflater, 1024);
-  nghttp2_hd_inflate_init(&inflater);
+  nghttp2_hd_deflate_init2(&deflater, 1024, mem);
+  nghttp2_hd_inflate_init(&inflater, mem);
 
   CU_ASSERT(1024 == deflater.ctx.hd_table_bufsize_max);
 
@@ -739,20 +825,20 @@ void test_nghttp2_hd_change_table_size(void) {
   CU_ASSERT(2 == deflater.ctx.hd_table.len);
   CU_ASSERT(1024 == deflater.ctx.hd_table_bufsize_max);
 
-  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0));
+  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0, mem));
   CU_ASSERT(2 == inflater.ctx.hd_table.len);
   CU_ASSERT(1024 == inflater.ctx.hd_table_bufsize_max);
   CU_ASSERT(4096 == inflater.settings_hd_table_bufsize_max);
 
-  nva_out_reset(&out);
+  nva_out_reset(&out, mem);
   nghttp2_bufs_reset(&bufs);
 
   nghttp2_hd_inflate_free(&inflater);
   nghttp2_hd_deflate_free(&deflater);
 
   /* Check that table size UINT32_MAX can be received */
-  nghttp2_hd_deflate_init2(&deflater, UINT32_MAX);
-  nghttp2_hd_inflate_init(&inflater);
+  nghttp2_hd_deflate_init2(&deflater, UINT32_MAX, mem);
+  nghttp2_hd_inflate_init(&inflater, mem);
 
   CU_ASSERT(0 == nghttp2_hd_inflate_change_table_size(&inflater, UINT32_MAX));
   CU_ASSERT(0 == nghttp2_hd_deflate_change_table_size(&deflater, UINT32_MAX));
@@ -763,19 +849,19 @@ void test_nghttp2_hd_change_table_size(void) {
   CU_ASSERT(0 == rv);
   CU_ASSERT(UINT32_MAX == deflater.ctx.hd_table_bufsize_max);
 
-  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0));
+  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0, mem));
   CU_ASSERT(UINT32_MAX == inflater.ctx.hd_table_bufsize_max);
   CU_ASSERT(UINT32_MAX == inflater.settings_hd_table_bufsize_max);
 
-  nva_out_reset(&out);
+  nva_out_reset(&out, mem);
   nghttp2_bufs_reset(&bufs);
 
   nghttp2_hd_inflate_free(&inflater);
   nghttp2_hd_deflate_free(&deflater);
 
   /* Check that context update emitted twice */
-  nghttp2_hd_deflate_init2(&deflater, 4096);
-  nghttp2_hd_inflate_init(&inflater);
+  nghttp2_hd_deflate_init2(&deflater, 4096, mem);
+  nghttp2_hd_inflate_init(&inflater, mem);
 
   CU_ASSERT(0 == nghttp2_hd_inflate_change_table_size(&inflater, 0));
   CU_ASSERT(0 == nghttp2_hd_inflate_change_table_size(&inflater, 3000));
@@ -793,11 +879,11 @@ void test_nghttp2_hd_change_table_size(void) {
   CU_ASSERT(3000 == deflater.ctx.hd_table_bufsize_max);
   CU_ASSERT(UINT32_MAX == deflater.min_hd_table_bufsize_max);
 
-  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0));
+  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0, mem));
   CU_ASSERT(3000 == inflater.ctx.hd_table_bufsize_max);
   CU_ASSERT(3000 == inflater.settings_hd_table_bufsize_max);
 
-  nva_out_reset(&out);
+  nva_out_reset(&out, mem);
   nghttp2_bufs_reset(&bufs);
 
   nghttp2_hd_inflate_free(&inflater);
@@ -808,7 +894,8 @@ void test_nghttp2_hd_change_table_size(void) {
 
 static void check_deflate_inflate(nghttp2_hd_deflater *deflater,
                                   nghttp2_hd_inflater *inflater,
-                                  nghttp2_nv *nva, size_t nvlen) {
+                                  nghttp2_nv *nva, size_t nvlen,
+                                  nghttp2_mem *mem) {
   nghttp2_bufs bufs;
   ssize_t blocklen;
   nva_out out;
@@ -823,12 +910,12 @@ static void check_deflate_inflate(nghttp2_hd_deflater *deflater,
   CU_ASSERT(0 == rv);
   CU_ASSERT(blocklen >= 0);
 
-  CU_ASSERT(blocklen == inflate_hd(inflater, &out, &bufs, 0));
+  CU_ASSERT(blocklen == inflate_hd(inflater, &out, &bufs, 0, mem));
 
   CU_ASSERT(nvlen == out.nvlen);
-  assert_nv_equal(nva, out.nva, nvlen);
+  assert_nv_equal(nva, out.nva, nvlen, mem);
 
-  nva_out_reset(&out);
+  nva_out_reset(&out, mem);
   nghttp2_bufs_free(&bufs);
 }
 
@@ -968,20 +1055,23 @@ void test_nghttp2_hd_deflate_inflate(void) {
       MAKE_NV("x-cache", "HIT from alphabravo"),
       MAKE_NV("x-cache-lookup", "HIT from alphabravo:3128"),
   };
+  nghttp2_mem *mem;
 
-  nghttp2_hd_deflate_init(&deflater);
-  nghttp2_hd_inflate_init(&inflater);
+  mem = nghttp2_mem_default();
 
-  check_deflate_inflate(&deflater, &inflater, nv1, ARRLEN(nv1));
-  check_deflate_inflate(&deflater, &inflater, nv2, ARRLEN(nv2));
-  check_deflate_inflate(&deflater, &inflater, nv3, ARRLEN(nv3));
-  check_deflate_inflate(&deflater, &inflater, nv4, ARRLEN(nv4));
-  check_deflate_inflate(&deflater, &inflater, nv5, ARRLEN(nv5));
-  check_deflate_inflate(&deflater, &inflater, nv6, ARRLEN(nv6));
-  check_deflate_inflate(&deflater, &inflater, nv7, ARRLEN(nv7));
-  check_deflate_inflate(&deflater, &inflater, nv8, ARRLEN(nv8));
-  check_deflate_inflate(&deflater, &inflater, nv9, ARRLEN(nv9));
-  check_deflate_inflate(&deflater, &inflater, nv10, ARRLEN(nv10));
+  nghttp2_hd_deflate_init(&deflater, mem);
+  nghttp2_hd_inflate_init(&inflater, mem);
+
+  check_deflate_inflate(&deflater, &inflater, nv1, ARRLEN(nv1), mem);
+  check_deflate_inflate(&deflater, &inflater, nv2, ARRLEN(nv2), mem);
+  check_deflate_inflate(&deflater, &inflater, nv3, ARRLEN(nv3), mem);
+  check_deflate_inflate(&deflater, &inflater, nv4, ARRLEN(nv4), mem);
+  check_deflate_inflate(&deflater, &inflater, nv5, ARRLEN(nv5), mem);
+  check_deflate_inflate(&deflater, &inflater, nv6, ARRLEN(nv6), mem);
+  check_deflate_inflate(&deflater, &inflater, nv7, ARRLEN(nv7), mem);
+  check_deflate_inflate(&deflater, &inflater, nv8, ARRLEN(nv8), mem);
+  check_deflate_inflate(&deflater, &inflater, nv9, ARRLEN(nv9), mem);
+  check_deflate_inflate(&deflater, &inflater, nv10, ARRLEN(nv10), mem);
 
   nghttp2_hd_inflate_free(&inflater);
   nghttp2_hd_deflate_free(&deflater);
@@ -1000,6 +1090,9 @@ void test_nghttp2_hd_no_index(void) {
   size_t i;
   nva_out out;
   int rv;
+  nghttp2_mem *mem;
+
+  mem = nghttp2_mem_default();
 
   /* 1st :method: GET can be indexable, last one is not */
   for (i = 1; i < ARRLEN(nva); ++i) {
@@ -1010,25 +1103,25 @@ void test_nghttp2_hd_no_index(void) {
 
   nva_out_init(&out);
 
-  nghttp2_hd_deflate_init(&deflater);
-  nghttp2_hd_inflate_init(&inflater);
+  nghttp2_hd_deflate_init(&deflater, mem);
+  nghttp2_hd_inflate_init(&inflater, mem);
 
   rv = nghttp2_hd_deflate_hd_bufs(&deflater, &bufs, nva, ARRLEN(nva));
   blocklen = nghttp2_bufs_len(&bufs);
 
   CU_ASSERT(0 == rv);
   CU_ASSERT(blocklen > 0);
-  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0));
+  CU_ASSERT(blocklen == inflate_hd(&inflater, &out, &bufs, 0, mem));
 
   CU_ASSERT(ARRLEN(nva) == out.nvlen);
-  assert_nv_equal(nva, out.nva, ARRLEN(nva));
+  assert_nv_equal(nva, out.nva, ARRLEN(nva), mem);
 
   CU_ASSERT(out.nva[0].flags == NGHTTP2_NV_FLAG_NONE);
   for (i = 1; i < ARRLEN(nva); ++i) {
     CU_ASSERT(out.nva[i].flags == NGHTTP2_NV_FLAG_NO_INDEX);
   }
 
-  nva_out_reset(&out);
+  nva_out_reset(&out, mem);
 
   nghttp2_bufs_free(&bufs);
   nghttp2_hd_inflate_free(&inflater);
@@ -1040,10 +1133,12 @@ void test_nghttp2_hd_deflate_bound(void) {
   nghttp2_nv nva[] = {MAKE_NV(":method", "GET"), MAKE_NV("alpha", "bravo")};
   nghttp2_bufs bufs;
   size_t bound, bound2;
+  nghttp2_mem *mem;
 
+  mem = nghttp2_mem_default();
   frame_pack_bufs_init(&bufs);
 
-  nghttp2_hd_deflate_init(&deflater);
+  nghttp2_hd_deflate_init(&deflater, mem);
 
   bound = nghttp2_hd_deflate_bound(&deflater, nva, ARRLEN(nva));
 
@@ -1071,6 +1166,9 @@ void test_nghttp2_hd_public_api(void) {
   size_t buflen;
   ssize_t blocklen;
   nghttp2_bufs bufs;
+  nghttp2_mem *mem;
+
+  mem = nghttp2_mem_default();
 
   CU_ASSERT(0 == nghttp2_hd_deflate_new(&deflater, 4096));
   CU_ASSERT(0 == nghttp2_hd_inflate_new(&inflater));
@@ -1081,10 +1179,10 @@ void test_nghttp2_hd_public_api(void) {
 
   CU_ASSERT(blocklen > 0);
 
-  nghttp2_bufs_wrap_init(&bufs, buf, blocklen);
+  nghttp2_bufs_wrap_init(&bufs, buf, blocklen, mem);
   bufs.head->buf.last += blocklen;
 
-  CU_ASSERT(blocklen == inflate_hd(inflater, NULL, &bufs, 0));
+  CU_ASSERT(blocklen == inflate_hd(inflater, NULL, &bufs, 0, mem));
 
   nghttp2_bufs_wrap_free(&bufs);
 
@@ -1175,4 +1273,33 @@ void test_nghttp2_hd_decode_length(void) {
   rv = nghttp2_hd_decode_length(&out, &shift, &final, 0, 0, buf, buf + len, 7);
 
   CU_ASSERT(-1 == rv);
+}
+
+void test_nghttp2_hd_huff_encode(void) {
+  int rv;
+  ssize_t len;
+  nghttp2_bufs bufs, outbufs;
+  nghttp2_hd_huff_decode_context ctx;
+  const uint8_t t1[] = {22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11,
+                        10, 9,  8,  7,  6,  5,  4,  3,  2,  1,  0};
+
+  frame_pack_bufs_init(&bufs);
+  frame_pack_bufs_init(&outbufs);
+
+  rv = nghttp2_hd_huff_encode(&bufs, t1, sizeof(t1));
+
+  CU_ASSERT(rv == 0);
+
+  nghttp2_hd_huff_decode_context_init(&ctx);
+
+  len = nghttp2_hd_huff_decode(&ctx, &outbufs, bufs.cur->buf.pos,
+                               nghttp2_bufs_len(&bufs), 1);
+
+  CU_ASSERT(nghttp2_bufs_len(&bufs) == len);
+  CU_ASSERT((ssize_t)sizeof(t1) == nghttp2_bufs_len(&outbufs));
+
+  CU_ASSERT(0 == memcmp(t1, outbufs.cur->buf.pos, sizeof(t1)));
+
+  nghttp2_bufs_free(&bufs);
+  nghttp2_bufs_free(&outbufs);
 }

@@ -24,8 +24,9 @@ SUBDIRS = includes
 
 EXTRA_DIST = Makefile.msvc
 
-AM_CFLAGS = -Wall
-AM_CPPFLAGS = -I$(srcdir)/includes -I$(builddir)/includes @DEFS@
+AM_CFLAGS = $(WARNCFLAGS)
+AM_CPPFLAGS = -I$(srcdir)/includes -I$(builddir)/includes -DBUILDING_NGHTTP2 \
+	@DEFS@
 
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = libnghttp2.pc
@@ -44,7 +45,9 @@ OBJECTS = nghttp2_pq.c nghttp2_map.c nghttp2_queue.c \
 	nghttp2_version.c \
 	nghttp2_priority_spec.c \
 	nghttp2_option.c \
-	nghttp2_callbacks.c
+	nghttp2_callbacks.c \
+	nghttp2_mem.c \
+	nghttp2_http.c
 
 HFILES = nghttp2_pq.h nghttp2_int.h nghttp2_map.h nghttp2_queue.h \
 	nghttp2_frame.h \
@@ -56,7 +59,9 @@ HFILES = nghttp2_pq.h nghttp2_int.h nghttp2_map.h nghttp2_queue.h \
 	nghttp2_hd.h nghttp2_hd_huffman.h \
 	nghttp2_priority_spec.h \
 	nghttp2_option.h \
-	nghttp2_callbacks.h
+	nghttp2_callbacks.h \
+	nghttp2_mem.h \
+	nghttp2_http.h
 
 libnghttp2_la_SOURCES = $(HFILES) $(OBJECTS)
 libnghttp2_la_LDFLAGS = -no-undefined \

@@ -30,26 +30,18 @@
 #endif // HAVE_CONFIG_H
 
 #include <sys/types.h>
+#ifdef HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
+#endif // HAVE_SYS_SOCKET_H
 
 #include <cassert>
 
 #include "shrpx_log.h"
-
-#ifndef SOCK_NONBLOCK
-#define SOCK_NONBLOCK 0
-#endif // !SOCK_NONBLOCK
-
-#ifndef SOCK_CLOEXEC
-#define SOCK_CLOEXEC 0
-#endif // !SOCK_CLOEXEC
 
 #ifndef HAVE__EXIT
 #define _Exit(status) _exit(status)
 #endif // !HAVE__EXIT
 
 #define DIE() exit(EXIT_FAILURE)
-
-#define SHRPX_READ_WATERMARK (16 * 1024)
 
 #endif // SHRPX_H

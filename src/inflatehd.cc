@@ -26,7 +26,9 @@
 #include <config.h>
 #endif // HAVE_CONFIG_H
 
+#ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#endif // HAVE_UNISTD_H
 #include <getopt.h>
 
 #include <cstdio>
@@ -99,6 +101,11 @@ static int inflate_hd(json_t *obj, nghttp2_hd_inflater *inflater, int seq) {
     return -1;
   }
 
+  if (!json_is_string(wire)) {
+    fprintf(stderr, "'wire' value is not string at %d\n", seq);
+    return -1;
+  }
+
   auto table_size = json_object_get(obj, "header_table_size");
 
   if (table_size) {
@@ -159,7 +166,7 @@ static int inflate_hd(json_t *obj, nghttp2_hd_inflater *inflater, int seq) {
 }
 
 static int perform(void) {
-  nghttp2_hd_inflater inflater;
+  nghttp2_hd_inflater *inflater = NULL;
   json_error_t error;
 
   auto json = json_loadf(stdin, 0, &error);
@@ -181,7 +188,7 @@ static int perform(void) {
     exit(EXIT_FAILURE);
   }
 
-  nghttp2_hd_inflate_init(&inflater);
+  nghttp2_hd_inflate_new(&inflater);
   output_json_header();
   auto len = json_array_size(cases);
 
@@ -191,7 +198,7 @@ static int perform(void) {
       fprintf(stderr, "Unexpected JSON type at %zu. It should be object.\n", i);
       continue;
     }
-    if (inflate_hd(obj, &inflater, i) != 0) {
+    if (inflate_hd(obj, inflater, i) != 0) {
       continue;
     }
     if (i + 1 < len) {
@@ -199,7 +206,7 @@ static int perform(void) {
     }
   }
   output_json_footer();
-  nghttp2_hd_inflate_free(&inflater);
+  nghttp2_hd_inflate_del(inflater);
   json_decref(json);
 
   return 0;

@@ -24,42 +24,71 @@
  */
 #include "shrpx.h"
 
-#include <stdint.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#ifdef HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
+#endif // HAVE_SYS_SOCKET_H
+#include <sys/un.h>
+#ifdef HAVE_NETDB_H
 #include <netdb.h>
+#endif // HAVE_NETDB_H
 #include <signal.h>
+#ifdef HAVE_NETINET_IN_H
 #include <netinet/in.h>
+#endif // HAVE_NETINET_IN_H
+#include <netinet/tcp.h>
+#ifdef HAVE_ARPA_INET_H
 #include <arpa/inet.h>
+#endif // HAVE_ARPA_INET_H
+#ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#endif // HAVE_UNISTD_H
 #include <getopt.h>
+#ifdef HAVE_SYSLOG_H
 #include <syslog.h>
+#endif // HAVE_SYSLOG_H
 #include <signal.h>
+#ifdef HAVE_LIMITS_H
 #include <limits.h>
+#endif // HAVE_LIMITS_H
+#ifdef HAVE_SYS_TIME_H
+#include <sys/time.h>
+#endif // HAVE_SYS_TIME_H
+#include <sys/resource.h>
+#include <grp.h>
 
+#include <cinttypes>
 #include <limits>
 #include <cstdlib>
 #include <iostream>
 #include <fstream>
 #include <vector>
+#include <initializer_list>
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/conf.h>
+#include <openssl/rand.h>
 
-#include <event2/listener.h>
+#include <ev.h>
 
 #include <nghttp2/nghttp2.h>
 
 #include "shrpx_config.h"
-#include "shrpx_listen_handler.h"
+#include "shrpx_connection_handler.h"
 #include "shrpx_ssl.h"
-#include "shrpx_worker_config.h"
+#include "shrpx_log_config.h"
 #include "shrpx_worker.h"
+#include "shrpx_accept_handler.h"
+#include "shrpx_http2_upstream.h"
+#include "shrpx_http2_session.h"
+#include "shrpx_memcached_dispatcher.h"
+#include "shrpx_memcached_request.h"
 #include "util.h"
 #include "app_helper.h"
 #include "ssl.h"
+#include "template.h"
 
 extern char **environ;
 
@@ -82,30 +111,21 @@ const int GRACEFUL_SHUTDOWN_SIGNAL = SIGQUIT;
 // binary is listening to.
 #define ENV_PORT "NGHTTPX_PORT"
 
-namespace {
-void ssl_acceptcb(evconnlistener *listener, int fd, sockaddr *addr, int addrlen,
-                  void *arg) {
-  auto handler = static_cast<ListenHandler *>(arg);
-  handler->accept_connection(fd, addr, addrlen);
-}
-} // namespace
+// Environment variable to tell new binary the listening socket's file
+// descriptor if frontend listens UNIX domain socket.
+#define ENV_UNIX_FD "NGHTTP2_UNIX_FD"
+// Environment variable to tell new binary the UNIX domain socket
+// path.
+#define ENV_UNIX_PATH "NGHTTP2_UNIX_PATH"
 
 namespace {
-bool is_ipv6_numeric_addr(const char *host) {
-  uint8_t dst[16];
-  return inet_pton(AF_INET6, host, dst) == 1;
-}
-} // namespace
-
-namespace {
-int resolve_hostname(sockaddr_union *addr, size_t *addrlen,
-                     const char *hostname, uint16_t port, int family) {
-  addrinfo hints;
+int resolve_hostname(Address *addr, const char *hostname, uint16_t port,
+                     int family) {
   int rv;
 
   auto service = util::utos(port);
-  memset(&hints, 0, sizeof(addrinfo));
 
+  addrinfo hints{};
   hints.ai_family = family;
   hints.ai_socktype = SOCK_STREAM;
 #ifdef AI_ADDRCONFIG
@@ -137,36 +157,105 @@ int resolve_hostname(sockaddr_union *addr, size_t *addrlen,
               << " succeeded: " << host;
   }
 
-  memcpy(addr, res->ai_addr, res->ai_addrlen);
-  *addrlen = res->ai_addrlen;
+  memcpy(&addr->su, res->ai_addr, res->ai_addrlen);
+  addr->len = res->ai_addrlen;
   freeaddrinfo(res);
   return 0;
 }
 } // namespace
 
 namespace {
-void evlistener_errorcb(evconnlistener *listener, void *ptr) {
-  LOG(ERROR) << "Accepting incoming connection failed";
-
-  auto listener_handler = static_cast<ListenHandler *>(ptr);
-
-  listener_handler->disable_evlistener_temporary(
-      &get_config()->listener_disable_timeout);
+void close_env_fd(std::initializer_list<const char *> envnames) {
+  for (auto envname : envnames) {
+    auto envfd = getenv(envname);
+    if (!envfd) {
+      continue;
+    }
+    auto fd = strtol(envfd, nullptr, 10);
+    close(fd);
+  }
 }
 } // namespace
 
 namespace {
-evconnlistener *new_evlistener(ListenHandler *handler, int fd) {
-  auto evlistener = evconnlistener_new(
-      handler->get_evbase(), ssl_acceptcb, handler,
-      LEV_OPT_REUSEABLE | LEV_OPT_CLOSE_ON_FREE, get_config()->backlog, fd);
-  evconnlistener_set_error_cb(evlistener, evlistener_errorcb);
-  return evlistener;
+std::unique_ptr<AcceptHandler>
+create_unix_domain_acceptor(ConnectionHandler *handler) {
+  auto path = get_config()->host.get();
+  auto pathlen = strlen(path);
+  {
+    auto envfd = getenv(ENV_UNIX_FD);
+    auto envpath = getenv(ENV_UNIX_PATH);
+    if (envfd && envpath) {
+      auto fd = strtoul(envfd, nullptr, 10);
+
+      if (util::streq(envpath, path)) {
+        LOG(NOTICE) << "Listening on UNIX domain socket " << path;
+
+        return make_unique<AcceptHandler>(fd, handler);
+      }
+
+      LOG(WARN) << "UNIX domain socket path was changed between old binary ("
+                << envpath << ") and new binary (" << path << ")";
+      close(fd);
+    }
+  }
+
+#ifdef SOCK_NONBLOCK
+  auto fd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0);
+  if (fd == -1) {
+    return nullptr;
+  }
+#else  // !SOCK_NONBLOCK
+  auto fd = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (fd == -1) {
+    return nullptr;
+  }
+  util::make_socket_nonblocking(fd);
+#endif // !SOCK_NONBLOCK
+  int val = 1;
+  if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &val,
+                 static_cast<socklen_t>(sizeof(val))) == -1) {
+    close(fd);
+    return nullptr;
+  }
+
+  sockaddr_union addr;
+  addr.un.sun_family = AF_UNIX;
+  if (pathlen + 1 > sizeof(addr.un.sun_path)) {
+    LOG(FATAL) << "UNIX domain socket path " << path << " is too long > "
+               << sizeof(addr.un.sun_path);
+    close(fd);
+    return nullptr;
+  }
+  // copy path including terminal NULL
+  std::copy_n(path, pathlen + 1, addr.un.sun_path);
+
+  // unlink (remove) already existing UNIX domain socket path
+  unlink(path);
+
+  if (bind(fd, &addr.sa, sizeof(addr.un)) != 0) {
+    auto error = errno;
+    LOG(FATAL) << "Failed to bind UNIX domain socket, error=" << error;
+    close(fd);
+    return nullptr;
+  }
+
+  if (listen(fd, get_config()->backlog) != 0) {
+    auto error = errno;
+    LOG(FATAL) << "Failed to listen to UNIX domain socket, error=" << error;
+    close(fd);
+    return nullptr;
+  }
+
+  LOG(NOTICE) << "Listening on UNIX domain socket " << path;
+
+  return make_unique<AcceptHandler>(fd, handler);
 }
 } // namespace
 
 namespace {
-evconnlistener *create_evlistener(ListenHandler *handler, int family) {
+std::unique_ptr<AcceptHandler> create_acceptor(ConnectionHandler *handler,
+                                               int family) {
   {
     auto envfd =
         getenv(family == AF_INET ? ENV_LISTENER4_FD : ENV_LISTENER6_FD);
@@ -182,7 +271,7 @@ evconnlistener *create_evlistener(ListenHandler *handler, int family) {
       if (port == get_config()->port) {
         LOG(NOTICE) << "Listening on port " << get_config()->port;
 
-        return new_evlistener(handler, fd);
+        return make_unique<AcceptHandler>(fd, handler);
       }
 
       LOG(WARN) << "Port was changed between old binary (" << port
@@ -191,12 +280,11 @@ evconnlistener *create_evlistener(ListenHandler *handler, int family) {
     }
   }
 
-  addrinfo hints;
   int fd = -1;
   int rv;
 
   auto service = util::utos(get_config()->port);
-  memset(&hints, 0, sizeof(addrinfo));
+  addrinfo hints{};
   hints.ai_family = family;
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_flags = AI_PASSIVE;
@@ -219,30 +307,74 @@ evconnlistener *create_evlistener(ListenHandler *handler, int family) {
     return nullptr;
   }
   for (rp = res; rp; rp = rp->ai_next) {
-    fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+#ifdef SOCK_NONBLOCK
+    fd =
+        socket(rp->ai_family, rp->ai_socktype | SOCK_NONBLOCK, rp->ai_protocol);
     if (fd == -1) {
+      auto error = errno;
+      LOG(WARN) << "socket() syscall failed, error=" << error;
       continue;
     }
+#else  // !SOCK_NONBLOCK
+    fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+    if (fd == -1) {
+      auto error = errno;
+      LOG(WARN) << "socket() syscall failed, error=" << error;
+      continue;
+    }
+    util::make_socket_nonblocking(fd);
+#endif // !SOCK_NONBLOCK
     int val = 1;
     if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &val,
                    static_cast<socklen_t>(sizeof(val))) == -1) {
+      auto error = errno;
+      LOG(WARN)
+          << "Failed to set SO_REUSEADDR option to listener socket, error="
+          << error;
       close(fd);
       continue;
     }
-    evutil_make_socket_nonblocking(fd);
+
 #ifdef IPV6_V6ONLY
     if (family == AF_INET6) {
       if (setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &val,
                      static_cast<socklen_t>(sizeof(val))) == -1) {
+        auto error = errno;
+        LOG(WARN)
+            << "Failed to set IPV6_V6ONLY option to listener socket, error="
+            << error;
         close(fd);
         continue;
       }
     }
 #endif // IPV6_V6ONLY
-    if (bind(fd, rp->ai_addr, rp->ai_addrlen) == 0) {
-      break;
+
+#ifdef TCP_DEFER_ACCEPT
+    val = 3;
+    if (setsockopt(fd, IPPROTO_TCP, TCP_DEFER_ACCEPT, &val,
+                   static_cast<socklen_t>(sizeof(val))) == -1) {
+      LOG(WARN) << "Failed to set TCP_DEFER_ACCEPT option to listener socket";
     }
-    close(fd);
+#endif // TCP_DEFER_ACCEPT
+
+    // When we are executing new binary, and the old binary did not
+    // bind privileged port (< 1024) for some reason, binding to those
+    // ports will fail with permission denied error.
+    if (bind(fd, rp->ai_addr, rp->ai_addrlen) == -1) {
+      auto error = errno;
+      LOG(WARN) << "bind() syscall failed, error=" << error;
+      close(fd);
+      continue;
+    }
+
+    if (listen(fd, get_config()->backlog) == -1) {
+      auto error = errno;
+      LOG(WARN) << "listen() syscall failed, error=" << error;
+      close(fd);
+      continue;
+    }
+
+    break;
   }
 
   if (!rp) {
@@ -270,13 +402,19 @@ evconnlistener *create_evlistener(ListenHandler *handler, int family) {
 
   LOG(NOTICE) << "Listening on " << host << ", port " << get_config()->port;
 
-  return new_evlistener(handler, fd);
+  return make_unique<AcceptHandler>(fd, handler);
 }
 } // namespace
 
 namespace {
 void drop_privileges() {
   if (getuid() == 0 && get_config()->uid != 0) {
+    if (initgroups(get_config()->user.get(), get_config()->gid) != 0) {
+      auto error = errno;
+      LOG(FATAL) << "Could not change supplementary groups: "
+                 << strerror(error);
+      exit(EXIT_FAILURE);
+    }
     if (setgid(get_config()->gid) != 0) {
       auto error = errno;
       LOG(FATAL) << "Could not change gid: " << strerror(error);
@@ -317,24 +455,23 @@ void save_pid() {
 } // namespace
 
 namespace {
-void reopen_log_signal_cb(evutil_socket_t sig, short events, void *arg) {
-  auto listener_handler = static_cast<ListenHandler *>(arg);
+void reopen_log_signal_cb(struct ev_loop *loop, ev_signal *w, int revents) {
+  auto conn_handler = static_cast<ConnectionHandler *>(w->data);
 
-  if (LOG_ENABLED(INFO)) {
-    LOG(INFO) << "Reopening log files: worker_info(" << worker_config << ")";
-  }
+  LOG(NOTICE) << "Reopening log files: main";
 
   (void)reopen_log_files();
+  redirect_stderr_to_errorlog();
 
   if (get_config()->num_worker > 1) {
-    listener_handler->worker_reopen_log_files();
+    conn_handler->worker_reopen_log_files();
   }
 }
 } // namespace
 
 namespace {
-void exec_binary_signal_cb(evutil_socket_t sig, short events, void *arg) {
-  auto listener_handler = static_cast<ListenHandler *>(arg);
+void exec_binary_signal_cb(struct ev_loop *loop, ev_signal *w, int revents) {
+  auto conn_handler = static_cast<ConnectionHandler *>(w->data);
 
   LOG(NOTICE) << "Executing new binary";
 
@@ -358,7 +495,7 @@ void exec_binary_signal_cb(evutil_socket_t sig, short events, void *arg) {
     return;
   }
 
-  auto argv = util::make_unique<char *[]>(get_config()->argc + 1);
+  auto argv = make_unique<char *[]>(get_config()->argc + 1);
 
   argv[0] = exec_path;
   for (int i = 1; i < get_config()->argc; ++i) {
@@ -369,32 +506,45 @@ void exec_binary_signal_cb(evutil_socket_t sig, short events, void *arg) {
   size_t envlen = 0;
   for (char **p = environ; *p; ++p, ++envlen)
     ;
-  // 3 for missing fd4, fd6 and port.
-  auto envp = util::make_unique<char *[]>(envlen + 3 + 1);
+  // 3 for missing (fd4, fd6 and port) or (unix fd and unix path)
+  auto envp = make_unique<char *[]>(envlen + 3 + 1);
   size_t envidx = 0;
 
-  auto evlistener4 = listener_handler->get_evlistener4();
-  if (evlistener4) {
-    std::string fd4 = ENV_LISTENER4_FD "=";
-    fd4 += util::utos(evconnlistener_get_fd(evlistener4));
-    envp[envidx++] = strdup(fd4.c_str());
-  }
+  if (get_config()->host_unix) {
+    auto acceptor = conn_handler->get_acceptor();
+    std::string fd = ENV_UNIX_FD "=";
+    fd += util::utos(acceptor->get_fd());
+    envp[envidx++] = strdup(fd.c_str());
 
-  auto evlistener6 = listener_handler->get_evlistener6();
-  if (evlistener6) {
-    std::string fd6 = ENV_LISTENER6_FD "=";
-    fd6 += util::utos(evconnlistener_get_fd(evlistener6));
-    envp[envidx++] = strdup(fd6.c_str());
-  }
+    std::string path = ENV_UNIX_PATH "=";
+    path += get_config()->host.get();
+    envp[envidx++] = strdup(path.c_str());
+  } else {
+    auto acceptor4 = conn_handler->get_acceptor();
+    if (acceptor4) {
+      std::string fd4 = ENV_LISTENER4_FD "=";
+      fd4 += util::utos(acceptor4->get_fd());
+      envp[envidx++] = strdup(fd4.c_str());
+    }
 
-  std::string port = ENV_PORT "=";
-  port += util::utos(get_config()->port);
-  envp[envidx++] = strdup(port.c_str());
+    auto acceptor6 = conn_handler->get_acceptor6();
+    if (acceptor6) {
+      std::string fd6 = ENV_LISTENER6_FD "=";
+      fd6 += util::utos(acceptor6->get_fd());
+      envp[envidx++] = strdup(fd6.c_str());
+    }
+
+    std::string port = ENV_PORT "=";
+    port += util::utos(get_config()->port);
+    envp[envidx++] = strdup(port.c_str());
+  }
 
   for (size_t i = 0; i < envlen; ++i) {
-    if (strcmp(ENV_LISTENER4_FD, environ[i]) == 0 ||
-        strcmp(ENV_LISTENER6_FD, environ[i]) == 0 ||
-        strcmp(ENV_PORT, environ[i]) == 0) {
+    if (util::startsWith(environ[i], ENV_LISTENER4_FD) ||
+        util::startsWith(environ[i], ENV_LISTENER6_FD) ||
+        util::startsWith(environ[i], ENV_PORT) ||
+        util::startsWith(environ[i], ENV_UNIX_FD) ||
+        util::startsWith(environ[i], ENV_UNIX_PATH)) {
       continue;
     }
 
@@ -423,73 +573,251 @@ void exec_binary_signal_cb(evutil_socket_t sig, short events, void *arg) {
 } // namespace
 
 namespace {
-void graceful_shutdown_signal_cb(evutil_socket_t sig, short events, void *arg) {
-  auto listener_handler = static_cast<ListenHandler *>(arg);
+void graceful_shutdown_signal_cb(struct ev_loop *loop, ev_signal *w,
+                                 int revents) {
+  auto conn_handler = static_cast<ConnectionHandler *>(w->data);
+
+  if (conn_handler->get_graceful_shutdown()) {
+    return;
+  }
 
   LOG(NOTICE) << "Graceful shutdown signal received";
 
-  worker_config->graceful_shutdown = true;
+  conn_handler->set_graceful_shutdown(true);
 
-  listener_handler->disable_evlistener();
+  conn_handler->disable_acceptor();
 
   // After disabling accepting new connection, disptach incoming
   // connection in backlog.
 
-  listener_handler->accept_pending_connection();
+  conn_handler->accept_pending_connection();
 
-  listener_handler->graceful_shutdown_worker();
-}
-} // namespace
+  conn_handler->graceful_shutdown_worker();
 
-namespace {
-std::unique_ptr<std::string> generate_time() {
-  return util::make_unique<std::string>(
-      util::format_common_log(std::chrono::system_clock::now()));
-}
-} // namespace
-
-namespace {
-void refresh_cb(evutil_socket_t sig, short events, void *arg) {
-  auto listener_handler = static_cast<ListenHandler *>(arg);
-  auto worker_stat = listener_handler->get_worker_stat();
-
-  mod_config()->cached_time = generate_time();
-  // In multi threaded mode (get_config()->num_worker > 1), we have to
-  // wait for event notification to workers to finish.
-  if (get_config()->num_worker == 1 && worker_config->graceful_shutdown &&
-      (!worker_stat || worker_stat->num_connections == 0)) {
-    event_base_loopbreak(listener_handler->get_evbase());
+  if (get_config()->num_worker == 1 &&
+      conn_handler->get_single_worker()->get_worker_stat()->num_connections >
+          0) {
+    return;
   }
+
+  // We have accepted all pending connections.  Shutdown main event
+  // loop.
+  ev_break(loop);
+}
+} // namespace
+
+namespace {
+int generate_ticket_key(TicketKey &ticket_key) {
+  ticket_key.cipher = get_config()->tls_ticket_key_cipher;
+  ticket_key.hmac = EVP_sha256();
+  ticket_key.hmac_keylen = EVP_MD_size(ticket_key.hmac);
+
+  assert(static_cast<size_t>(EVP_CIPHER_key_length(ticket_key.cipher)) <=
+         ticket_key.data.enc_key.size());
+  assert(ticket_key.hmac_keylen <= ticket_key.data.hmac_key.size());
+
+  if (LOG_ENABLED(INFO)) {
+    LOG(INFO) << "enc_keylen=" << EVP_CIPHER_key_length(ticket_key.cipher)
+              << ", hmac_keylen=" << ticket_key.hmac_keylen;
+  }
+
+  if (RAND_bytes(reinterpret_cast<unsigned char *>(&ticket_key.data),
+                 sizeof(ticket_key.data)) == 0) {
+    return -1;
+  }
+
+  return 0;
+}
+} // namespace
+
+namespace {
+void renew_ticket_key_cb(struct ev_loop *loop, ev_timer *w, int revents) {
+  auto conn_handler = static_cast<ConnectionHandler *>(w->data);
+  const auto &old_ticket_keys = conn_handler->get_ticket_keys();
+
+  auto ticket_keys = std::make_shared<TicketKeys>();
+  LOG(NOTICE) << "Renew new ticket keys";
+
+  // If old_ticket_keys is not empty, it should contain at least 2
+  // keys: one for encryption, and last one for the next encryption
+  // key but decryption only.  The keys in between are old keys and
+  // decryption only.  The next key is provided to ensure to mitigate
+  // possible problem when one worker encrypt new key, but one worker,
+  // which did not take the that key yet, and cannot decrypt it.
+  //
+  // We keep keys for get_config()->tls_session_timeout seconds.  The
+  // default is 12 hours.  Thus the maximum ticket vector size is 12.
+  if (old_ticket_keys) {
+    auto &old_keys = old_ticket_keys->keys;
+    auto &new_keys = ticket_keys->keys;
+
+    assert(!old_keys.empty());
+
+    auto max_tickets =
+        static_cast<size_t>(std::chrono::duration_cast<std::chrono::hours>(
+                                get_config()->tls_session_timeout).count());
+
+    new_keys.resize(std::min(max_tickets, old_keys.size() + 1));
+    std::copy_n(std::begin(old_keys), new_keys.size() - 1,
+                std::begin(new_keys) + 1);
+  } else {
+    ticket_keys->keys.resize(1);
+  }
+
+  auto &new_key = ticket_keys->keys[0];
+
+  if (generate_ticket_key(new_key) != 0) {
+    if (LOG_ENABLED(INFO)) {
+      LOG(INFO) << "failed to generate ticket key";
+    }
+    conn_handler->set_ticket_keys(nullptr);
+    conn_handler->set_ticket_keys_to_worker(nullptr);
+    return;
+  }
+
+  if (LOG_ENABLED(INFO)) {
+    LOG(INFO) << "ticket keys generation done";
+    assert(ticket_keys->keys.size() >= 1);
+    LOG(INFO) << 0 << " enc+dec: "
+              << util::format_hex(ticket_keys->keys[0].data.name);
+    for (size_t i = 1; i < ticket_keys->keys.size(); ++i) {
+      auto &key = ticket_keys->keys[i];
+      LOG(INFO) << i << " dec: " << util::format_hex(key.data.name);
+    }
+  }
+
+  conn_handler->set_ticket_keys(ticket_keys);
+  conn_handler->set_ticket_keys_to_worker(ticket_keys);
+}
+} // namespace
+
+namespace {
+void memcached_get_ticket_key_cb(struct ev_loop *loop, ev_timer *w,
+                                 int revents) {
+  auto conn_handler = static_cast<ConnectionHandler *>(w->data);
+  auto dispatcher = conn_handler->get_tls_ticket_key_memcached_dispatcher();
+
+  auto req = make_unique<MemcachedRequest>();
+  req->key = "nghttpx:tls-ticket-key";
+  req->op = MEMCACHED_OP_GET;
+  req->cb = [conn_handler, dispatcher, w](MemcachedRequest *req,
+                                          MemcachedResult res) {
+    switch (res.status_code) {
+    case MEMCACHED_ERR_NO_ERROR:
+      break;
+    case MEMCACHED_ERR_EXT_NETWORK_ERROR:
+      conn_handler->on_tls_ticket_key_network_error(w);
+      return;
+    default:
+      conn_handler->on_tls_ticket_key_not_found(w);
+      return;
+    }
+
+    // |version (4bytes)|len (2bytes)|key (variable length)|...
+    // (len, key) pairs are repeated as necessary.
+
+    auto &value = res.value;
+    if (value.size() < 4) {
+      LOG(WARN) << "Memcached: tls ticket key value is too small: got "
+                << value.size();
+      conn_handler->on_tls_ticket_key_not_found(w);
+      return;
+    }
+    auto p = value.data();
+    auto version = util::get_uint32(p);
+    // Currently supported version is 1.
+    if (version != 1) {
+      LOG(WARN) << "Memcached: tls ticket key version: want 1, got " << version;
+      conn_handler->on_tls_ticket_key_not_found(w);
+      return;
+    }
+
+    auto end = p + value.size();
+    p += 4;
+
+    size_t expectedlen;
+    size_t enc_keylen;
+    size_t hmac_keylen;
+    if (get_config()->tls_ticket_key_cipher == EVP_aes_128_cbc()) {
+      expectedlen = 48;
+      enc_keylen = 16;
+      hmac_keylen = 16;
+    } else if (get_config()->tls_ticket_key_cipher == EVP_aes_256_cbc()) {
+      expectedlen = 80;
+      enc_keylen = 32;
+      hmac_keylen = 32;
+    } else {
+      return;
+    }
+
+    auto ticket_keys = std::make_shared<TicketKeys>();
+
+    for (; p != end;) {
+      if (end - p < 2) {
+        LOG(WARN) << "Memcached: tls ticket key data is too small";
+        conn_handler->on_tls_ticket_key_not_found(w);
+        return;
+      }
+      auto len = util::get_uint16(p);
+      p += 2;
+      if (len != expectedlen) {
+        LOG(WARN) << "Memcached: wrong tls ticket key size: want "
+                  << expectedlen << ", got " << len;
+        conn_handler->on_tls_ticket_key_not_found(w);
+        return;
+      }
+      if (p + len > end) {
+        LOG(WARN) << "Memcached: too short tls ticket key payload: want " << len
+                  << ", got " << (end - p);
+        conn_handler->on_tls_ticket_key_not_found(w);
+        return;
+      }
+      auto key = TicketKey();
+      key.cipher = get_config()->tls_ticket_key_cipher;
+      key.hmac = EVP_sha256();
+      key.hmac_keylen = EVP_MD_size(key.hmac);
+
+      std::copy_n(p, key.data.name.size(), key.data.name.data());
+      p += key.data.name.size();
+
+      std::copy_n(p, enc_keylen, key.data.enc_key.data());
+      p += enc_keylen;
+
+      std::copy_n(p, hmac_keylen, key.data.hmac_key.data());
+      p += hmac_keylen;
+
+      ticket_keys->keys.push_back(std::move(key));
+    }
+
+    conn_handler->on_tls_ticket_key_get_success(ticket_keys, w);
+  };
+
+  if (LOG_ENABLED(INFO)) {
+    LOG(INFO) << "Memcached: tls ticket key get request sent";
+  }
+
+  dispatcher->add_request(std::move(req));
+}
+
+} // namespace
+
+namespace {
+int call_daemon() {
+#ifdef __sgi
+  return _daemonize(0, 0, 0, 0);
+#else  // !__sgi
+  return daemon(0, 0);
+#endif // !__sgi
 }
 } // namespace
 
 namespace {
 int event_loop() {
-  int rv;
+  auto loop = EV_DEFAULT;
 
-  auto evbase = event_base_new();
-  if (!evbase) {
-    LOG(FATAL) << "event_base_new() failed";
-    exit(EXIT_FAILURE);
-  }
-  SSL_CTX *sv_ssl_ctx, *cl_ssl_ctx;
-
-  if (get_config()->client_mode) {
-    sv_ssl_ctx = nullptr;
-    cl_ssl_ctx = get_config()->downstream_no_tls
-                     ? nullptr
-                     : ssl::create_ssl_client_context();
-  } else {
-    sv_ssl_ctx =
-        get_config()->upstream_no_tls ? nullptr : get_config()->default_ssl_ctx;
-    cl_ssl_ctx = get_config()->http2_bridge && !get_config()->downstream_no_tls
-                     ? ssl::create_ssl_client_context()
-                     : nullptr;
-  }
-
-  auto listener_handler = new ListenHandler(evbase, sv_ssl_ctx, cl_ssl_ctx);
+  auto conn_handler = make_unique<ConnectionHandler>(loop);
   if (get_config()->daemon) {
-    if (daemon(0, 0) == -1) {
+    if (call_daemon() == -1) {
       auto error = errno;
       LOG(FATAL) << "Failed to daemonize: " << strerror(error);
       exit(EXIT_FAILURE);
@@ -497,28 +825,92 @@ int event_loop() {
 
     // We get new PID after successful daemon().
     mod_config()->pid = getpid();
+
+    // daemon redirects stderr file descriptor to /dev/null, so we
+    // need this.
+    redirect_stderr_to_errorlog();
   }
 
   if (get_config()->pid_file) {
     save_pid();
   }
 
-  auto evlistener6 = create_evlistener(listener_handler, AF_INET6);
-  auto evlistener4 = create_evlistener(listener_handler, AF_INET);
-  if (!evlistener6 && !evlistener4) {
-    LOG(FATAL) << "Failed to listen on address " << get_config()->host.get()
-               << ", port " << get_config()->port;
-    exit(EXIT_FAILURE);
+  if (get_config()->host_unix) {
+    close_env_fd({ENV_LISTENER4_FD, ENV_LISTENER6_FD});
+    auto acceptor = create_unix_domain_acceptor(conn_handler.get());
+    if (!acceptor) {
+      LOG(FATAL) << "Failed to listen on UNIX domain socket "
+                 << get_config()->host.get();
+      exit(EXIT_FAILURE);
+    }
+
+    conn_handler->set_acceptor(std::move(acceptor));
+  } else {
+    close_env_fd({ENV_UNIX_FD});
+    auto acceptor6 = create_acceptor(conn_handler.get(), AF_INET6);
+    auto acceptor4 = create_acceptor(conn_handler.get(), AF_INET);
+    if (!acceptor6 && !acceptor4) {
+      LOG(FATAL) << "Failed to listen on address " << get_config()->host.get()
+                 << ", port " << get_config()->port;
+      exit(EXIT_FAILURE);
+    }
+
+    conn_handler->set_acceptor(std::move(acceptor4));
+    conn_handler->set_acceptor6(std::move(acceptor6));
   }
 
-  listener_handler->set_evlistener4(evlistener4);
-  listener_handler->set_evlistener6(evlistener6);
+  ev_timer renew_ticket_key_timer;
+  if (!get_config()->upstream_no_tls) {
+    if (get_config()->tls_ticket_key_memcached_host) {
+      conn_handler->set_tls_ticket_key_memcached_dispatcher(
+          make_unique<MemcachedDispatcher>(
+              &get_config()->tls_ticket_key_memcached_addr, loop));
+
+      ev_timer_init(&renew_ticket_key_timer, memcached_get_ticket_key_cb, 0.,
+                    0.);
+      renew_ticket_key_timer.data = conn_handler.get();
+      // Get first ticket keys.
+      memcached_get_ticket_key_cb(loop, &renew_ticket_key_timer, 0);
+    } else {
+      bool auto_tls_ticket_key = true;
+      if (!get_config()->tls_ticket_key_files.empty()) {
+        if (!get_config()->tls_ticket_key_cipher_given) {
+          LOG(WARN)
+              << "It is strongly recommended to specify "
+                 "--tls-ticket-key-cipher=aes-128-cbc (or "
+                 "tls-ticket-key-cipher=aes-128-cbc in configuration file) "
+                 "when --tls-ticket-key-file is used for the smooth "
+                 "transition when the default value of --tls-ticket-key-cipher "
+                 "becomes aes-256-cbc";
+        }
+        auto ticket_keys = read_tls_ticket_key_file(
+            get_config()->tls_ticket_key_files,
+            get_config()->tls_ticket_key_cipher, EVP_sha256());
+        if (!ticket_keys) {
+          LOG(WARN) << "Use internal session ticket key generator";
+        } else {
+          conn_handler->set_ticket_keys(std::move(ticket_keys));
+          auto_tls_ticket_key = false;
+        }
+      }
+      if (auto_tls_ticket_key) {
+        // Generate new ticket key every 1hr.
+        ev_timer_init(&renew_ticket_key_timer, renew_ticket_key_cb, 0., 1_h);
+        renew_ticket_key_timer.data = conn_handler.get();
+        ev_timer_again(loop, &renew_ticket_key_timer);
+
+        // Generate first session ticket key before running workers.
+        renew_ticket_key_cb(loop, &renew_ticket_key_timer, 0);
+      }
+    }
+  }
 
   // ListenHandler loads private key, and we listen on a priveleged port.
   // After that, we drop the root privileges if needed.
   drop_privileges();
 
 #ifndef NOTHREADS
+  int rv;
   sigset_t signals;
   sigemptyset(&signals);
   sigaddset(&signals, REOPEN_LOG_SIGNAL);
@@ -530,12 +922,10 @@ int event_loop() {
   }
 #endif // !NOTHREADS
 
-  if (get_config()->num_worker > 1) {
-    listener_handler->create_worker_thread(get_config()->num_worker);
-  } else if (get_config()->downstream_proto == PROTO_HTTP2) {
-    listener_handler->create_http2_session();
+  if (get_config()->num_worker == 1) {
+    conn_handler->create_single_worker();
   } else {
-    listener_handler->create_http1_connect_blocker();
+    conn_handler->create_worker_thread(get_config()->num_worker);
   }
 
 #ifndef NOTHREADS
@@ -545,83 +935,35 @@ int event_loop() {
   }
 #endif // !NOTHREADS
 
-  auto reopen_log_signal_event = evsignal_new(
-      evbase, REOPEN_LOG_SIGNAL, reopen_log_signal_cb, listener_handler);
+  ev_signal reopen_log_sig;
+  ev_signal_init(&reopen_log_sig, reopen_log_signal_cb, REOPEN_LOG_SIGNAL);
+  reopen_log_sig.data = conn_handler.get();
+  ev_signal_start(loop, &reopen_log_sig);
 
-  if (!reopen_log_signal_event) {
-    LOG(ERROR) << "evsignal_new failed";
-  } else {
-    rv = event_add(reopen_log_signal_event, nullptr);
-    if (rv < 0) {
-      LOG(ERROR) << "event_add for reopen_log_signal_event failed";
-    }
-  }
+  ev_signal exec_bin_sig;
+  ev_signal_init(&exec_bin_sig, exec_binary_signal_cb, EXEC_BINARY_SIGNAL);
+  exec_bin_sig.data = conn_handler.get();
+  ev_signal_start(loop, &exec_bin_sig);
 
-  auto exec_binary_signal_event = evsignal_new(
-      evbase, EXEC_BINARY_SIGNAL, exec_binary_signal_cb, listener_handler);
-  rv = event_add(exec_binary_signal_event, nullptr);
+  ev_signal graceful_shutdown_sig;
+  ev_signal_init(&graceful_shutdown_sig, graceful_shutdown_signal_cb,
+                 GRACEFUL_SHUTDOWN_SIGNAL);
+  graceful_shutdown_sig.data = conn_handler.get();
+  ev_signal_start(loop, &graceful_shutdown_sig);
 
-  if (rv == -1) {
-    LOG(FATAL) << "event_add for exec_binary_signal_event failed";
-
-    exit(EXIT_FAILURE);
-  }
-
-  auto graceful_shutdown_signal_event =
-      evsignal_new(evbase, GRACEFUL_SHUTDOWN_SIGNAL,
-                   graceful_shutdown_signal_cb, listener_handler);
-
-  rv = event_add(graceful_shutdown_signal_event, nullptr);
-
-  if (rv == -1) {
-    LOG(FATAL) << "event_add for graceful_shutdown_signal_event failed";
-
-    exit(EXIT_FAILURE);
-  }
-
-  auto refresh_event =
-      event_new(evbase, -1, EV_PERSIST, refresh_cb, listener_handler);
-
-  if (!refresh_event) {
-    LOG(ERROR) << "event_new failed";
-
-    exit(EXIT_FAILURE);
-  }
-
-  timeval refresh_timeout = {1, 0};
-  rv = event_add(refresh_event, &refresh_timeout);
-
-  if (rv == -1) {
-    LOG(ERROR) << "Adding refresh_event failed";
-
-    exit(EXIT_FAILURE);
+  if (!get_config()->upstream_no_tls && !get_config()->no_ocsp) {
+    conn_handler->proceed_next_cert_ocsp();
   }
 
   if (LOG_ENABLED(INFO)) {
     LOG(INFO) << "Entering event loop";
   }
-  event_base_loop(evbase, 0);
 
-  listener_handler->join_worker();
+  ev_run(loop, 0);
 
-  if (refresh_event) {
-    event_free(refresh_event);
-  }
-  if (graceful_shutdown_signal_event) {
-    event_free(graceful_shutdown_signal_event);
-  }
-  if (exec_binary_signal_event) {
-    event_free(exec_binary_signal_event);
-  }
-  if (reopen_log_signal_event) {
-    event_free(reopen_log_signal_event);
-  }
-  if (evlistener4) {
-    evconnlistener_free(evlistener4);
-  }
-  if (evlistener6) {
-    evconnlistener_free(evlistener6);
-  }
+  conn_handler->join_worker();
+  conn_handler->cancel_ocsp_update();
+
   return 0;
 }
 } // namespace
@@ -636,26 +978,32 @@ bool conf_exists(const char *path) {
 } // namespace
 
 namespace {
-const char *DEFAULT_NPN_LIST = NGHTTP2_PROTO_VERSION_ID ","
+constexpr char DEFAULT_NPN_LIST[] = "h2,h2-16,h2-14,"
 #ifdef HAVE_SPDYLAY
-                                                        "spdy/3.1,"
+                                    "spdy/3.1,"
 #endif // HAVE_SPDYLAY
-                                                        "http/1.1";
+                                    "http/1.1";
 } // namespace
 
 namespace {
-const char *DEFAULT_TLS_PROTO_LIST = "TLSv1.2,TLSv1.1";
+constexpr char DEFAULT_TLS_PROTO_LIST[] = "TLSv1.2,TLSv1.1";
 } // namespace
 
 namespace {
-const char *DEFAULT_ACCESSLOG_FORMAT = "$remote_addr - - [$time_local] "
-                                       "\"$request\" $status $body_bytes_sent "
-                                       "\"$http_referer\" \"$http_user_agent\"";
+constexpr char DEFAULT_ACCESSLOG_FORMAT[] =
+    R"($remote_addr - - [$time_local] )"
+    R"("$request" $status $body_bytes_sent )"
+    R"("$http_referer" "$http_user_agent")";
 } // namespace
+
+namespace {
+constexpr char DEFAULT_DOWNSTREAM_HOST[] = "127.0.0.1";
+int16_t DEFAULT_DOWNSTREAM_PORT = 80;
+} // namespace;
 
 namespace {
 void fill_default_config() {
-  memset(mod_config(), 0, sizeof(*mod_config()));
+  *mod_config() = {};
 
   mod_config()->verbose = false;
   mod_config()->daemon = false;
@@ -668,26 +1016,26 @@ void fill_default_config() {
   mod_config()->cert_file = nullptr;
 
   // Read timeout for HTTP2 upstream connection
-  mod_config()->http2_upstream_read_timeout = {180, 0};
+  mod_config()->http2_upstream_read_timeout = 3_min;
 
   // Read timeout for non-HTTP2 upstream connection
-  mod_config()->upstream_read_timeout = {30, 0};
+  mod_config()->upstream_read_timeout = 3_min;
 
   // Write timeout for HTTP2/non-HTTP2 upstream connection
-  mod_config()->upstream_write_timeout = {30, 0};
+  mod_config()->upstream_write_timeout = 30.;
 
   // Read/Write timeouts for downstream connection
-  mod_config()->downstream_read_timeout = {30, 0};
-  mod_config()->downstream_write_timeout = {30, 0};
+  mod_config()->downstream_read_timeout = 3_min;
+  mod_config()->downstream_write_timeout = 30.;
 
   // Read timeout for HTTP/2 stream
-  mod_config()->stream_read_timeout = {0, 0};
+  mod_config()->stream_read_timeout = 0.;
 
   // Write timeout for HTTP/2 stream
-  mod_config()->stream_write_timeout = {0, 0};
+  mod_config()->stream_write_timeout = 0.;
 
   // Timeout for pooled (idle) connections
-  mod_config()->downstream_idle_read_timeout = {60, 0};
+  mod_config()->downstream_idle_read_timeout = 2.;
 
   // window bits for HTTP/2 and SPDY upstream/downstream connection
   // per stream. 2**16-1 = 64KiB-1, which is HTTP/2 default. Please
@@ -702,11 +1050,6 @@ void fill_default_config() {
 
   mod_config()->upstream_no_tls = false;
   mod_config()->downstream_no_tls = false;
-
-  mod_config()->downstream_host = strcopy("127.0.0.1");
-  mod_config()->downstream_port = 80;
-  mod_config()->downstream_hostport = nullptr;
-  mod_config()->downstream_addrlen = 0;
 
   mod_config()->num_worker = 1;
   mod_config()->http2_max_concurrent_streams = 100;
@@ -726,7 +1069,7 @@ void fill_default_config() {
   mod_config()->conf_path = strcopy("/etc/nghttpx/nghttpx.conf");
   mod_config()->syslog_facility = LOG_DAEMON;
   // Default accept() backlog
-  mod_config()->backlog = -1;
+  mod_config()->backlog = 512;
   mod_config()->ciphers = nullptr;
   mod_config()->http2_proxy = false;
   mod_config()->http2_bridge = false;
@@ -736,26 +1079,23 @@ void fill_default_config() {
   mod_config()->insecure = false;
   mod_config()->cacert = nullptr;
   mod_config()->pid_file = nullptr;
+  mod_config()->user = nullptr;
   mod_config()->uid = 0;
   mod_config()->gid = 0;
   mod_config()->pid = getpid();
   mod_config()->backend_ipv4 = false;
   mod_config()->backend_ipv6 = false;
-  mod_config()->cert_tree = nullptr;
   mod_config()->downstream_http_proxy_userinfo = nullptr;
   mod_config()->downstream_http_proxy_host = nullptr;
   mod_config()->downstream_http_proxy_port = 0;
-  mod_config()->downstream_http_proxy_addrlen = 0;
-  mod_config()->rate_limit_cfg = nullptr;
   mod_config()->read_rate = 0;
-  mod_config()->read_burst = 1 << 30;
+  mod_config()->read_burst = 0;
   mod_config()->write_rate = 0;
   mod_config()->write_burst = 0;
   mod_config()->worker_read_rate = 0;
   mod_config()->worker_read_burst = 0;
   mod_config()->worker_write_rate = 0;
   mod_config()->worker_write_burst = 0;
-  mod_config()->worker_rate_limit_cfg = nullptr;
   mod_config()->verify_client = false;
   mod_config()->verify_client_cacert = nullptr;
   mod_config()->client_private_key_file = nullptr;
@@ -767,27 +1107,47 @@ void fill_default_config() {
   mod_config()->padding = 0;
   mod_config()->worker_frontend_connections = 0;
 
-  nghttp2_option_new(&mod_config()->http2_option);
+  mod_config()->http2_upstream_callbacks = create_http2_upstream_callbacks();
+  mod_config()->http2_downstream_callbacks =
+      create_http2_downstream_callbacks();
 
-  nghttp2_option_set_no_auto_window_update(mod_config()->http2_option, 1);
+  nghttp2_option_new(&mod_config()->http2_option);
+  nghttp2_option_set_no_auto_window_update(get_config()->http2_option, 1);
+  nghttp2_option_set_no_recv_client_magic(get_config()->http2_option, 1);
+
+  nghttp2_option_new(&mod_config()->http2_client_option);
+  nghttp2_option_set_no_auto_window_update(get_config()->http2_client_option,
+                                           1);
+  nghttp2_option_set_peer_max_concurrent_streams(
+      get_config()->http2_client_option, 100);
 
   mod_config()->tls_proto_mask = 0;
-  mod_config()->cached_time = generate_time();
   mod_config()->no_location_rewrite = false;
+  mod_config()->no_host_rewrite = true;
   mod_config()->argc = 0;
   mod_config()->argv = nullptr;
-  mod_config()->max_downstream_connections = 100;
-  mod_config()->listener_disable_timeout = {0, 0};
-}
-} // namespace
-
-namespace {
-size_t get_rate_limit(size_t rate_limit) {
-  if (rate_limit == 0) {
-    return EV_RATE_LIMIT_MAX;
-  } else {
-    return rate_limit;
-  }
+  mod_config()->downstream_connections_per_host = 8;
+  mod_config()->downstream_connections_per_frontend = 0;
+  mod_config()->listener_disable_timeout = 0.;
+  mod_config()->downstream_request_buffer_size = 16_k;
+  mod_config()->downstream_response_buffer_size = 16_k;
+  mod_config()->no_server_push = false;
+  mod_config()->host_unix = false;
+  mod_config()->http2_downstream_connections_per_worker = 0;
+  // ocsp update interval = 14400 secs = 4 hours, borrowed from h2o
+  mod_config()->ocsp_update_interval = 4_h;
+  mod_config()->fetch_ocsp_response_file =
+      strcopy(PKGDATADIR "/fetch-ocsp-response");
+  mod_config()->no_ocsp = false;
+  mod_config()->header_field_buffer = 64_k;
+  mod_config()->max_header_fields = 100;
+  mod_config()->downstream_addr_group_catch_all = 0;
+  mod_config()->tls_ticket_key_cipher = EVP_aes_128_cbc();
+  mod_config()->tls_ticket_key_cipher_given = false;
+  mod_config()->tls_session_timeout = std::chrono::hours(12);
+  mod_config()->tls_ticket_key_memcached_max_retry = 3;
+  mod_config()->tls_ticket_key_memcached_max_fail = 2;
+  mod_config()->tls_ticket_key_memcached_interval = 10_min;
 }
 } // namespace
 
@@ -808,384 +1168,609 @@ namespace {
 void print_help(std::ostream &out) {
   print_usage(out);
   out << R"(
-  <PRIVATE_KEY>      Set  path  to  server's  private  key.   Required
-                     unless  -p,  --client  or  --frontend-no-tls  are
-                     given.
-  <CERT>             Set  path  to   server's  certificate.   Required
-                     unless  -p,  --client  or  --frontend-no-tls  are
-                     given.
+  <PRIVATE_KEY>
+              Set path  to server's private key.   Required unless -p,
+              --client or --frontend-no-tls are given.
+  <CERT>      Set path  to server's certificate.  Required  unless -p,
+              --client or  --frontend-no-tls are given.  To  make OCSP
+              stapling work, this must be absolute path.
+
 Options:
   The options are categorized into several groups.
 
 Connections:
-  -b, --backend=<HOST,PORT>
-                     Set backend host and port.
-                     Default: ')" << get_config()->downstream_host.get() << ","
-      << get_config()->downstream_port << R"('
-  -f, --frontend=<HOST,PORT>
-                     Set frontend host and port.  If <HOST> is '*', it
-                     assumes  all addresses  including  both IPv4  and
-                     IPv6.
-                     Default: ')" << get_config()->host.get() << ","
-      << get_config()->port << R"('
-  --backlog=<NUM>    Set  listen  backlog  size.    If  -1  is  given,
-                     libevent will choose suitable value.
-                     Default: )" << get_config()->backlog << R"(
-  --backend-ipv4     Resolve backend hostname to IPv4 address only.
-  --backend-ipv6     Resolve backend hostname to IPv6 address only.
+  -b, --backend=(<HOST>,<PORT>|unix:<PATH>)[;<PATTERN>[:...]]
+              Set  backend  host  and   port.   The  multiple  backend
+              addresses are  accepted by repeating this  option.  UNIX
+              domain socket  can be  specified by prefixing  path name
+              with "unix:" (e.g., unix:/var/run/backend.sock).
+
+              Optionally, if <PATTERN>s are given, the backend address
+              is only used  if request matches the pattern.   If -s or
+              -p  is  used,  <PATTERN>s   are  ignored.   The  pattern
+              matching  is closely  designed to  ServeMux in  net/http
+              package of Go  programming language.  <PATTERN> consists
+              of path, host + path or  just host.  The path must start
+              with "/".  If  it ends with "/", it  matches all request
+              path in  its subtree.  To  deal with the request  to the
+              directory without  trailing slash,  the path  which ends
+              with "/" also matches the  request path which only lacks
+              trailing '/'  (e.g., path  "/foo/" matches  request path
+              "/foo").  If it does not end with "/", it performs exact
+              match against  the request path.   If host is  given, it
+              performs exact match against  the request host.  If host
+              alone  is given,  "/"  is  appended to  it,  so that  it
+              matches  all   request  paths  under  the   host  (e.g.,
+              specifying "nghttp2.org" equals to "nghttp2.org/").
+
+              Patterns with  host take  precedence over  patterns with
+              just path.   Then, longer patterns take  precedence over
+              shorter  ones,  breaking  a  tie by  the  order  of  the
+              appearance in the configuration.
+
+              If <PATTERN> is  omitted, "/" is used  as pattern, which
+              matches  all  request  paths (catch-all  pattern).   The
+              catch-all backend must be given.
+
+              When doing  a match, nghttpx made  some normalization to
+              pattern, request host and path.  For host part, they are
+              converted to lower case.  For path part, percent-encoded
+              unreserved characters  defined in RFC 3986  are decoded,
+              and any  dot-segments (".."  and ".")   are resolved and
+              removed.
+
+              For   example,   -b'127.0.0.1,8080;nghttp2.org/httpbin/'
+              matches the  request host "nghttp2.org" and  the request
+              path "/httpbin/get", but does not match the request host
+              "nghttp2.org" and the request path "/index.html".
+
+              The  multiple <PATTERN>s  can  be specified,  delimiting
+              them            by           ":".             Specifying
+              -b'127.0.0.1,8080;nghttp2.org:www.nghttp2.org'  has  the
+              same  effect  to specify  -b'127.0.0.1,8080;nghttp2.org'
+              and -b'127.0.0.1,8080;www.nghttp2.org'.
+
+              The backend addresses sharing same <PATTERN> are grouped
+              together forming  load balancing  group.
+
+              Since ";" and ":" are  used as delimiter, <PATTERN> must
+              not  contain these  characters.  Since  ";" has  special
+              meaning in shell, the option value must be quoted.
+
+              Default: )" << DEFAULT_DOWNSTREAM_HOST << ","
+      << DEFAULT_DOWNSTREAM_PORT << R"(
+  -f, --frontend=(<HOST>,<PORT>|unix:<PATH>)
+              Set  frontend  host and  port.   If  <HOST> is  '*',  it
+              assumes  all addresses  including  both  IPv4 and  IPv6.
+              UNIX domain  socket can  be specified by  prefixing path
+              name with "unix:" (e.g., unix:/var/run/nghttpx.sock)
+              Default: )" << get_config()->host.get() << ","
+      << get_config()->port << R"(
+  --backlog=<N>
+              Set listen backlog size.
+              Default: )" << get_config()->backlog << R"(
+  --backend-ipv4
+              Resolve backend hostname to IPv4 address only.
+  --backend-ipv6
+              Resolve backend hostname to IPv6 address only.
   --backend-http-proxy-uri=<URI>
-                     Specify     proxy     URI     in     the     form
-                     http://[<USER>:<PASS>@]<PROXY>:<PORT>.     If   a
-                     proxy requires authentication, specify <USER> and
-                     <PASS>.    Note  that   they  must   be  properly
-                     percent-encoded.   This proxy  is  used when  the
-                     backend  connection  is  HTTP/2.  First,  make  a
-                     CONNECT request  to the proxy and  it connects to
-                     the  backend on  behalf of  nghttpx.  This  forms
-                     tunnel.   After  that, nghttpx  performs  SSL/TLS
-                     handshake with the downstream through the tunnel.
-                     The timeouts  when connecting and  making CONNECT
-                     request       can      be       specified      by
-                     --backend-read-timeout                        and
-                     --backend-write-timeout options.
+              Specify      proxy       URI      in       the      form
+              http://[<USER>:<PASS>@]<PROXY>:<PORT>.    If   a   proxy
+              requires  authentication,  specify  <USER>  and  <PASS>.
+              Note that  they must be properly  percent-encoded.  This
+              proxy  is used  when the  backend connection  is HTTP/2.
+              First,  make  a CONNECT  request  to  the proxy  and  it
+              connects  to the  backend  on behalf  of nghttpx.   This
+              forms  tunnel.   After  that, nghttpx  performs  SSL/TLS
+              handshake with  the downstream through the  tunnel.  The
+              timeouts when connecting and  making CONNECT request can
+              be     specified    by     --backend-read-timeout    and
+              --backend-write-timeout options.
 
 Performance:
-  -n, --workers=<CORES>
-                     Set the number of worker threads.
-                     Default: )" << get_config()->num_worker << R"(
-  --read-rate=<RATE>
-                     Set  maximum   average  read  rate   on  frontend
-                     connection.  Setting 0 to  this option means read
-                     rate is unlimited.
-                     Default: )" << get_config()->read_rate << R"(
+  -n, --workers=<N>
+              Set the number of worker threads.
+              Default: )" << get_config()->num_worker << R"(
+  --read-rate=<SIZE>
+              Set maximum  average read  rate on  frontend connection.
+              Setting 0 to this option means read rate is unlimited.
+              Default: )" << get_config()->read_rate << R"(
   --read-burst=<SIZE>
-                     Set   maximum  read   burst   size  on   frontend
-                     connection.  Setting  0 does not work,  but it is
-                     not  a problem  because  --read-rate=0 will  give
-                     unlimited  read rate  regardless  of this  option
-                     value.
-                     Default: )" << get_config()->read_burst << R"(
-  --write-rate=<RATE>
-                     Set  maximum  average   write  rate  on  frontend
-                     connection.  Setting 0 to this option means write
-                     rate is unlimited.
-                     Default: )" << get_config()->write_rate << R"(
+              Set  maximum read  burst  size  on frontend  connection.
+              Setting  0  to this  option  means  read burst  size  is
+              unlimited.
+              Default: )" << get_config()->read_burst << R"(
+  --write-rate=<SIZE>
+              Set maximum  average write rate on  frontend connection.
+              Setting 0 to this option means write rate is unlimited.
+              Default: )" << get_config()->write_rate << R"(
   --write-burst=<SIZE>
-                     Set   maximum  write   burst  size   on  frontend
-                     connection.  Setting 0 to this option means write
-                     burst size is unlimited.
-                     Default: )" << get_config()->write_burst << R"(
-  --worker-read-rate=<RATE>
-                     Set  maximum   average  read  rate   on  frontend
-                     connection per worker.  Setting  0 to this option
-                     means read rate is unlimited.
-                     Default: )" << get_config()->worker_read_rate << R"(
+              Set  maximum write  burst size  on frontend  connection.
+              Setting  0 to  this  option means  write  burst size  is
+              unlimited.
+              Default: )" << get_config()->write_burst << R"(
+  --worker-read-rate=<SIZE>
+              Set maximum average read rate on frontend connection per
+              worker.  Setting  0 to  this option  means read  rate is
+              unlimited.  Not implemented yet.
+              Default: )" << get_config()->worker_read_rate << R"(
   --worker-read-burst=<SIZE>
-                     Set   maximum  read   burst   size  on   frontend
-                     connection per worker.  Setting  0 to this option
-                     means read burst size is unlimited.
-                     Default: )" << get_config()->worker_read_burst << R"(
-  --worker-write-rate=<RATE>
-                     Set  maximum  average   write  rate  on  frontend
-                     connection per worker.  Setting  0 to this option
-                     means write rate is unlimited.
-                     Default: )" << get_config()->worker_write_rate << R"(
+              Set maximum  read burst size on  frontend connection per
+              worker.  Setting 0 to this  option means read burst size
+              is unlimited.  Not implemented yet.
+              Default: )" << get_config()->worker_read_burst << R"(
+  --worker-write-rate=<SIZE>
+              Set maximum  average write  rate on  frontend connection
+              per worker.  Setting  0 to this option  means write rate
+              is unlimited.  Not implemented yet.
+              Default: )" << get_config()->worker_write_rate << R"(
   --worker-write-burst=<SIZE>
-                     Set   maximum  write   burst  size   on  frontend
-                     connection per worker.  Setting  0 to this option
-                     means write burst size is unlimited.
-                     Default: )" << get_config()->worker_write_burst << R"(
-  --worker-frontend-connections=<NUM>
-                     Set  maximum number  of simultaneous  connections
-                     frontend accepts.  Setting 0 means unlimited.
-                     Default: 0
-  --backend-connections-per-frontend=<NUM>
-                     Set  maximum   number  of   backend  simultaneous
-                     connections   per  frontend.    This  option   is
-                     meaningful when the combination of HTTP/2 or SPDY
-                     frontend and HTTP/1 backend is used.
-                     Default: )" << get_config()->max_downstream_connections
+              Set maximum write burst  size on frontend connection per
+              worker.  Setting 0 to this option means write burst size
+              is unlimited.  Not implemented yet.
+              Default: )" << get_config()->worker_write_burst << R"(
+  --worker-frontend-connections=<N>
+              Set maximum number  of simultaneous connections frontend
+              accepts.  Setting 0 means unlimited.
+              Default: )" << get_config()->worker_frontend_connections << R"(
+  --backend-http2-connections-per-worker=<N>
+              Set   maximum   number   of  backend   HTTP/2   physical
+              connections  per  worker.   If  pattern is  used  in  -b
+              option, this limit is applied  to each pattern group (in
+              other  words, each  pattern group  can have  maximum <N>
+              HTTP/2  connections).  The  default  value  is 0,  which
+              means  that  the value  is  adjusted  to the  number  of
+              backend addresses.  If pattern  is used, this adjustment
+              is done for each pattern group.
+  --backend-http1-connections-per-host=<N>
+              Set   maximum  number   of  backend   concurrent  HTTP/1
+              connections per origin host.   This option is meaningful
+              when -s option  is used.  The origin  host is determined
+              by  authority  portion  of requset  URI  (or  :authority
+              header  field  for  HTTP/2).   To limit  the  number  of
+              connections   per  frontend   for   default  mode,   use
+              --backend-http1-connections-per-frontend.
+              Default: )" << get_config()->downstream_connections_per_host
+      << R"(
+  --backend-http1-connections-per-frontend=<N>
+              Set   maximum  number   of  backend   concurrent  HTTP/1
+              connections per frontend.  This  option is only used for
+              default mode.   0 means unlimited.  To  limit the number
+              of connections  per host for  HTTP/2 or SPDY  proxy mode
+              (-s option), use --backend-http1-connections-per-host.
+              Default: )" << get_config()->downstream_connections_per_frontend
+      << R"(
+  --rlimit-nofile=<N>
+              Set maximum number of open files (RLIMIT_NOFILE) to <N>.
+              If 0 is given, nghttpx does not set the limit.
+              Default: )" << get_config()->rlimit_nofile << R"(
+  --backend-request-buffer=<SIZE>
+              Set buffer size used to store backend request.
+              Default: )"
+      << util::utos_with_unit(get_config()->downstream_request_buffer_size)
+      << R"(
+  --backend-response-buffer=<SIZE>
+              Set buffer size used to store backend response.
+              Default: )"
+      << util::utos_with_unit(get_config()->downstream_response_buffer_size)
       << R"(
 
 Timeout:
-  --frontend-http2-read-timeout=<SEC>
-                     Specify read timeout for HTTP/2 and SPDY frontend
-                     connection.
-                     Default: )"
-      << get_config()->http2_upstream_read_timeout.tv_sec << R"(
-  --frontend-read-timeout=<SEC>
-                     Specify  read   timeout  for   HTTP/1.1  frontend
-                     connection.
-                     Default: )" << get_config()->upstream_read_timeout.tv_sec
-      << R"(
-  --frontend-write-timeout=<SEC>
-                     Specify   write   timeout    for   all   frontend
-                     connections.
-                     Default: )" << get_config()->upstream_write_timeout.tv_sec
-      << R"(
-  --stream-read-timeout=<SEC>
-                     Specify read timeout for HTTP/2 and SPDY streams.
-                     0 means no timeout.
-                     Default: )" << get_config()->stream_read_timeout.tv_sec
-      << R"(
-  --stream-write-timeout=<SEC>
-                     Specify  write   timeout  for  HTTP/2   and  SPDY
-                     streams.  0 means no timeout.
-                     Default: )" << get_config()->stream_write_timeout.tv_sec
-      << R"(
-  --backend-read-timeout=<SEC>
-                     Specify read timeout for backend connection.
-                     Default: )" << get_config()->downstream_read_timeout.tv_sec
-      << R"(
-  --backend-write-timeout=<SEC>
-                     Specify write timeout for backend connection.
-                     Default: )"
-      << get_config()->downstream_write_timeout.tv_sec << R"(
-  --backend-keep-alive-timeout=<SEC>
-                     Specify    keep-alive    timeout   for    backend
-                     connection.
-                     Default: )"
-      << get_config()->downstream_idle_read_timeout.tv_sec << R"(
-  --listener-disable-timeout=<SEC>
-                     After  accepting  connection  failed,  connection
-                     listener is disabled for a given time in seconds.
-                     Specifying 0 disables this feature.
-                     Default: )"
-      << get_config()->listener_disable_timeout.tv_sec << R"(
+  --frontend-http2-read-timeout=<DURATION>
+              Specify  read  timeout  for  HTTP/2  and  SPDY  frontend
+              connection.
+              Default: )"
+      << util::duration_str(get_config()->http2_upstream_read_timeout) << R"(
+  --frontend-read-timeout=<DURATION>
+              Specify read timeout for HTTP/1.1 frontend connection.
+              Default: )"
+      << util::duration_str(get_config()->upstream_read_timeout) << R"(
+  --frontend-write-timeout=<DURATION>
+              Specify write timeout for all frontend connections.
+              Default: )"
+      << util::duration_str(get_config()->upstream_write_timeout) << R"(
+  --stream-read-timeout=<DURATION>
+              Specify  read timeout  for HTTP/2  and SPDY  streams.  0
+              means no timeout.
+              Default: )"
+      << util::duration_str(get_config()->stream_read_timeout) << R"(
+  --stream-write-timeout=<DURATION>
+              Specify write  timeout for  HTTP/2 and SPDY  streams.  0
+              means no timeout.
+              Default: )"
+      << util::duration_str(get_config()->stream_write_timeout) << R"(
+  --backend-read-timeout=<DURATION>
+              Specify read timeout for backend connection.
+              Default: )"
+      << util::duration_str(get_config()->downstream_read_timeout) << R"(
+  --backend-write-timeout=<DURATION>
+              Specify write timeout for backend connection.
+              Default: )"
+      << util::duration_str(get_config()->downstream_write_timeout) << R"(
+  --backend-keep-alive-timeout=<DURATION>
+              Specify keep-alive timeout for backend connection.
+              Default: )"
+      << util::duration_str(get_config()->downstream_idle_read_timeout) << R"(
+  --listener-disable-timeout=<DURATION>
+              After accepting  connection failed,  connection listener
+              is disabled  for a given  amount of time.   Specifying 0
+              disables this feature.
+              Default: )"
+      << util::duration_str(get_config()->listener_disable_timeout) << R"(
 
 SSL/TLS:
-  --ciphers=<SUITE>  Set  allowed  cipher  list.  The  format  of  the
-                     string  is described  in OpenSSL  ciphers(1).
+  --ciphers=<SUITE>
+              Set allowed  cipher list.  The  format of the  string is
+              described in OpenSSL ciphers(1).
   -k, --insecure
-                     Don't verify backend  server's certificate if -p,
-                     --client   or   --http2-bridge  are   given   and
-                     --backend-no-tls is not given.
-  --cacert=<PATH>    Set path  to trusted  CA certificate file  if -p,
-                     --client   or   --http2-bridge  are   given   and
-                     --backend-no-tls is not given.   The file must be
-                     in   PEM  format.    It   can  contain   multiple
-                     certificates.    If   the   linked   OpenSSL   is
-                     configured to load system wide certificates, they
-                     are loaded at startup regardless of this option.
-  --private-key-passwd-file=<FILEPATH>
-                     Path  to  file  that contains  password  for  the
-                     server's private  key.  If none is  given and the
-                     private  key  is   password  protected  it'll  be
-                     requested interactively.
+              Don't  verify   backend  server's  certificate   if  -p,
+              --client    or    --http2-bridge     are    given    and
+              --backend-no-tls is not given.
+  --cacert=<PATH>
+              Set path to trusted CA  certificate file if -p, --client
+              or --http2-bridge are given  and --backend-no-tls is not
+              given.  The file must be  in PEM format.  It can contain
+              multiple  certificates.    If  the  linked   OpenSSL  is
+              configured to  load system  wide certificates,  they are
+              loaded at startup regardless of this option.
+  --private-key-passwd-file=<PATH>
+              Path  to file  that contains  password for  the server's
+              private key.   If none is  given and the private  key is
+              password protected it'll be requested interactively.
   --subcert=<KEYPATH>:<CERTPATH>
-                     Specify  additional certificate  and private  key
-                     file.  nghttpx will  choose certificates based on
-                     the hostname  indicated by  client using  TLS SNI
-                     extension.   This  option  can be  used  multiple
-                     times.
+              Specify  additional certificate  and  private key  file.
+              nghttpx will  choose certificates based on  the hostname
+              indicated  by  client  using TLS  SNI  extension.   This
+              option  can  be  used  multiple  times.   To  make  OCSP
+              stapling work, <CERTPATH> must be absolute path.
   --backend-tls-sni-field=<HOST>
-                     Explicitly  set  the  content   of  the  TLS  SNI
-                     extension.  This will default to the backend HOST
-                     name.
+              Explicitly  set the  content of  the TLS  SNI extension.
+              This will default to the backend HOST name.
   --dh-param-file=<PATH>
-                     Path to  file that contains DH  parameters in PEM
-                     format.  Without  this option, DHE  cipher suites
-                     are not available.
-  --npn-list=<LIST>  Comma delimited list  of ALPN protocol identifier
-                     sorted in  the order  of preference.   That means
-                     most  desirable protocol  comes  first.  This  is
-                     used in both ALPN and NPN.  The parameter must be
-                     delimited by  a single  comma only and  any white
-                     spaces are treated as a part of protocol string.
-                     Default: )" << DEFAULT_NPN_LIST << R"(
-  --verify-client    Require and verify client certificate.
+              Path to file that contains  DH parameters in PEM format.
+              Without  this   option,  DHE   cipher  suites   are  not
+              available.
+  --npn-list=<LIST>
+              Comma delimited list of  ALPN protocol identifier sorted
+              in the  order of preference.  That  means most desirable
+              protocol comes  first.  This  is used  in both  ALPN and
+              NPN.  The parameter must be  delimited by a single comma
+              only  and any  white spaces  are  treated as  a part  of
+              protocol string.
+              Default: )" << DEFAULT_NPN_LIST << R"(
+  --verify-client
+              Require and verify client certificate.
   --verify-client-cacert=<PATH>
-                     Path  to file  that contains  CA certificates  to
-                     verify client  certificate.  The file must  be in
-                     PEM    format.    It    can   contain    multiple
-                     certificates.
+              Path  to file  that contains  CA certificates  to verify
+              client certificate.  The file must be in PEM format.  It
+              can contain multiple certificates.
   --client-private-key-file=<PATH>
-                     Path  to file  that contains  client private  key
-                     used in backend client authentication.
+              Path to  file that contains  client private key  used in
+              backend client authentication.
   --client-cert-file=<PATH>
-                     Path  to file  that  contains client  certificate
-                     used in backend client authentication.
+              Path to  file that  contains client certificate  used in
+              backend client authentication.
   --tls-proto-list=<LIST>
-                     Comma delimited  list of  SSL/TLS protocol  to be
-                     enabled.  The following  protocols are available:
-                     TLSv1.2, TLSv1.1 and  TLSv1.0.  The name matching
-                     is   done   in  case-insensitive   manner.    The
-                     parameter  must be  delimited by  a single  comma
-                     only and any  white spaces are treated  as a part
-                     of protocol string.
-                     Default: )" << DEFAULT_TLS_PROTO_LIST << R"(
+              Comma delimited list of  SSL/TLS protocol to be enabled.
+              The following protocols  are available: TLSv1.2, TLSv1.1
+              and   TLSv1.0.    The   name   matching   is   done   in
+              case-insensitive   manner.    The  parameter   must   be
+              delimited by  a single comma  only and any  white spaces
+              are treated as a part of protocol string.
+              Default: )" << DEFAULT_TLS_PROTO_LIST << R"(
+  --tls-ticket-key-file=<PATH>
+              Path to file that contains  random data to construct TLS
+              session ticket  parameters.  If aes-128-cbc is  given in
+              --tls-ticket-key-cipher, the  file must  contain exactly
+              48    bytes.     If     aes-256-cbc    is    given    in
+              --tls-ticket-key-cipher, the  file must  contain exactly
+              80  bytes.   This  options  can be  used  repeatedly  to
+              specify  multiple ticket  parameters.  If  several files
+              are given,  only the  first key is  used to  encrypt TLS
+              session  tickets.  Other  keys are  accepted but  server
+              will  issue new  session  ticket with  first key.   This
+              allows  session  key  rotation.  Please  note  that  key
+              rotation  does  not  occur automatically.   User  should
+              rearrange  files or  change options  values and  restart
+              nghttpx gracefully.   If opening  or reading  given file
+              fails, all loaded  keys are discarded and  it is treated
+              as if none  of this option is given.  If  this option is
+              not given or an error  occurred while opening or reading
+              a file,  key is  generated every  1 hour  internally and
+              they are  valid for  12 hours.   This is  recommended if
+              ticket  key sharing  between  nghttpx  instances is  not
+              required.
+  --tls-ticket-key-memcached=<HOST>,<PORT>
+              Specify  address of  memcached server  to store  session
+              cache.   This  enables  shared TLS  ticket  key  between
+              multiple nghttpx  instances.  nghttpx  does not  set TLS
+              ticket  key  to  memcached.   The  external  ticket  key
+              generator  is required.   nghttpx just  gets TLS  ticket
+              keys from  memcached, and  use them,  possibly replacing
+              current set of keys.  It is  up to extern TLS ticket key
+              generator to  rotate keys frequently.  See  "TLS SESSION
+              TICKET RESUMPTION"  section in  manual page to  know the
+              data format in memcached entry.
+  --tls-ticket-key-memcached-interval=<DURATION>
+              Set interval to get TLS ticket keys from memcached.
+              Default: )"
+      << util::duration_str(get_config()->tls_ticket_key_memcached_interval)
+      << R"(
+  --tls-ticket-key-memcached-max-retry=<N>
+              Set  maximum   number  of  consecutive   retries  before
+              abandoning TLS ticket key  retrieval.  If this number is
+              reached,  the  attempt  is considered  as  failure,  and
+              "failure" count  is incremented by 1,  which contributed
+              to            the            value            controlled
+              --tls-ticket-key-memcached-max-fail option.
+              Default: )" << get_config()->tls_ticket_key_memcached_max_retry
+      << R"(
+  --tls-ticket-key-memcached-max-fail=<N>
+              Set  maximum   number  of  consecutive   failure  before
+              disabling TLS ticket until next scheduled key retrieval.
+              Default: )" << get_config()->tls_ticket_key_memcached_max_fail
+      << R"(
+  --tls-ticket-key-cipher=<CIPHER>
+              Specify cipher  to encrypt TLS session  ticket.  Specify
+              either   aes-128-cbc   or  aes-256-cbc.    By   default,
+              aes-128-cbc is used.
+  --fetch-ocsp-response-file=<PATH>
+              Path to  fetch-ocsp-response script file.  It  should be
+              absolute path.
+              Default: )" << get_config()->fetch_ocsp_response_file.get() << R"(
+  --ocsp-update-interval=<DURATION>
+              Set interval to update OCSP response cache.
+              Default: )"
+      << util::duration_str(get_config()->ocsp_update_interval) << R"(
+  --no-ocsp   Disable OCSP stapling.
+  --tls-session-cache-memcached=<HOST>,<PORT>
+              Specify  address of  memcached server  to store  session
+              cache.   This  enables   shared  session  cache  between
+              multiple nghttpx instances.
 
 HTTP/2 and SPDY:
-  -c, --http2-max-concurrent-streams=<NUM>
-                     Set the maximum number  of the concurrent streams
-                     in one HTTP/2 and SPDY session.
-                     Default: )" << get_config()->http2_max_concurrent_streams
-      << R"(
+  -c, --http2-max-concurrent-streams=<N>
+              Set the maximum number of  the concurrent streams in one
+              HTTP/2 and SPDY session.
+              Default: )" << get_config()->http2_max_concurrent_streams << R"(
   --frontend-http2-window-bits=<N>
-                     Sets the per-stream initial window size of HTTP/2
-                     SPDY frontend  connection.  For HTTP/2,  the size
-                     is 2**<N>-1.  For SPDY, the size is 2**<N>.
-                     Default: )" << get_config()->http2_upstream_window_bits
-      << R"(
+              Sets the  per-stream initial window size  of HTTP/2 SPDY
+              frontend connection.  For HTTP/2,  the size is 2**<N>-1.
+              For SPDY, the size is 2**<N>.
+              Default: )" << get_config()->http2_upstream_window_bits << R"(
   --frontend-http2-connection-window-bits=<N>
-                     Sets the per-connection window size of HTTP/2 and
-                     SPDY frontend  connection.  For HTTP/2,  the size
-                     is 2**<N>-1. For SPDY, the size is 2**<N>.
-                     Default: )"
-      << get_config()->http2_upstream_connection_window_bits << R"(
-  --frontend-no-tls  Disable SSL/TLS on frontend connections.
-  --backend-http2-window-bits=<N>
-                     Sets the  initial window  size of  HTTP/2 backend
-                     connection to 2**<N>-1.
-                     Default: )" << get_config()->http2_downstream_window_bits
+              Sets the  per-connection window size of  HTTP/2 and SPDY
+              frontend   connection.    For   HTTP/2,  the   size   is
+              2**<N>-1. For SPDY, the size is 2**<N>.
+              Default: )" << get_config()->http2_upstream_connection_window_bits
       << R"(
+  --frontend-no-tls
+              Disable SSL/TLS on frontend connections.
+  --backend-http2-window-bits=<N>
+              Sets  the   initial  window   size  of   HTTP/2  backend
+              connection to 2**<N>-1.
+              Default: )" << get_config()->http2_downstream_window_bits << R"(
   --backend-http2-connection-window-bits=<N>
-                     Sets  the per-connection  window  size of  HTTP/2
-                     backend connection to 2**<N>-1.
-                     Default: )"
+              Sets the  per-connection window  size of  HTTP/2 backend
+              connection to 2**<N>-1.
+              Default: )"
       << get_config()->http2_downstream_connection_window_bits << R"(
-  --backend-no-tls   Disable SSL/TLS on backend connections.
+  --backend-no-tls
+              Disable SSL/TLS on backend connections.
   --http2-no-cookie-crumbling
-                     Don't crumble cookie header field.
-  --padding=<N>      Add at most  <N> bytes to a  HTTP/2 frame payload
-                     as padding.  Specify 0  to disable padding.  This
-                     option  is meant  for debugging  purpose and  not
-                     intended to enhance protocol security.
+              Don't crumble cookie header field.
+  --padding=<N>
+              Add  at most  <N> bytes  to  a HTTP/2  frame payload  as
+              padding.  Specify 0 to  disable padding.  This option is
+              meant for debugging purpose  and not intended to enhance
+              protocol security.
+  --no-server-push
+              Disable  HTTP/2  server  push.    Server  push  is  only
+              supported  by default  mode and  HTTP/2 frontend.   SPDY
+              frontend does not support server push.
 
 Mode:
-  (default mode)     Accept  HTTP/2, SPDY  and HTTP/1.1  over SSL/TLS.
-                     If --frontend-no-tls  is used, accept  HTTP/2 and
-                     HTTP/1.1.  The  incoming HTTP/1.1  connection can
-                     be upgraded to HTTP/2  through HTTP Upgrade.  The
-                     protocol to the backend is HTTP/1.1.
-  -s, --http2-proxy  Like default mode, but enable secure proxy mode.
-  --http2-bridge     Like  default  mode,  but  communicate  with  the
-                     backend  in   HTTP/2  over  SSL/TLS.    Thus  the
-                     incoming all connections  are converted to HTTP/2
-                     connection  and  relayed  to  the  backend.   See
-                     --backend-http-proxy-uri option if you are behind
-                     the  proxy and  want  to connect  to the  outside
-                     HTTP/2 proxy.
-  --client           Accept HTTP/2 and  HTTP/1.1 without SSL/TLS.  The
-                     incoming HTTP/1.1  connection can be  upgraded to
-                     HTTP/2  connection  through  HTTP  Upgrade.   The
-                     protocol  to  the  backend  is  HTTP/2.   To  use
-                     nghttpx  as  a  forward   proxy,  use  -p  option
-                     instead.
+  (default mode)
+              Accept  HTTP/2,  SPDY  and HTTP/1.1  over  SSL/TLS.   If
+              --frontend-no-tls is  used, accept HTTP/2  and HTTP/1.1.
+              The  incoming HTTP/1.1  connection  can  be upgraded  to
+              HTTP/2  through  HTTP  Upgrade.   The  protocol  to  the
+              backend is HTTP/1.1.
+  -s, --http2-proxy
+              Like default mode, but enable secure proxy mode.
+  --http2-bridge
+              Like default  mode, but communicate with  the backend in
+              HTTP/2 over SSL/TLS.  Thus  the incoming all connections
+              are converted  to HTTP/2  connection and relayed  to the
+              backend.  See --backend-http-proxy-uri option if you are
+              behind  the proxy  and want  to connect  to the  outside
+              HTTP/2 proxy.
+  --client    Accept  HTTP/2   and  HTTP/1.1  without   SSL/TLS.   The
+              incoming HTTP/1.1  connection can be upgraded  to HTTP/2
+              connection through  HTTP Upgrade.   The protocol  to the
+              backend is HTTP/2.   To use nghttpx as  a forward proxy,
+              use -p option instead.
   -p, --client-proxy
-                     Like --client  option, but  it also  requires the
-                     request path  from frontend  must be  an absolute
-                     URI, suitable for use as a forward proxy.
+              Like --client  option, but it also  requires the request
+              path from frontend must be an absolute URI, suitable for
+              use as a forward proxy.
 
 Logging:
   -L, --log-level=<LEVEL>
-                     Set the  severity level  of log  output.  <LEVEL>
-                     must  be one  of  INFO, NOTICE,  WARN, ERROR  and
-                     FATAL.
-                     Default: NOTICE
+              Set the severity  level of log output.   <LEVEL> must be
+              one of INFO, NOTICE, WARN, ERROR and FATAL.
+              Default: NOTICE
   --accesslog-file=<PATH>
-                     Set path  to write  access log.  To  reopen file,
-                     send USR1 signal to nghttpx.
+              Set path to write access log.  To reopen file, send USR1
+              signal to nghttpx.
   --accesslog-syslog
-                     Send  access log  to syslog.   If this  option is
-                     used, --access-file option is ignored.
+              Send  access log  to syslog.   If this  option is  used,
+              --accesslog-file option is ignored.
   --accesslog-format=<FORMAT>
-                     Specify  format  string   for  access  log.   The
-                     default format is combined format.  The following
-                     variables are available:
-                     $remote_addr: client IP address.
-                     $time_local: local time in Common Log format.
-                     $time_iso8601: local time in ISO 8601 format.
-                     $request: HTTP request line.
-                     $status: HTTP response status code.
-                     $body_bytes_sent: the  number of bytes  sent to
-                     client as response body.
-                     $http_<VAR>: value of HTTP request header <VAR>
-                     where '_' in <VAR> is replaced with '-'.
-                     $remote_port: client  port.
-                     $server_port: server port.
-                     $request_time:   request  processing   time  in
-                     seconds with milliseconds resolution.
-                     $pid: PID of the running process.
-                     $alpn:  ALPN  identifier  of the  protocol  which
-                     generates  the  response.   For HTTP/1,  ALPN  is
-                     always http/1.1, regardless of minor version.
-                     Default: )" << DEFAULT_ACCESSLOG_FORMAT << R"(
+              Specify  format  string  for access  log.   The  default
+              format is combined format.   The following variables are
+              available:
+
+              * $remote_addr: client IP address.
+              * $time_local: local time in Common Log format.
+              * $time_iso8601: local time in ISO 8601 format.
+              * $request: HTTP request line.
+              * $status: HTTP response status code.
+              * $body_bytes_sent: the  number of bytes sent  to client
+                as response body.
+              * $http_<VAR>: value of HTTP  request header <VAR> where
+                '_' in <VAR> is replaced with '-'.
+              * $remote_port: client  port.
+              * $server_port: server port.
+              * $request_time: request processing time in seconds with
+                milliseconds resolution.
+              * $pid: PID of the running process.
+              * $alpn: ALPN identifier of the protocol which generates
+                the response.   For HTTP/1,  ALPN is  always http/1.1,
+                regardless of minor version.
+              * $ssl_cipher: cipher used for SSL/TLS connection.
+              * $ssl_protocol: protocol for SSL/TLS connection.
+              * $ssl_session_id: session ID for SSL/TLS connection.
+              * $ssl_session_reused:  "r"   if  SSL/TLS   session  was
+                reused.  Otherwise, "."
+
+              The  variable  can  be  enclosed  by  "{"  and  "}"  for
+              disambiguation (e.g., ${remote_addr}).
+
+              Default: )" << DEFAULT_ACCESSLOG_FORMAT << R"(
   --errorlog-file=<PATH>
-                     Set  path to  write error  log.  To  reopen file,
-                     send USR1 signal to nghttpx.
-                     Default: )" << get_config()->errorlog_file.get() << R"(
-  --errorlog-syslog  Send  error log  to  syslog.  If  this option  is
-                     used, --errorlog-file option is ignored.
+              Set path to write error  log.  To reopen file, send USR1
+              signal  to nghttpx.   stderr will  be redirected  to the
+              error log file unless --errorlog-syslog is used.
+              Default: )" << get_config()->errorlog_file.get() << R"(
+  --errorlog-syslog
+              Send  error log  to  syslog.  If  this  option is  used,
+              --errorlog-file option is ignored.
   --syslog-facility=<FACILITY>
-                     Set syslog facility to <FACILITY>.
-                     Default: )"
-      << str_syslog_facility(get_config()->syslog_facility) << R"(
+              Set syslog facility to <FACILITY>.
+              Default: )" << str_syslog_facility(get_config()->syslog_facility)
+      << R"(
+
+HTTP:
+  --add-x-forwarded-for
+              Append  X-Forwarded-For header  field to  the downstream
+              request.
+  --strip-incoming-x-forwarded-for
+              Strip X-Forwarded-For  header field from  inbound client
+              requests.
+  --no-via    Don't append to  Via header field.  If  Via header field
+              is received, it is left unaltered.
+  --no-location-rewrite
+              Don't rewrite  location header field  on --http2-bridge,
+              --client  and  default   mode.   For  --http2-proxy  and
+              --client-proxy mode,  location header field will  not be
+              altered regardless of this option.
+  --host-rewrite
+              Rewrite   host   and   :authority   header   fields   on
+              --http2-bridge,   --client   and  default   mode.    For
+              --http2-proxy  and  --client-proxy mode,  these  headers
+              will not be altered regardless of this option.
+  --altsvc=<PROTOID,PORT[,HOST,[ORIGIN]]>
+              Specify   protocol  ID,   port,  host   and  origin   of
+              alternative service.  <HOST>  and <ORIGIN> are optional.
+              They  are advertised  in  alt-svc header  field only  in
+              HTTP/1.1  frontend.  This  option can  be used  multiple
+              times   to   specify  multiple   alternative   services.
+              Example: --altsvc=h2,443
+  --add-request-header=<HEADER>
+              Specify additional header field to add to request header
+              set.  This  option just  appends header field  and won't
+              replace anything  already set.  This option  can be used
+              several  times   to  specify  multiple   header  fields.
+              Example: --add-request-header="foo: bar"
+  --add-response-header=<HEADER>
+              Specify  additional  header  field to  add  to  response
+              header set.   This option just appends  header field and
+              won't replace anything already  set.  This option can be
+              used several  times to  specify multiple  header fields.
+              Example: --add-response-header="foo: bar"
+  --header-field-buffer=<SIZE>
+              Set maximum  buffer size for incoming  HTTP header field
+              list.   This is  the sum  of  header name  and value  in
+              bytes.
+              Default: )"
+      << util::utos_with_unit(get_config()->header_field_buffer) << R"(
+  --max-header-fields=<N>
+              Set maximum number of incoming HTTP header fields, which
+              appear in one request or response header field list.
+              Default: )" << get_config()->max_header_fields << R"(
+
+Debug:
+  --frontend-http2-dump-request-header=<PATH>
+              Dumps request headers received by HTTP/2 frontend to the
+              file denoted  in <PATH>.  The  output is done  in HTTP/1
+              header field format and each header block is followed by
+              an empty line.  This option  is not thread safe and MUST
+              NOT be used with option -n<N>, where <N> >= 2.
+  --frontend-http2-dump-response-header=<PATH>
+              Dumps response headers sent  from HTTP/2 frontend to the
+              file denoted  in <PATH>.  The  output is done  in HTTP/1
+              header field format and each header block is followed by
+              an empty line.  This option  is not thread safe and MUST
+              NOT be used with option -n<N>, where <N> >= 2.
+  -o, --frontend-frame-debug
+              Print HTTP/2 frames in  frontend to stderr.  This option
+              is  not thread  safe and  MUST NOT  be used  with option
+              -n=N, where N >= 2.
+
+Process:
+  -D, --daemon
+              Run in a background.  If -D is used, the current working
+              directory is changed to '/'.
+  --pid-file=<PATH>
+              Set path to save PID of this program.
+  --user=<USER>
+              Run this program as <USER>.   This option is intended to
+              be used to drop root privileges.
 
 Misc:
-  --add-x-forwarded-for
-                     Append  X-Forwarded-For   header  field   to  the
-                     downstream request.
-  --strip-incoming-x-forwarded-for
-                     Strip  X-Forwarded-For  header field from inbound
-                     client requests.
-  --no-via           Don't append to Via  header field.  If Via header
-                     field is received, it is left unaltered.
-  --no-location-rewrite
-                     Don't   rewrite   location    header   field   on
-                     --http2-bridge, --client  and default  mode.  For
-                     --http2-proxy  and --client-proxy  mode, location
-                     header field  will not  be altered  regardless of
-                     this option.
-  --altsvc=<PROTOID,PORT[,HOST,[ORIGIN]]>
-                     Specify  protocol ID,  port, host  and origin  of
-                     alternative  service.   <HOST> and  <ORIGIN>  are
-                     optional.  They are  advertised in alt-svc header
-                     field or HTTP/2 ALTSVC frame.  This option can be
-                     used   multiple   times   to   specify   multiple
-                     alternative services.  Example: --altsvc=h2,443
-  --add-response-header=<HEADER>
-                     Specify  additional   header  field  to   add  to
-                     response  header set.   This option  just appends
-                     header field  and won't replace  anything already
-                     set.  This  option can  be used several  times to
-                     specify multiple header fields.
-                     Example: --add-response-header="foo: bar"
-  --frontend-http2-dump-request-header=<PATH>
-                     Dumps request headers received by HTTP/2 frontend
-                     to  the file  denoted in  <PATH>.  The  output is
-                     done  in  HTTP/1  header field  format  and  each
-                     header block is followed  by an empty line.  This
-                     option is  not thread safe  and MUST NOT  be used
-                     with option -n<N>, where <N> >= 2.
-  --frontend-http2-dump-response-header=<PATH>
-                     Dumps response headers  sent from HTTP/2 frontend
-                     to  the file  denoted in  <PATH>.  The  output is
-                     done  in  HTTP/1  header field  format  and  each
-                     header block is followed  by an empty line.  This
-                     option is  not thread safe  and MUST NOT  be used
-                     with option -n<N>, where <N> >= 2.
-  -o, --frontend-frame-debug
-                     Print HTTP/2 frames in  frontend to stderr.  This
-                     option is  not thread safe  and MUST NOT  be used
-                     with option -n=N, where N >= 2.
-  -D, --daemon
-                     Run in a background.  If  -D is used, the current
-                     working directory is changed to '/'.
-  --pid-file=<PATH>  Set path to save PID of this program.
-  --user=<USER>      Run  this  program  as <USER>.   This  option  is
-                     intended to be used to drop root privileges.
-  --conf=<PATH>      Load configuration from <PATH>.
-                     Default: )" << get_config()->conf_path.get() << R"(
-  -v, --version      Print version and exit.
-  -h, --help         Print this help and exit.)" << std::endl;
+  --conf=<PATH>
+              Load configuration from <PATH>.
+              Default: )" << get_config()->conf_path.get() << R"(
+  --include=<PATH>
+              Load additional configurations from <PATH>.  File <PATH>
+              is  read  when  configuration  parser  encountered  this
+              option.  This option can be used multiple times, or even
+              recursively.
+  -v, --version
+              Print version and exit.
+  -h, --help  Print this help and exit.
+
+--
+
+  The <SIZE> argument is an integer and an optional unit (e.g., 10K is
+  10 * 1024).  Units are K, M and G (powers of 1024).
+
+  The <DURATION> argument is an integer and an optional unit (e.g., 1s
+  is 1 second and 500ms is 500 milliseconds).  Units are h, m, s or ms
+  (hours, minutes, seconds and milliseconds, respectively).  If a unit
+  is omitted, a second is used as unit.)" << std::endl;
 }
 } // namespace
 
 int main(int argc, char **argv) {
+#ifndef NOTHREADS
+  nghttp2::ssl::LibsslGlobalLock lock;
+#endif // NOTHREADS
+  // Initialize OpenSSL before parsing options because we create
+  // SSL_CTX there.
+  SSL_load_error_strings();
+  SSL_library_init();
+  OpenSSL_add_all_algorithms();
+  OPENSSL_config(nullptr);
+
   Log::set_severity_level(NOTICE);
   create_config();
   fill_default_config();
+
+  // First open log files with default configuration, so that we can
+  // log errors/warnings while reading configuration files.
+  reopen_log_files();
 
   // We have to copy argv, since getopt_long may change its content.
   mod_config()->argc = argc;
@@ -1206,80 +1791,113 @@ int main(int argc, char **argv) {
   while (1) {
     static int flag = 0;
     static option long_options[] = {
-        {"daemon", no_argument, nullptr, 'D'},
-        {"log-level", required_argument, nullptr, 'L'},
-        {"backend", required_argument, nullptr, 'b'},
-        {"http2-max-concurrent-streams", required_argument, nullptr, 'c'},
-        {"frontend", required_argument, nullptr, 'f'},
+        {SHRPX_OPT_DAEMON, no_argument, nullptr, 'D'},
+        {SHRPX_OPT_LOG_LEVEL, required_argument, nullptr, 'L'},
+        {SHRPX_OPT_BACKEND, required_argument, nullptr, 'b'},
+        {SHRPX_OPT_HTTP2_MAX_CONCURRENT_STREAMS, required_argument, nullptr,
+         'c'},
+        {SHRPX_OPT_FRONTEND, required_argument, nullptr, 'f'},
         {"help", no_argument, nullptr, 'h'},
-        {"insecure", no_argument, nullptr, 'k'},
-        {"workers", required_argument, nullptr, 'n'},
-        {"client-proxy", no_argument, nullptr, 'p'},
-        {"http2-proxy", no_argument, nullptr, 's'},
+        {SHRPX_OPT_INSECURE, no_argument, nullptr, 'k'},
+        {SHRPX_OPT_WORKERS, required_argument, nullptr, 'n'},
+        {SHRPX_OPT_CLIENT_PROXY, no_argument, nullptr, 'p'},
+        {SHRPX_OPT_HTTP2_PROXY, no_argument, nullptr, 's'},
         {"version", no_argument, nullptr, 'v'},
-        {"frontend-frame-debug", no_argument, nullptr, 'o'},
-        {"add-x-forwarded-for", no_argument, &flag, 1},
-        {"frontend-http2-read-timeout", required_argument, &flag, 2},
-        {"frontend-read-timeout", required_argument, &flag, 3},
-        {"frontend-write-timeout", required_argument, &flag, 4},
-        {"backend-read-timeout", required_argument, &flag, 5},
-        {"backend-write-timeout", required_argument, &flag, 6},
-        {"accesslog-file", required_argument, &flag, 7},
-        {"backend-keep-alive-timeout", required_argument, &flag, 8},
-        {"frontend-http2-window-bits", required_argument, &flag, 9},
-        {"pid-file", required_argument, &flag, 10},
-        {"user", required_argument, &flag, 11},
+        {SHRPX_OPT_FRONTEND_FRAME_DEBUG, no_argument, nullptr, 'o'},
+        {SHRPX_OPT_ADD_X_FORWARDED_FOR, no_argument, &flag, 1},
+        {SHRPX_OPT_FRONTEND_HTTP2_READ_TIMEOUT, required_argument, &flag, 2},
+        {SHRPX_OPT_FRONTEND_READ_TIMEOUT, required_argument, &flag, 3},
+        {SHRPX_OPT_FRONTEND_WRITE_TIMEOUT, required_argument, &flag, 4},
+        {SHRPX_OPT_BACKEND_READ_TIMEOUT, required_argument, &flag, 5},
+        {SHRPX_OPT_BACKEND_WRITE_TIMEOUT, required_argument, &flag, 6},
+        {SHRPX_OPT_ACCESSLOG_FILE, required_argument, &flag, 7},
+        {SHRPX_OPT_BACKEND_KEEP_ALIVE_TIMEOUT, required_argument, &flag, 8},
+        {SHRPX_OPT_FRONTEND_HTTP2_WINDOW_BITS, required_argument, &flag, 9},
+        {SHRPX_OPT_PID_FILE, required_argument, &flag, 10},
+        {SHRPX_OPT_USER, required_argument, &flag, 11},
         {"conf", required_argument, &flag, 12},
-        {"syslog-facility", required_argument, &flag, 14},
-        {"backlog", required_argument, &flag, 15},
-        {"ciphers", required_argument, &flag, 16},
-        {"client", no_argument, &flag, 17},
-        {"backend-http2-window-bits", required_argument, &flag, 18},
-        {"cacert", required_argument, &flag, 19},
-        {"backend-ipv4", no_argument, &flag, 20},
-        {"backend-ipv6", no_argument, &flag, 21},
-        {"private-key-passwd-file", required_argument, &flag, 22},
-        {"no-via", no_argument, &flag, 23},
-        {"subcert", required_argument, &flag, 24},
-        {"http2-bridge", no_argument, &flag, 25},
-        {"backend-http-proxy-uri", required_argument, &flag, 26},
-        {"backend-no-tls", no_argument, &flag, 27},
-        {"frontend-no-tls", no_argument, &flag, 29},
-        {"backend-tls-sni-field", required_argument, &flag, 31},
-        {"dh-param-file", required_argument, &flag, 33},
-        {"read-rate", required_argument, &flag, 34},
-        {"read-burst", required_argument, &flag, 35},
-        {"write-rate", required_argument, &flag, 36},
-        {"write-burst", required_argument, &flag, 37},
-        {"npn-list", required_argument, &flag, 38},
-        {"verify-client", no_argument, &flag, 39},
-        {"verify-client-cacert", required_argument, &flag, 40},
-        {"client-private-key-file", required_argument, &flag, 41},
-        {"client-cert-file", required_argument, &flag, 42},
-        {"frontend-http2-dump-request-header", required_argument, &flag, 43},
-        {"frontend-http2-dump-response-header", required_argument, &flag, 44},
-        {"http2-no-cookie-crumbling", no_argument, &flag, 45},
-        {"frontend-http2-connection-window-bits", required_argument, &flag, 46},
-        {"backend-http2-connection-window-bits", required_argument, &flag, 47},
-        {"tls-proto-list", required_argument, &flag, 48},
-        {"padding", required_argument, &flag, 49},
-        {"worker-read-rate", required_argument, &flag, 50},
-        {"worker-read-burst", required_argument, &flag, 51},
-        {"worker-write-rate", required_argument, &flag, 52},
-        {"worker-write-burst", required_argument, &flag, 53},
-        {"altsvc", required_argument, &flag, 54},
-        {"add-response-header", required_argument, &flag, 55},
-        {"worker-frontend-connections", required_argument, &flag, 56},
-        {"accesslog-syslog", no_argument, &flag, 57},
-        {"errorlog-file", required_argument, &flag, 58},
-        {"errorlog-syslog", no_argument, &flag, 59},
-        {"stream-read-timeout", required_argument, &flag, 60},
-        {"stream-write-timeout", required_argument, &flag, 61},
-        {"no-location-rewrite", no_argument, &flag, 62},
-        {"backend-connections-per-frontend", required_argument, &flag, 63},
-        {"listener-disable-timeout", required_argument, &flag, 64},
-        {"strip-incoming-x-forwarded-for", no_argument, &flag, 65},
-        {"accesslog-format", required_argument, &flag, 66},
+        {SHRPX_OPT_SYSLOG_FACILITY, required_argument, &flag, 14},
+        {SHRPX_OPT_BACKLOG, required_argument, &flag, 15},
+        {SHRPX_OPT_CIPHERS, required_argument, &flag, 16},
+        {SHRPX_OPT_CLIENT, no_argument, &flag, 17},
+        {SHRPX_OPT_BACKEND_HTTP2_WINDOW_BITS, required_argument, &flag, 18},
+        {SHRPX_OPT_CACERT, required_argument, &flag, 19},
+        {SHRPX_OPT_BACKEND_IPV4, no_argument, &flag, 20},
+        {SHRPX_OPT_BACKEND_IPV6, no_argument, &flag, 21},
+        {SHRPX_OPT_PRIVATE_KEY_PASSWD_FILE, required_argument, &flag, 22},
+        {SHRPX_OPT_NO_VIA, no_argument, &flag, 23},
+        {SHRPX_OPT_SUBCERT, required_argument, &flag, 24},
+        {SHRPX_OPT_HTTP2_BRIDGE, no_argument, &flag, 25},
+        {SHRPX_OPT_BACKEND_HTTP_PROXY_URI, required_argument, &flag, 26},
+        {SHRPX_OPT_BACKEND_NO_TLS, no_argument, &flag, 27},
+        {SHRPX_OPT_FRONTEND_NO_TLS, no_argument, &flag, 29},
+        {SHRPX_OPT_BACKEND_TLS_SNI_FIELD, required_argument, &flag, 31},
+        {SHRPX_OPT_DH_PARAM_FILE, required_argument, &flag, 33},
+        {SHRPX_OPT_READ_RATE, required_argument, &flag, 34},
+        {SHRPX_OPT_READ_BURST, required_argument, &flag, 35},
+        {SHRPX_OPT_WRITE_RATE, required_argument, &flag, 36},
+        {SHRPX_OPT_WRITE_BURST, required_argument, &flag, 37},
+        {SHRPX_OPT_NPN_LIST, required_argument, &flag, 38},
+        {SHRPX_OPT_VERIFY_CLIENT, no_argument, &flag, 39},
+        {SHRPX_OPT_VERIFY_CLIENT_CACERT, required_argument, &flag, 40},
+        {SHRPX_OPT_CLIENT_PRIVATE_KEY_FILE, required_argument, &flag, 41},
+        {SHRPX_OPT_CLIENT_CERT_FILE, required_argument, &flag, 42},
+        {SHRPX_OPT_FRONTEND_HTTP2_DUMP_REQUEST_HEADER, required_argument, &flag,
+         43},
+        {SHRPX_OPT_FRONTEND_HTTP2_DUMP_RESPONSE_HEADER, required_argument,
+         &flag, 44},
+        {SHRPX_OPT_HTTP2_NO_COOKIE_CRUMBLING, no_argument, &flag, 45},
+        {SHRPX_OPT_FRONTEND_HTTP2_CONNECTION_WINDOW_BITS, required_argument,
+         &flag, 46},
+        {SHRPX_OPT_BACKEND_HTTP2_CONNECTION_WINDOW_BITS, required_argument,
+         &flag, 47},
+        {SHRPX_OPT_TLS_PROTO_LIST, required_argument, &flag, 48},
+        {SHRPX_OPT_PADDING, required_argument, &flag, 49},
+        {SHRPX_OPT_WORKER_READ_RATE, required_argument, &flag, 50},
+        {SHRPX_OPT_WORKER_READ_BURST, required_argument, &flag, 51},
+        {SHRPX_OPT_WORKER_WRITE_RATE, required_argument, &flag, 52},
+        {SHRPX_OPT_WORKER_WRITE_BURST, required_argument, &flag, 53},
+        {SHRPX_OPT_ALTSVC, required_argument, &flag, 54},
+        {SHRPX_OPT_ADD_RESPONSE_HEADER, required_argument, &flag, 55},
+        {SHRPX_OPT_WORKER_FRONTEND_CONNECTIONS, required_argument, &flag, 56},
+        {SHRPX_OPT_ACCESSLOG_SYSLOG, no_argument, &flag, 57},
+        {SHRPX_OPT_ERRORLOG_FILE, required_argument, &flag, 58},
+        {SHRPX_OPT_ERRORLOG_SYSLOG, no_argument, &flag, 59},
+        {SHRPX_OPT_STREAM_READ_TIMEOUT, required_argument, &flag, 60},
+        {SHRPX_OPT_STREAM_WRITE_TIMEOUT, required_argument, &flag, 61},
+        {SHRPX_OPT_NO_LOCATION_REWRITE, no_argument, &flag, 62},
+        {SHRPX_OPT_BACKEND_HTTP1_CONNECTIONS_PER_HOST, required_argument, &flag,
+         63},
+        {SHRPX_OPT_LISTENER_DISABLE_TIMEOUT, required_argument, &flag, 64},
+        {SHRPX_OPT_STRIP_INCOMING_X_FORWARDED_FOR, no_argument, &flag, 65},
+        {SHRPX_OPT_ACCESSLOG_FORMAT, required_argument, &flag, 66},
+        {SHRPX_OPT_BACKEND_HTTP1_CONNECTIONS_PER_FRONTEND, required_argument,
+         &flag, 67},
+        {SHRPX_OPT_TLS_TICKET_KEY_FILE, required_argument, &flag, 68},
+        {SHRPX_OPT_RLIMIT_NOFILE, required_argument, &flag, 69},
+        {SHRPX_OPT_BACKEND_RESPONSE_BUFFER, required_argument, &flag, 71},
+        {SHRPX_OPT_BACKEND_REQUEST_BUFFER, required_argument, &flag, 72},
+        {SHRPX_OPT_NO_HOST_REWRITE, no_argument, &flag, 73},
+        {SHRPX_OPT_NO_SERVER_PUSH, no_argument, &flag, 74},
+        {SHRPX_OPT_BACKEND_HTTP2_CONNECTIONS_PER_WORKER, required_argument,
+         &flag, 76},
+        {SHRPX_OPT_FETCH_OCSP_RESPONSE_FILE, required_argument, &flag, 77},
+        {SHRPX_OPT_OCSP_UPDATE_INTERVAL, required_argument, &flag, 78},
+        {SHRPX_OPT_NO_OCSP, no_argument, &flag, 79},
+        {SHRPX_OPT_HEADER_FIELD_BUFFER, required_argument, &flag, 80},
+        {SHRPX_OPT_MAX_HEADER_FIELDS, required_argument, &flag, 81},
+        {SHRPX_OPT_ADD_REQUEST_HEADER, required_argument, &flag, 82},
+        {SHRPX_OPT_INCLUDE, required_argument, &flag, 83},
+        {SHRPX_OPT_TLS_TICKET_KEY_CIPHER, required_argument, &flag, 84},
+        {SHRPX_OPT_HOST_REWRITE, no_argument, &flag, 85},
+        {SHRPX_OPT_TLS_SESSION_CACHE_MEMCACHED, required_argument, &flag, 86},
+        {SHRPX_OPT_TLS_TICKET_KEY_MEMCACHED, required_argument, &flag, 87},
+        {SHRPX_OPT_TLS_TICKET_KEY_MEMCACHED_INTERVAL, required_argument, &flag,
+         88},
+        {SHRPX_OPT_TLS_TICKET_KEY_MEMCACHED_MAX_RETRY, required_argument, &flag,
+         89},
+        {SHRPX_OPT_TLS_TICKET_KEY_MEMCACHED_MAX_FAIL, required_argument, &flag,
+         90},
         {nullptr, 0, nullptr, 0}};
 
     int option_index = 0;
@@ -1568,8 +2186,8 @@ int main(int argc, char **argv) {
         cmdcfgs.emplace_back(SHRPX_OPT_NO_LOCATION_REWRITE, "yes");
         break;
       case 63:
-        // --backend-connections-per-frontend
-        cmdcfgs.emplace_back(SHRPX_OPT_BACKEND_CONNECTIONS_PER_FRONTEND,
+        // --backend-http1-connections-per-host
+        cmdcfgs.emplace_back(SHRPX_OPT_BACKEND_HTTP1_CONNECTIONS_PER_HOST,
                              optarg);
         break;
       case 64:
@@ -1584,6 +2202,99 @@ int main(int argc, char **argv) {
         // --accesslog-format
         cmdcfgs.emplace_back(SHRPX_OPT_ACCESSLOG_FORMAT, optarg);
         break;
+      case 67:
+        // --backend-http1-connections-per-frontend
+        cmdcfgs.emplace_back(SHRPX_OPT_BACKEND_HTTP1_CONNECTIONS_PER_FRONTEND,
+                             optarg);
+        break;
+      case 68:
+        // --tls-ticket-key-file
+        cmdcfgs.emplace_back(SHRPX_OPT_TLS_TICKET_KEY_FILE, optarg);
+        break;
+      case 69:
+        // --rlimit-nofile
+        cmdcfgs.emplace_back(SHRPX_OPT_RLIMIT_NOFILE, optarg);
+        break;
+      case 71:
+        // --backend-response-buffer
+        cmdcfgs.emplace_back(SHRPX_OPT_BACKEND_RESPONSE_BUFFER, optarg);
+        break;
+      case 72:
+        // --backend-request-buffer
+        cmdcfgs.emplace_back(SHRPX_OPT_BACKEND_REQUEST_BUFFER, optarg);
+        break;
+      case 73:
+        // --no-host-rewrite
+        cmdcfgs.emplace_back(SHRPX_OPT_NO_HOST_REWRITE, "yes");
+        break;
+      case 74:
+        // --no-server-push
+        cmdcfgs.emplace_back(SHRPX_OPT_NO_SERVER_PUSH, "yes");
+        break;
+      case 76:
+        // --backend-http2-connections-per-worker
+        cmdcfgs.emplace_back(SHRPX_OPT_BACKEND_HTTP2_CONNECTIONS_PER_WORKER,
+                             optarg);
+        break;
+      case 77:
+        // --fetch-ocsp-response-file
+        cmdcfgs.emplace_back(SHRPX_OPT_FETCH_OCSP_RESPONSE_FILE, optarg);
+        break;
+      case 78:
+        // --ocsp-update-interval
+        cmdcfgs.emplace_back(SHRPX_OPT_OCSP_UPDATE_INTERVAL, optarg);
+        break;
+      case 79:
+        // --no-ocsp
+        cmdcfgs.emplace_back(SHRPX_OPT_NO_OCSP, "yes");
+        break;
+      case 80:
+        // --header-field-buffer
+        cmdcfgs.emplace_back(SHRPX_OPT_HEADER_FIELD_BUFFER, optarg);
+        break;
+      case 81:
+        // --max-header-fields
+        cmdcfgs.emplace_back(SHRPX_OPT_MAX_HEADER_FIELDS, optarg);
+        break;
+      case 82:
+        // --add-request-header
+        cmdcfgs.emplace_back(SHRPX_OPT_ADD_REQUEST_HEADER, optarg);
+        break;
+      case 83:
+        // --include
+        cmdcfgs.emplace_back(SHRPX_OPT_INCLUDE, optarg);
+        break;
+      case 84:
+        // --tls-ticket-key-cipher
+        cmdcfgs.emplace_back(SHRPX_OPT_TLS_TICKET_KEY_CIPHER, optarg);
+        break;
+      case 85:
+        // --host-rewrite
+        cmdcfgs.emplace_back(SHRPX_OPT_HOST_REWRITE, "yes");
+        break;
+      case 86:
+        // --tls-session-cache-memcached
+        cmdcfgs.emplace_back(SHRPX_OPT_TLS_SESSION_CACHE_MEMCACHED, optarg);
+        break;
+      case 87:
+        // --tls-ticket-key-memcached
+        cmdcfgs.emplace_back(SHRPX_OPT_TLS_TICKET_KEY_MEMCACHED, optarg);
+        break;
+      case 88:
+        // --tls-ticket-key-memcached-interval
+        cmdcfgs.emplace_back(SHRPX_OPT_TLS_TICKET_KEY_MEMCACHED_INTERVAL,
+                             optarg);
+        break;
+      case 89:
+        // --tls-ticket-key-memcached-max-retry
+        cmdcfgs.emplace_back(SHRPX_OPT_TLS_TICKET_KEY_MEMCACHED_MAX_RETRY,
+                             optarg);
+        break;
+      case 90:
+        // --tls-ticket-key-memcached-max-fail
+        cmdcfgs.emplace_back(SHRPX_OPT_TLS_TICKET_KEY_MEMCACHED_MAX_FAIL,
+                             optarg);
+        break;
       default:
         break;
       }
@@ -1593,22 +2304,14 @@ int main(int argc, char **argv) {
     }
   }
 
-  // Initialize OpenSSL before parsing options because we create
-  // SSL_CTX there.
-  OPENSSL_config(nullptr);
-  OpenSSL_add_all_algorithms();
-  SSL_load_error_strings();
-  SSL_library_init();
-#ifndef NOTHREADS
-  nghttp2::ssl::LibsslGlobalLock lock;
-#endif // NOTHREADS
-
   if (conf_exists(get_config()->conf_path.get())) {
-    if (load_config(get_config()->conf_path.get()) == -1) {
+    std::set<std::string> include_set;
+    if (load_config(get_config()->conf_path.get(), include_set) == -1) {
       LOG(FATAL) << "Failed to load configuration from "
                  << get_config()->conf_path.get();
       exit(EXIT_FAILURE);
     }
+    assert(include_set.empty());
   }
 
   if (argc - optind >= 2) {
@@ -1616,15 +2319,21 @@ int main(int argc, char **argv) {
     cmdcfgs.emplace_back(SHRPX_OPT_CERTIFICATE_FILE, argv[optind++]);
   }
 
-  // First open default log files to deal with errors occurred while
-  // parsing option values.
+  // Reopen log files using configurations in file
   reopen_log_files();
 
-  for (size_t i = 0, len = cmdcfgs.size(); i < len; ++i) {
-    if (parse_config(cmdcfgs[i].first, cmdcfgs[i].second) == -1) {
-      LOG(FATAL) << "Failed to parse command-line argument.";
-      exit(EXIT_FAILURE);
+  {
+    std::set<std::string> include_set;
+
+    for (size_t i = 0, len = cmdcfgs.size(); i < len; ++i) {
+      if (parse_config(cmdcfgs[i].first, cmdcfgs[i].second, include_set) ==
+          -1) {
+        LOG(FATAL) << "Failed to parse command-line argument.";
+        exit(EXIT_FAILURE);
+      }
     }
+
+    assert(include_set.empty());
   }
 
   if (get_config()->accesslog_syslog || get_config()->errorlog_syslog) {
@@ -1637,16 +2346,18 @@ int main(int argc, char **argv) {
     exit(EXIT_FAILURE);
   }
 
+  redirect_stderr_to_errorlog();
+
   if (get_config()->uid != 0) {
-    if (worker_config->accesslog_fd != -1 &&
-        fchown(worker_config->accesslog_fd, get_config()->uid,
+    if (log_config()->accesslog_fd != -1 &&
+        fchown(log_config()->accesslog_fd, get_config()->uid,
                get_config()->gid) == -1) {
       auto error = errno;
       LOG(WARN) << "Changing owner of access log file failed: "
                 << strerror(error);
     }
-    if (worker_config->errorlog_fd != -1 &&
-        fchown(worker_config->errorlog_fd, get_config()->uid,
+    if (log_config()->errorlog_fd != -1 &&
+        fchown(log_config()->errorlog_fd, get_config()->uid,
                get_config()->gid) == -1) {
       auto error = errno;
       LOG(WARN) << "Changing owner of error log file failed: "
@@ -1709,33 +2420,6 @@ int main(int argc, char **argv) {
 
   mod_config()->alpn_prefs = ssl::set_alpn_prefs(get_config()->npn_list);
 
-  if (!get_config()->subcerts.empty()) {
-    mod_config()->cert_tree = ssl::cert_lookup_tree_new();
-  }
-
-  for (auto &keycert : get_config()->subcerts) {
-    auto ssl_ctx =
-        ssl::create_ssl_context(keycert.first.c_str(), keycert.second.c_str());
-    if (ssl::cert_lookup_tree_add_cert_from_file(
-            get_config()->cert_tree, ssl_ctx, keycert.second.c_str()) == -1) {
-      LOG(FATAL) << "Failed to add sub certificate.";
-      exit(EXIT_FAILURE);
-    }
-  }
-
-  if (get_config()->cert_file && get_config()->private_key_file) {
-    mod_config()->default_ssl_ctx = ssl::create_ssl_context(
-        get_config()->private_key_file.get(), get_config()->cert_file.get());
-    if (get_config()->cert_tree) {
-      if (ssl::cert_lookup_tree_add_cert_from_file(
-              get_config()->cert_tree, get_config()->default_ssl_ctx,
-              get_config()->cert_file.get()) == -1) {
-        LOG(FATAL) << "Failed to parse command-line argument.";
-        exit(EXIT_FAILURE);
-      }
-    }
-  }
-
   if (get_config()->backend_ipv4 && get_config()->backend_ipv6) {
     LOG(FATAL) << "--backend-ipv4 and --backend-ipv6 cannot be used at the "
                << "same time.";
@@ -1757,6 +2441,7 @@ int main(int argc, char **argv) {
 
   if (get_config()->client || get_config()->client_proxy) {
     mod_config()->client_mode = true;
+    mod_config()->upstream_no_tls = true;
   }
 
   if (get_config()->client_mode || get_config()->http2_bridge) {
@@ -1765,46 +2450,114 @@ int main(int argc, char **argv) {
     mod_config()->downstream_proto = PROTO_HTTP;
   }
 
-  if (!get_config()->client_mode && !get_config()->upstream_no_tls) {
-    if (!get_config()->private_key_file || !get_config()->cert_file) {
-      print_usage(std::cerr);
-      LOG(FATAL) << "Too few arguments";
-      exit(EXIT_FAILURE);
+  if (!get_config()->upstream_no_tls &&
+      (!get_config()->private_key_file || !get_config()->cert_file)) {
+    print_usage(std::cerr);
+    LOG(FATAL) << "Too few arguments";
+    exit(EXIT_FAILURE);
+  }
+
+  if (!get_config()->upstream_no_tls && !get_config()->no_ocsp) {
+    struct stat buf;
+    if (stat(get_config()->fetch_ocsp_response_file.get(), &buf) != 0) {
+      mod_config()->no_ocsp = true;
+      LOG(WARN) << "--fetch-ocsp-response-file: "
+                << get_config()->fetch_ocsp_response_file.get()
+                << " not found.  OCSP stapling has been disabled.";
     }
   }
 
-  bool downstream_ipv6_addr =
-      is_ipv6_numeric_addr(get_config()->downstream_host.get());
+  if (get_config()->downstream_addr_groups.empty()) {
+    DownstreamAddr addr;
+    addr.host = strcopy(DEFAULT_DOWNSTREAM_HOST);
+    addr.port = DEFAULT_DOWNSTREAM_PORT;
 
-  {
-    std::string hostport;
-
-    if (downstream_ipv6_addr) {
-      hostport += "[";
+    DownstreamAddrGroup g("/");
+    g.addrs.push_back(std::move(addr));
+    mod_config()->downstream_addr_groups.push_back(std::move(g));
+  } else if (get_config()->http2_proxy || get_config()->client_proxy) {
+    // We don't support host mapping in these cases.  Move all
+    // non-catch-all patterns to catch-all pattern.
+    DownstreamAddrGroup catch_all("/");
+    for (auto &g : mod_config()->downstream_addr_groups) {
+      std::move(std::begin(g.addrs), std::end(g.addrs),
+                std::back_inserter(catch_all.addrs));
     }
-
-    hostport += get_config()->downstream_host.get();
-
-    if (downstream_ipv6_addr) {
-      hostport += "]";
-    }
-
-    hostport += ":";
-    hostport += util::utos(get_config()->downstream_port);
-
-    mod_config()->downstream_hostport = strcopy(hostport);
+    std::vector<DownstreamAddrGroup>().swap(
+        mod_config()->downstream_addr_groups);
+    mod_config()->downstream_addr_groups.push_back(std::move(catch_all));
   }
 
   if (LOG_ENABLED(INFO)) {
     LOG(INFO) << "Resolving backend address";
   }
-  if (resolve_hostname(
-          &mod_config()->downstream_addr, &mod_config()->downstream_addrlen,
-          get_config()->downstream_host.get(), get_config()->downstream_port,
-          get_config()->backend_ipv4
-              ? AF_INET
-              : (get_config()->backend_ipv6 ? AF_INET6 : AF_UNSPEC)) == -1) {
+
+  ssize_t catch_all_group = -1;
+  for (size_t i = 0; i < mod_config()->downstream_addr_groups.size(); ++i) {
+    auto &g = mod_config()->downstream_addr_groups[i];
+    if (g.pattern == "/") {
+      catch_all_group = i;
+    }
+    if (LOG_ENABLED(INFO)) {
+      LOG(INFO) << "Host-path pattern: group " << i << ": '" << g.pattern
+                << "'";
+      for (auto &addr : g.addrs) {
+        LOG(INFO) << "group " << i << " -> " << addr.host.get()
+                  << (addr.host_unix ? "" : ":" + util::utos(addr.port));
+      }
+    }
+  }
+
+  if (catch_all_group == -1) {
+    LOG(FATAL) << "-b: No catch-all backend address is configured";
     exit(EXIT_FAILURE);
+  }
+  mod_config()->downstream_addr_group_catch_all = catch_all_group;
+
+  if (LOG_ENABLED(INFO)) {
+    LOG(INFO) << "Catch-all pattern is group " << catch_all_group;
+  }
+
+  for (auto &g : mod_config()->downstream_addr_groups) {
+    for (auto &addr : g.addrs) {
+
+      if (addr.host_unix) {
+        // for AF_UNIX socket, we use "localhost" as host for backend
+        // hostport.  This is used as Host header field to backend and
+        // not going to be passed to any syscalls.
+        addr.hostport =
+            strcopy(util::make_hostport("localhost", get_config()->port));
+
+        auto path = addr.host.get();
+        auto pathlen = strlen(path);
+
+        if (pathlen + 1 > sizeof(addr.addr.su.un.sun_path)) {
+          LOG(FATAL) << "UNIX domain socket path " << path << " is too long > "
+                     << sizeof(addr.addr.su.un.sun_path);
+          exit(EXIT_FAILURE);
+        }
+
+        LOG(INFO) << "Use UNIX domain socket path " << path
+                  << " for backend connection";
+
+        addr.addr.su.un.sun_family = AF_UNIX;
+        // copy path including terminal NULL
+        std::copy_n(path, pathlen + 1, addr.addr.su.un.sun_path);
+        addr.addr.len = sizeof(addr.addr.su.un);
+
+        continue;
+      }
+
+      addr.hostport = strcopy(util::make_hostport(addr.host.get(), addr.port));
+
+      if (resolve_hostname(
+              &addr.addr, addr.host.get(), addr.port,
+              get_config()->backend_ipv4 ? AF_INET : (get_config()->backend_ipv6
+                                                          ? AF_INET6
+                                                          : AF_UNSPEC)) == -1) {
+        exit(EXIT_FAILURE);
+      }
+    }
   }
 
   if (get_config()->downstream_http_proxy_host) {
@@ -1812,7 +2565,6 @@ int main(int argc, char **argv) {
       LOG(INFO) << "Resolving backend http proxy address";
     }
     if (resolve_hostname(&mod_config()->downstream_http_proxy_addr,
-                         &mod_config()->downstream_http_proxy_addrlen,
                          get_config()->downstream_http_proxy_host.get(),
                          get_config()->downstream_http_proxy_port,
                          AF_UNSPEC) == -1) {
@@ -1820,17 +2572,32 @@ int main(int argc, char **argv) {
     }
   }
 
-  mod_config()->rate_limit_cfg = ev_token_bucket_cfg_new(
-      get_rate_limit(get_config()->read_rate),
-      get_rate_limit(get_config()->read_burst),
-      get_rate_limit(get_config()->write_rate),
-      get_rate_limit(get_config()->write_burst), nullptr);
+  if (get_config()->session_cache_memcached_host) {
+    if (resolve_hostname(&mod_config()->session_cache_memcached_addr,
+                         get_config()->session_cache_memcached_host.get(),
+                         get_config()->session_cache_memcached_port,
+                         AF_UNSPEC) == -1) {
+      exit(EXIT_FAILURE);
+    }
+  }
 
-  mod_config()->worker_rate_limit_cfg = ev_token_bucket_cfg_new(
-      get_rate_limit(get_config()->worker_read_rate),
-      get_rate_limit(get_config()->worker_read_burst),
-      get_rate_limit(get_config()->worker_write_rate),
-      get_rate_limit(get_config()->worker_write_burst), nullptr);
+  if (get_config()->tls_ticket_key_memcached_host) {
+    if (resolve_hostname(&mod_config()->tls_ticket_key_memcached_addr,
+                         get_config()->tls_ticket_key_memcached_host.get(),
+                         get_config()->tls_ticket_key_memcached_port,
+                         AF_UNSPEC) == -1) {
+      exit(EXIT_FAILURE);
+    }
+  }
+
+  if (get_config()->rlimit_nofile) {
+    struct rlimit lim = {static_cast<rlim_t>(get_config()->rlimit_nofile),
+                         static_cast<rlim_t>(get_config()->rlimit_nofile)};
+    if (setrlimit(RLIMIT_NOFILE, &lim) != 0) {
+      auto error = errno;
+      LOG(WARN) << "Setting rlimit-nofile failed: " << strerror(error);
+    }
+  }
 
   if (get_config()->upstream_frame_debug) {
     // To make it sync to logging
@@ -1841,11 +2608,9 @@ int main(int argc, char **argv) {
     reset_timer();
   }
 
-  struct sigaction act;
-  memset(&act, 0, sizeof(struct sigaction));
+  struct sigaction act {};
   act.sa_handler = SIG_IGN;
   sigaction(SIGPIPE, &act, nullptr);
-  sigaction(SIGCHLD, &act, nullptr);
 
   event_loop();
 

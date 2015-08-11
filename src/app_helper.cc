@@ -23,11 +23,21 @@
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 #include <sys/types.h>
+#ifdef HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
+#endif // HAVE_SYS_SOCKET_H
+#ifdef HAVE_NETDB_H
 #include <netdb.h>
+#endif // HAVE_NETDB_H
+#ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#endif // HAVE_UNISTD_H
+#ifdef HAVE_FCNTL_H
 #include <fcntl.h>
+#endif // HAVE_FCNTL_H
+#ifdef HAVE_NETINET_IN_H
 #include <netinet/in.h>
+#endif // HAVE_NETINET_IN_H
 #include <netinet/tcp.h>
 #include <poll.h>
 
@@ -48,6 +58,7 @@
 #include "app_helper.h"
 #include "util.h"
 #include "http2.h"
+#include "template.h"
 
 namespace nghttp2 {
 
@@ -130,8 +141,6 @@ const char *strframetype(uint8_t type) {
     return "GOAWAY";
   case NGHTTP2_WINDOW_UPDATE:
     return "WINDOW_UPDATE";
-  case NGHTTP2_EXT_ALTSVC:
-    return "ALTSVC";
   default:
     return "UNKNOWN";
   }
@@ -164,11 +173,8 @@ const char *ansi_escend() { return color_output ? "\033[0m" : ""; }
 
 namespace {
 void print_nv(nghttp2_nv *nv) {
-  fprintf(outfile, "%s", ansi_esc("\033[1;34m"));
-  fwrite(nv->name, nv->namelen, 1, outfile);
-  fprintf(outfile, "%s: ", ansi_escend());
-  fwrite(nv->value, nv->valuelen, 1, outfile);
-  fprintf(outfile, "\n");
+  fprintf(outfile, "%s%s%s: %s\n", ansi_esc("\033[1;34m"), nv->name,
+          ansi_escend(), nv->value);
 }
 } // namespace
 namespace {
@@ -291,7 +297,7 @@ void print_frame(print_type ptype, const nghttp2_frame *frame) {
     print_frame_attr_indent();
     fprintf(outfile, "(padlen=%zu", frame->headers.padlen);
     if (frame->hd.flags & NGHTTP2_FLAG_PRIORITY) {
-      fprintf(outfile, ", stream_id=%d, weight=%u, exclusive=%d",
+      fprintf(outfile, ", dep_stream_id=%d, weight=%u, exclusive=%d",
               frame->headers.pri_spec.stream_id, frame->headers.pri_spec.weight,
               frame->headers.pri_spec.exclusive);
     }
@@ -317,7 +323,7 @@ void print_frame(print_type ptype, const nghttp2_frame *frame) {
   case NGHTTP2_PRIORITY:
     print_frame_attr_indent();
 
-    fprintf(outfile, "(stream_id=%d, weight=%u, exclusive=%d)\n",
+    fprintf(outfile, "(dep_stream_id=%d, weight=%u, exclusive=%d)\n",
             frame->priority.pri_spec.stream_id, frame->priority.pri_spec.weight,
             frame->priority.pri_spec.exclusive);
 
@@ -365,34 +371,6 @@ void print_frame(print_type ptype, const nghttp2_frame *frame) {
     fprintf(outfile, "(window_size_increment=%d)\n",
             frame->window_update.window_size_increment);
     break;
-  case NGHTTP2_EXT_ALTSVC: {
-    print_frame_attr_indent();
-
-    auto altsvc = static_cast<const nghttp2_ext_altsvc *>(frame->ext.payload);
-
-    fprintf(outfile, "(max-age=%u, port=%u, protocol_id=", altsvc->max_age,
-            altsvc->port);
-
-    if (altsvc->protocol_id_len) {
-      fwrite(altsvc->protocol_id, altsvc->protocol_id_len, 1, outfile);
-    }
-
-    fprintf(outfile, ", host=");
-
-    if (altsvc->host_len) {
-      fwrite(altsvc->host, altsvc->host_len, 1, outfile);
-    }
-
-    fprintf(outfile, ", origin=");
-
-    if (altsvc->origin_len) {
-      fwrite(altsvc->origin, altsvc->origin_len, 1, outfile);
-    }
-
-    fprintf(outfile, ")\n");
-
-    break;
-  }
   default:
     break;
   }
@@ -408,8 +386,11 @@ int verbose_on_header_callback(nghttp2_session *session,
                    namelen, valuelen};
 
   print_timer();
-  fprintf(outfile, " recv (stream_id=%d, noind=%d) ", frame->hd.stream_id,
-          (flags & NGHTTP2_NV_FLAG_NO_INDEX) != 0);
+  fprintf(outfile, " recv (stream_id=%d", frame->hd.stream_id);
+  if (flags & NGHTTP2_NV_FLAG_NO_INDEX) {
+    fprintf(outfile, ", sensitive");
+  }
+  fprintf(outfile, ") ");
 
   print_nv(&nv);
   fflush(outfile);
@@ -429,10 +410,11 @@ int verbose_on_frame_recv_callback(nghttp2_session *session,
 
 int verbose_on_invalid_frame_recv_callback(nghttp2_session *session,
                                            const nghttp2_frame *frame,
-                                           uint32_t error_code,
+                                           int lib_error_code,
                                            void *user_data) {
   print_timer();
-  fprintf(outfile, " [INVALID; status=%s] recv ", strstatus(error_code));
+  fprintf(outfile, " [INVALID; error=%s] recv ",
+          nghttp2_strerror(lib_error_code));
   print_frame(PRINT_RECV, frame);
   fflush(outfile);
   return 0;
@@ -482,7 +464,7 @@ ssize_t deflate_data(uint8_t *out, size_t outlen, const uint8_t *in,
                      size_t inlen) {
   int rv;
   z_stream zst;
-  uint8_t temp_out[8192];
+  uint8_t temp_out[8_k];
   auto temp_outlen = sizeof(temp_out);
 
   zst.next_in = Z_NULL;

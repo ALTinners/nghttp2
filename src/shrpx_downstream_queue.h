@@ -27,50 +27,77 @@
 
 #include "shrpx.h"
 
-#include <stdint.h>
-
+#include <cinttypes>
 #include <map>
+#include <set>
 #include <memory>
+
+#include "template.h"
+
+using namespace nghttp2;
 
 namespace shrpx {
 
 class Downstream;
 
+// Link entry in HostEntry.blocked and downstream because downstream
+// could be deleted in anytime and we'd like to find Downstream in
+// O(1).  Downstream has field to link back to this object.
+struct BlockedLink {
+  Downstream *downstream;
+  BlockedLink *dlnext, *dlprev;
+};
+
 class DownstreamQueue {
 public:
-  DownstreamQueue();
+  struct HostEntry {
+    // Set of stream ID that blocked by conn_max_per_host_.
+    DList<BlockedLink> blocked;
+    // The number of connections currently made to this host.
+    size_t num_active;
+    HostEntry();
+  };
+
+  using HostEntryMap = std::map<std::string, HostEntry>;
+
+  // conn_max_per_host == 0 means no limit for downstream connection.
+  DownstreamQueue(size_t conn_max_per_host = 0, bool unified_host = true);
   ~DownstreamQueue();
+  // Add |downstream| to this queue.  This is entry point for
+  // Downstream object.
   void add_pending(std::unique_ptr<Downstream> downstream);
-  void add_failure(std::unique_ptr<Downstream> downstream);
-  void add_active(std::unique_ptr<Downstream> downstream);
-  // Removes |downstream| from either pending_downstreams_,
-  // active_downstreams_ or failure_downstreams_ and returns it
-  // wrapped in std::unique_ptr.
-  std::unique_ptr<Downstream> remove(int32_t stream_id);
-  // Finds Downstream object denoted by |stream_id| either in
-  // pending_downstreams_, active_downstreams_ or
-  // failure_downstreams_.
-  Downstream *find(int32_t stream_id);
-  // Returns the number of active Downstream objects.
-  size_t num_active() const;
-  // Returns true if pending_downstreams_ is empty.
-  bool pending_empty() const;
-  // Pops first Downstream object in pending_downstreams_ and returns
-  // it.
-  std::unique_ptr<Downstream> pop_pending();
-  // Returns first Downstream object in pending_downstreams_.  This
-  // does not pop the first one.  If queue is empty, returns nullptr.
-  Downstream *pending_top() const;
-  const std::map<int32_t, std::unique_ptr<Downstream>> &
-  get_active_downstreams() const;
+  // Set |downstream| to failure state, which means that downstream
+  // failed to connect to backend.
+  void mark_failure(Downstream *downstream);
+  // Set |downstream| to active state, which means that downstream
+  // connection has started.
+  void mark_active(Downstream *downstream);
+  // Set |downstream| to blocked state, which means that download
+  // connection was blocked because conn_max_per_host_ limit.
+  void mark_blocked(Downstream *downstream);
+  // Returns true if we can make downstream connection to given
+  // |host|.
+  bool can_activate(const std::string &host) const;
+  // Removes and frees |downstream| object.  If |downstream| is in
+  // Downstream::DISPATCH_ACTIVE, this function may return Downstream
+  // object with the same target host in Downstream::DISPATCH_BLOCKED
+  // if its connection is now not blocked by conn_max_per_host_ limit.
+  Downstream *remove_and_get_blocked(Downstream *downstream);
+  Downstream *get_downstreams() const;
+  HostEntry &find_host_entry(const std::string &host);
+  const std::string &make_host_key(const std::string &host) const;
+  const std::string &make_host_key(Downstream *downstream) const;
 
 private:
-  // Downstream objects, not processed yet
-  std::map<int32_t, std::unique_ptr<Downstream>> pending_downstreams_;
-  // Downstream objects in use, consuming downstream concurrency limit
-  std::map<int32_t, std::unique_ptr<Downstream>> active_downstreams_;
-  // Downstream objects, failed to connect to downstream server
-  std::map<int32_t, std::unique_ptr<Downstream>> failure_downstreams_;
+  // Per target host structure to keep track of the number of
+  // connections to the same host.
+  std::map<std::string, HostEntry> host_entries_;
+  DList<Downstream> downstreams_;
+  // Maximum number of concurrent connections to the same host.
+  size_t conn_max_per_host_;
+  // true if downstream host is treated as the same.  Used for reverse
+  // proxying.
+  bool unified_host_;
 };
 
 } // namespace shrpx

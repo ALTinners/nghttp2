@@ -24,7 +24,13 @@
  */
 #include "nghttp2_config.h"
 
+#ifdef __sgi
+#define daemon _daemonize
+#endif
+
+#ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#endif // HAVE_UNISTD_H
 #include <signal.h>
 #include <getopt.h>
 
@@ -53,9 +59,9 @@ int parse_push_config(Config &config, const char *optarg) {
   if (eq == NULL) {
     return -1;
   }
-  auto paths = std::vector<std::string>();
+  auto &paths = config.push[std::string(optarg, eq)];
   auto optarg_end = optarg + strlen(optarg);
-  const char *i = eq + 1;
+  auto i = eq + 1;
   for (;;) {
     const char *j = strchr(i, ',');
     if (j == NULL) {
@@ -68,7 +74,7 @@ int parse_push_config(Config &config, const char *optarg) {
     i = j;
     ++i;
   }
-  config.push[std::string(optarg, eq)] = std::move(paths);
+
   return 0;
 }
 } // namespace
@@ -81,73 +87,105 @@ void print_version(std::ostream &out) {
 
 namespace {
 void print_usage(std::ostream &out) {
-  out << "Usage: nghttpd [OPTION]... <PORT> <PRIVATE_KEY> <CERT>\n"
-      << "  or:  nghttpd --no-tls [OPTION]... <PORT>\n"
+  out << "Usage: nghttpd [OPTION]... <PORT> [<PRIVATE_KEY> <CERT>]\n"
       << "HTTP/2 experimental server" << std::endl;
 }
 } // namespace
 
 namespace {
 void print_help(std::ostream &out) {
+  Config config;
   print_usage(out);
   out << R"(
-  <PORT>             Specify listening port number.
-  <PRIVATE_KEY>      Set  path  to  server's  private  key.   Required
-                     unless --no-tls is specified.
-  <CERT>             Set  path  to   server's  certificate.   Required
-                     unless --no-tls is specified.
+  <PORT>      Specify listening port number.
+  <PRIVATE_KEY>
+              Set  path  to  server's private  key.   Required  unless
+              --no-tls is specified.
+  <CERT>      Set  path  to  server's  certificate.   Required  unless
+              --no-tls is specified.
 Options:
-  -D, --daemon       Run in a background.  If  -D is used, the current
-                     working directory  is changed to  '/'.  Therefore
-                     if  this  option  is  used,  -d  option  must  be
-                     specified.
+  -a, --address=<ADDR>
+              The address to bind to.  If not specified the default IP
+              address determined by getaddrinfo is used.
+  -D, --daemon
+              Run in a background.  If -D is used, the current working
+              directory is  changed to '/'.  Therefore  if this option
+              is used, -d option must be specified.
   -V, --verify-client
-                     The  server sends  a client  certificate request.
-                     If the  client did not return  a certificate, the
-                     handshake is terminated.   Currently, this option
-                     just requests  a client certificate and  does not
-                     verify it.
+              The server  sends a client certificate  request.  If the
+              client did  not return  a certificate, the  handshake is
+              terminated.   Currently,  this  option just  requests  a
+              client certificate and does not verify it.
   -d, --htdocs=<PATH>
-                     Specify  document root.   If this  option is  not
-                     specified,  the  document  root  is  the  current
-                     working directory.
-  -v, --verbose      Print  debug   information  such   as  reception/
-                     transmission of frames and name/value pairs.
-  --no-tls           Disable SSL/TLS.
-  -c, --header-table-size=<N>
-                     Specify decoder header table size.
-  --color            Force colored log output.
+              Specify document root.  If this option is not specified,
+              the document root is the current working directory.
+  -v, --verbose
+              Print debug information  such as reception/ transmission
+              of frames and name/value pairs.
+  --no-tls    Disable SSL/TLS.
+  -c, --header-table-size=<SIZE>
+              Specify decoder header table size.
+  --color     Force colored log output.
   -p, --push=<PATH>=<PUSH_PATH,...>
-                     Push  resources   <PUSH_PATH>s  when   <PATH>  is
-                     requested.  This option can be used repeatedly to
-                     specify multiple push configurations.  <PATH> and
-                     <PUSH_PATH>s are relative  to document root.  See
-                     --htdocs    option.      Example:    -p/=/foo.png
-                     -p/doc=/bar.css
-  -b, --padding=<N>  Add  at most  <N>  bytes to  a  frame payload  as
-                     padding.  Specify 0 to disable padding.
-  -n, --workers=<CORE>
-                     Set the number of worker threads.
-                     Default: 1
-  -e, --error-gzip   Make error response gzipped.
+              Push  resources <PUSH_PATH>s  when <PATH>  is requested.
+              This option  can be used repeatedly  to specify multiple
+              push  configurations.    <PATH>  and   <PUSH_PATH>s  are
+              relative  to   document  root.   See   --htdocs  option.
+              Example: -p/=/foo.png -p/doc=/bar.css
+  -b, --padding=<N>
+              Add at  most <N>  bytes to a  frame payload  as padding.
+              Specify 0 to disable padding.
+  -m, --max-concurrent-streams=<N>
+              Set the maximum number of  the concurrent streams in one
+              HTTP/2 session.
+              Default: )" << config.max_concurrent_streams << R"(
+  -n, --workers=<N>
+              Set the number of worker threads.
+              Default: 1
+  -e, --error-gzip
+              Make error response gzipped.
   --dh-param-file=<PATH>
-                     Path to  file that contains DH  parameters in PEM
-                     format.  Without  this option, DHE  cipher suites
-                     are not available.
-  --early-response   Start  sending response  when request  HEADERS is
-                     received,   rather  than   complete  request   is
-                     received.
-  --version          Display version information and exit.
-  -h, --help         Display this help and exit.)" << std::endl;
+              Path to file that contains  DH parameters in PEM format.
+              Without  this   option,  DHE   cipher  suites   are  not
+              available.
+  --early-response
+              Start sending response when request HEADERS is received,
+              rather than complete request is received.
+  --trailer=<HEADER>
+              Add a trailer  header to a response.   <HEADER> must not
+              include pseudo header field  (header field name starting
+              with ':').  The  trailer is sent only if  a response has
+              body part.  Example: --trailer 'foo: bar'.
+  --hexdump   Display the  incoming traffic in  hexadecimal (Canonical
+              hex+ASCII display).  If SSL/TLS  is used, decrypted data
+              are used.
+  --echo-upload
+              Send back uploaded content if method is POST or PUT.
+  --version   Display version information and exit.
+  -h, --help  Display this help and exit.
+
+--
+
+  The <SIZE> argument is an integer and an optional unit (e.g., 10K is
+  10 * 1024).  Units are K, M and G (powers of 1024).)" << std::endl;
 }
 } // namespace
 
 int main(int argc, char **argv) {
+#ifndef NOTHREADS
+  ssl::LibsslGlobalLock lock;
+#endif // NOTHREADS
+  SSL_load_error_strings();
+  SSL_library_init();
+  OpenSSL_add_all_algorithms();
+  OPENSSL_config(nullptr);
+
   Config config;
   bool color = false;
   while (1) {
     static int flag = 0;
     static option long_options[] = {
+        {"address", required_argument, nullptr, 'a'},
         {"daemon", no_argument, nullptr, 'D'},
         {"htdocs", required_argument, nullptr, 'd'},
         {"help", no_argument, nullptr, 'h'},
@@ -156,6 +194,7 @@ int main(int argc, char **argv) {
         {"header-table-size", required_argument, nullptr, 'c'},
         {"push", required_argument, nullptr, 'p'},
         {"padding", required_argument, nullptr, 'b'},
+        {"max-concurrent-streams", required_argument, nullptr, 'm'},
         {"workers", required_argument, nullptr, 'n'},
         {"error-gzip", no_argument, nullptr, 'e'},
         {"no-tls", no_argument, &flag, 1},
@@ -163,15 +202,21 @@ int main(int argc, char **argv) {
         {"version", no_argument, &flag, 3},
         {"dh-param-file", required_argument, &flag, 4},
         {"early-response", no_argument, &flag, 5},
+        {"trailer", required_argument, &flag, 6},
+        {"hexdump", no_argument, &flag, 7},
+        {"echo-upload", no_argument, &flag, 8},
         {nullptr, 0, nullptr, 0}};
     int option_index = 0;
-    int c =
-        getopt_long(argc, argv, "DVb:c:d:ehn:p:v", long_options, &option_index);
+    int c = getopt_long(argc, argv, "DVb:c:d:ehm:n:p:va:", long_options,
+                        &option_index);
     char *end;
     if (c == -1) {
       break;
     }
     switch (c) {
+    case 'a':
+      config.address = optarg;
+      break;
     case 'D':
       config.daemon = true;
       break;
@@ -187,6 +232,16 @@ int main(int argc, char **argv) {
     case 'e':
       config.error_gzip = true;
       break;
+    case 'm': {
+      // max-concurrent-streams option
+      auto n = util::parse_uint(optarg);
+      if (n == -1) {
+        std::cerr << "-m: invalid argument: " << optarg << std::endl;
+        exit(EXIT_FAILURE);
+      }
+      config.max_concurrent_streams = n;
+      break;
+    }
     case 'n':
 #ifdef NOTHREADS
       std::cerr << "-n: WARNING: Threading disabled at build time, "
@@ -208,8 +263,8 @@ int main(int argc, char **argv) {
       break;
     case 'c':
       errno = 0;
-      config.header_table_size = strtol(optarg, &end, 10);
-      if (errno == ERANGE || *end != '\0') {
+      config.header_table_size = util::parse_uint_with_unit(optarg);
+      if (config.header_table_size == -1) {
         std::cerr << "-c: Bad option value: " << optarg << std::endl;
         exit(EXIT_FAILURE);
       }
@@ -244,6 +299,38 @@ int main(int argc, char **argv) {
         // early-response
         config.early_response = true;
         break;
+      case 6: {
+        // trailer option
+        auto header = optarg;
+        auto value = strchr(optarg, ':');
+        if (!value) {
+          std::cerr << "--trailer: invalid header: " << optarg << std::endl;
+          exit(EXIT_FAILURE);
+        }
+        *value = 0;
+        value++;
+        while (isspace(*value)) {
+          value++;
+        }
+        if (*value == 0) {
+          // This could also be a valid case for suppressing a header
+          // similar to curl
+          std::cerr << "--trailer: invalid header - value missing: " << optarg
+                    << std::endl;
+          exit(EXIT_FAILURE);
+        }
+        config.trailer.emplace_back(header, value, false);
+        util::inp_strlower(config.trailer.back().name);
+        break;
+      }
+      case 7:
+        // hexdump option
+        config.hexdump = true;
+        break;
+      case 8:
+        // echo-upload option
+        config.echo_upload = true;
+        break;
       }
       break;
     default:
@@ -269,7 +356,11 @@ int main(int argc, char **argv) {
       std::cerr << "-d option must be specified when -D is used." << std::endl;
       exit(EXIT_FAILURE);
     }
+#ifdef __sgi
+    if (daemon(0, 0, 0, 0) == -1) {
+#else
     if (daemon(0, 0) == -1) {
+#endif
       perror("daemon");
       exit(EXIT_FAILURE);
     }
@@ -280,22 +371,16 @@ int main(int argc, char **argv) {
 
   set_color_output(color || isatty(fileno(stdout)));
 
-  struct sigaction act;
-  memset(&act, 0, sizeof(struct sigaction));
+  struct sigaction act {};
   act.sa_handler = SIG_IGN;
   sigaction(SIGPIPE, &act, nullptr);
-  OPENSSL_config(nullptr);
-  OpenSSL_add_all_algorithms();
-  SSL_load_error_strings();
-  SSL_library_init();
-#ifndef NOTHREADS
-  ssl::LibsslGlobalLock lock;
-#endif // NOTHREADS
 
   reset_timer();
 
   HttpServer server(&config);
-  server.run();
+  if (server.run() != 0) {
+    exit(EXIT_FAILURE);
+  }
   return 0;
 }
 

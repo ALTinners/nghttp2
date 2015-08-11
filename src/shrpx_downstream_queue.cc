@@ -25,115 +25,147 @@
 #include "shrpx_downstream_queue.h"
 
 #include <cassert>
+#include <limits>
 
 #include "shrpx_downstream.h"
 
 namespace shrpx {
 
-DownstreamQueue::DownstreamQueue() {}
+DownstreamQueue::HostEntry::HostEntry() : num_active(0) {}
 
-DownstreamQueue::~DownstreamQueue() {}
+DownstreamQueue::DownstreamQueue(size_t conn_max_per_host, bool unified_host)
+    : conn_max_per_host_(conn_max_per_host == 0
+                             ? std::numeric_limits<size_t>::max()
+                             : conn_max_per_host),
+      unified_host_(unified_host) {}
+
+DownstreamQueue::~DownstreamQueue() {
+  dlist_delete_all(downstreams_);
+  for (auto &p : host_entries_) {
+    auto &ent = p.second;
+    dlist_delete_all(ent.blocked);
+  }
+}
 
 void DownstreamQueue::add_pending(std::unique_ptr<Downstream> downstream) {
-  auto stream_id = downstream->get_stream_id();
-  pending_downstreams_[stream_id] = std::move(downstream);
+  downstream->set_dispatch_state(Downstream::DISPATCH_PENDING);
+  downstreams_.append(downstream.release());
 }
 
-void DownstreamQueue::add_failure(std::unique_ptr<Downstream> downstream) {
-  auto stream_id = downstream->get_stream_id();
-  failure_downstreams_[stream_id] = std::move(downstream);
+void DownstreamQueue::mark_failure(Downstream *downstream) {
+  downstream->set_dispatch_state(Downstream::DISPATCH_FAILURE);
 }
 
-void DownstreamQueue::add_active(std::unique_ptr<Downstream> downstream) {
-  auto stream_id = downstream->get_stream_id();
-  active_downstreams_[stream_id] = std::move(downstream);
+DownstreamQueue::HostEntry &
+DownstreamQueue::find_host_entry(const std::string &host) {
+  auto itr = host_entries_.find(host);
+  if (itr == std::end(host_entries_)) {
+#ifdef HAVE_STD_MAP_EMPLACE
+    std::tie(itr, std::ignore) = host_entries_.emplace(host, HostEntry());
+#else  // !HAVE_STD_MAP_EMPLACE
+    // for g++-4.7
+    std::tie(itr, std::ignore) =
+        host_entries_.insert(std::make_pair(host, HostEntry()));
+#endif // !HAVE_STD_MAP_EMPLACE
+  }
+  return (*itr).second;
 }
 
-std::unique_ptr<Downstream> DownstreamQueue::remove(int32_t stream_id) {
-  auto kv = pending_downstreams_.find(stream_id);
-
-  if (kv != std::end(pending_downstreams_)) {
-    auto downstream = std::move((*kv).second);
-    pending_downstreams_.erase(kv);
-    return downstream;
-  }
-
-  kv = active_downstreams_.find(stream_id);
-
-  if (kv != std::end(active_downstreams_)) {
-    auto downstream = std::move((*kv).second);
-    active_downstreams_.erase(kv);
-    return downstream;
-  }
-
-  kv = failure_downstreams_.find(stream_id);
-
-  if (kv != std::end(failure_downstreams_)) {
-    auto downstream = std::move((*kv).second);
-    failure_downstreams_.erase(kv);
-    return downstream;
-  }
-
-  return nullptr;
+const std::string &
+DownstreamQueue::make_host_key(const std::string &host) const {
+  static std::string empty_key;
+  return unified_host_ ? empty_key : host;
 }
 
-Downstream *DownstreamQueue::find(int32_t stream_id) {
-  auto kv = pending_downstreams_.find(stream_id);
-
-  if (kv != std::end(pending_downstreams_)) {
-    return (*kv).second.get();
-  }
-
-  kv = active_downstreams_.find(stream_id);
-
-  if (kv != std::end(active_downstreams_)) {
-    return (*kv).second.get();
-  }
-
-  kv = failure_downstreams_.find(stream_id);
-
-  if (kv != std::end(failure_downstreams_)) {
-    return (*kv).second.get();
-  }
-
-  return nullptr;
+const std::string &
+DownstreamQueue::make_host_key(Downstream *downstream) const {
+  return make_host_key(downstream->get_request_http2_authority());
 }
 
-std::unique_ptr<Downstream> DownstreamQueue::pop_pending() {
-  auto i = std::begin(pending_downstreams_);
+void DownstreamQueue::mark_active(Downstream *downstream) {
+  auto &ent = find_host_entry(make_host_key(downstream));
+  ++ent.num_active;
 
-  if (i == std::end(pending_downstreams_)) {
+  downstream->set_dispatch_state(Downstream::DISPATCH_ACTIVE);
+}
+
+void DownstreamQueue::mark_blocked(Downstream *downstream) {
+  auto &ent = find_host_entry(make_host_key(downstream));
+
+  downstream->set_dispatch_state(Downstream::DISPATCH_BLOCKED);
+
+  auto link = new BlockedLink{};
+  downstream->attach_blocked_link(link);
+  ent.blocked.append(link);
+}
+
+bool DownstreamQueue::can_activate(const std::string &host) const {
+  auto itr = host_entries_.find(make_host_key(host));
+  if (itr == std::end(host_entries_)) {
+    return true;
+  }
+  auto &ent = (*itr).second;
+  return ent.num_active < conn_max_per_host_;
+}
+
+namespace {
+bool remove_host_entry_if_empty(const DownstreamQueue::HostEntry &ent,
+                                DownstreamQueue::HostEntryMap &host_entries,
+                                const std::string &host) {
+  if (ent.blocked.empty() && ent.num_active == 0) {
+    host_entries.erase(host);
+    return true;
+  }
+  return false;
+}
+} // namespace
+
+Downstream *DownstreamQueue::remove_and_get_blocked(Downstream *downstream) {
+  // Delete downstream when this function returns.
+  auto delptr = std::unique_ptr<Downstream>(downstream);
+
+  downstreams_.remove(downstream);
+
+  auto &host = make_host_key(downstream);
+  auto &ent = find_host_entry(host);
+
+  if (downstream->get_dispatch_state() == Downstream::DISPATCH_ACTIVE) {
+    --ent.num_active;
+  } else {
+    // For those downstreams deleted while in blocked state
+    auto link = downstream->detach_blocked_link();
+    if (link) {
+      ent.blocked.remove(link);
+      delete link;
+    }
+  }
+
+  if (remove_host_entry_if_empty(ent, host_entries_, host)) {
     return nullptr;
   }
 
-  auto downstream = std::move((*i).second);
-
-  pending_downstreams_.erase(i);
-
-  return downstream;
-}
-
-Downstream *DownstreamQueue::pending_top() const {
-  auto i = std::begin(pending_downstreams_);
-
-  if (i == std::end(pending_downstreams_)) {
+  if (ent.num_active >= conn_max_per_host_) {
     return nullptr;
   }
 
-  return (*i).second.get();
+  auto link = ent.blocked.head;
+
+  if (!link) {
+    return nullptr;
+  }
+
+  auto next_downstream = link->downstream;
+  auto link2 = next_downstream->detach_blocked_link();
+  assert(link2 == link);
+  ent.blocked.remove(link);
+  delete link;
+  remove_host_entry_if_empty(ent, host_entries_, host);
+
+  return next_downstream;
 }
 
-size_t DownstreamQueue::num_active() const {
-  return active_downstreams_.size();
-}
-
-bool DownstreamQueue::pending_empty() const {
-  return pending_downstreams_.empty();
-}
-
-const std::map<int32_t, std::unique_ptr<Downstream>> &
-DownstreamQueue::get_active_downstreams() const {
-  return active_downstreams_;
+Downstream *DownstreamQueue::get_downstreams() const {
+  return downstreams_.head;
 }
 
 } // namespace shrpx

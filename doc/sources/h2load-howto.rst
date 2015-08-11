@@ -50,8 +50,9 @@ Flow Control
 ------------
 
 HTTP/2 and SPDY/3 or later employ flow control and it may affect
-benchmarking results.  To adjust receiver flow control window size,
-there is following options:
+benchmarking results.  By default, h2load uses large enough flow
+control window, which effectively disables flow control.  To adjust
+receiver flow control window size, there are following options:
 
 ``-w``
    Sets  the stream  level  initial  window size  to
@@ -86,5 +87,5 @@ If multiple URIs are specified, they are used in round robin manner.
 
 .. note::
 
-    Please note that h2load uses sheme, host and port in the first URI
+    Please note that h2load uses scheme, host and port in the first URI
     and ignores those parts in the rest of the URIs.
