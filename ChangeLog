@@ -1,162 +1,27 @@
-commit 2aa2c942e89d58517aede46b851619a1c470488e
+commit e24e29ff1414ad7faa99af1233d92c09695498c4
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-02-16
+AuthorDate: 2014-02-26
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-02-16
+CommitDate: 2014-02-26
 
-    Bump up version number to 0.3.1 and LT revision to 2:1:0
+    Bump up version number to 0.3.2; LT revision to 2:2:0
 
-commit 5e27d67d55ce7a90cdee79a49ecb34de3436f5d8
+commit 2f23eac1792f51ebd7a6a9461c0131d69939810d
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-02-15
+AuthorDate: 2014-02-26
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-02-15
+CommitDate: 2014-02-26
 
-    Update sphinx_rtd_theme
-
-commit f25545b2dbb13dc703a65523516c2597013c8fcb
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-02-15
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-02-15
-
-    Fix doc EXTRA_DIST to include source .rst files
+    nghttp2_hd: Fail inflate immediately if ctx.bad is nonzero
     
-    Also erase generated .rst files on `make clean`.
+    Doing inflation after error produces invalid results, especially, if
+    it is in NGHTTP2_HD_STATE_READ_INDEX, the inflater->left could be 0,
+    which causes assertion error.  Add sanity assertion for index
 
-commit a8ed200a20bc7a71fab026377880adcd00716779
+commit b3f6664bc603c426691d23ff16c1548c89971723
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-02-15
+AuthorDate: 2014-02-26
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-02-15
+CommitDate: 2014-02-26
 
-    doc: Add man pages for nghttp, nghttpd and nghttpx
-    
-    Patch from Dave Beckett
-
-commit be5f04f130eedbcd64524905e54774b91743a3f3
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-02-13
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-02-13
-
-    Update .gitignore
-
-commit 01ca4373a1e09e686e035fea9f26123f2c83847f
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-02-12
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-02-13
-
-    Out-of-tree build for sphinx documents
-    
-    The only drawback is that page source only contains include
-    directive. We disabled page source for now.
-
-commit 2d8c2031956f227a625f670cee25f9e6924844a5
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-02-13
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-02-13
-
-    Fix inflater memory leak
-
-commit 39aaad5ad8b235558c28ed7eb1f28f4b4955c9fc
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-02-11
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-02-11
-
-    Fix out-of-tree build for python
-
-commit d3fb352c0e2d5b2dd2cc0cc9f127b4ae1bba897a
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-02-11
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-02-11
-
-    Fix invalid memory use
-
-commit 40f04fbe036b1f9aea7c88f864978c8386b0de97
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-02-11
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-02-11
-
-    Fix incoming CONTINUATION payload length is not considered in callback
-
-commit cacf4ecf2657c5cc90b47f46a31602141a83e63b
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-02-11
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-02-11
-
-    Fix premature header block is not treated as connection error
-
-commit cbbecfeb41f37a36fbce08687a3fbfd0d2fc6876
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-02-11
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-02-11
-
-    Fix broken session_detect_idle_stream()
-
-commit cdcea8045f677eae3332703ebcb470a8453a06f9
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-02-09
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-02-09
-
-    Include doc theme without recursive Makefiles
-
-commit a4070be5180f1ab2c4edd9fbcff5b77e11494fe8
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-02-09
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-02-09
-
-    Fix on_frame_recv_callback called multiple times if CONTINUATION is involved
-
-commit d495451795c9aa33aeea20ade37986b4669b4f0b
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-02-08
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-02-08
-
-    Add missing nghttp2.h.rst and nghttp2ver.h.rst to EXTRA_DIST
-
-commit adf17cd839e504f66eb949042d8d7c2718afef3d
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-02-08
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-02-08
-
-    Remove sphinx_rtd_theme/static/font
-    
-    Which was moved to spinx_rtd_theme/static/fonts
-
-commit 128eb612387dd261eefd6ba92d1222d79fa501f9
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-02-08
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-02-08
-
-    Include sphinx_rtd_theme to distribution
-    
-    Patch from Dave Beckett
-
-commit 9d8cf9de5d4e6b1d28320391cd3eb72cdd080a86
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-02-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-02-05
-
-    Update doc
-
-commit fa7b76eb33096592e647ff1602703cf208078cf3
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-02-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-02-05
-
-    Bump up version number to 0.4.0-DEV
+    nghttp2_hd: Fix integer decoding bug
