@@ -478,6 +478,15 @@ private:
 
 bool numeric_host(const char *hostname);
 
+// Opens |path| with O_APPEND enabled.  If file does not exist, it is
+// created first.  This function returns file descriptor referring the
+// opened file if it succeeds, or -1.
+int reopen_log_file(const char *path);
+
+// Returns ASCII dump of |data| of length |len|.  Only ASCII printable
+// characters are preserved.  Other characters are replaced with ".".
+std::string ascii_dump(const uint8_t *data, size_t len);
+
 } // namespace util
 
 } // namespace nghttp2

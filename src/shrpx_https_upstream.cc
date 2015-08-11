@@ -35,7 +35,7 @@
 #include "shrpx_http.h"
 #include "shrpx_config.h"
 #include "shrpx_error.h"
-#include "shrpx_accesslog.h"
+#include "shrpx_worker_config.h"
 #include "http2.h"
 #include "util.h"
 
@@ -150,7 +150,6 @@ int htp_hdrs_completecb(http_parser *htp)
 
   downstream->set_request_connection_close(!http_should_keep_alive(htp));
 
-  downstream->check_upgrade_request();
   if(LOG_ENABLED(INFO)) {
     std::stringstream ss;
     ss << downstream->get_request_method() << " "
@@ -164,6 +163,15 @@ int htp_hdrs_completecb(http_parser *htp)
     }
     ULOG(INFO, upstream) << "HTTP request headers\n" << ss.str();
   }
+
+  downstream->normalize_request_headers();
+  auto& nva = downstream->get_request_headers();
+
+  auto user_agent = http2::get_header(nva, "user-agent");
+
+  downstream->set_request_user_agent(http2::value_to_str(user_agent));
+
+  downstream->inspect_http1_request();
 
   if(get_config()->client_proxy &&
      downstream->get_request_method() != "CONNECT") {
@@ -359,7 +367,7 @@ int HttpsUpstream::on_read()
       }
 
       if(handler->get_http2_upgrade_allowed() &&
-         downstream->http2_upgrade_request()) {
+         downstream->get_http2_upgrade_request()) {
 
         if(handler->perform_http2_upgrade(this) != 0) {
           return -1;
@@ -657,6 +665,12 @@ void https_downstream_eventcb(bufferevent *bev, short events, void *ptr)
 int HttpsUpstream::error_reply(unsigned int status_code)
 {
   auto html = http::create_error_html(status_code);
+  auto downstream = get_downstream();
+
+  if(downstream) {
+    downstream->set_response_http_status(status_code);
+  }
+
   std::string header;
   header.reserve(512);
   header += "HTTP/1.1 ";
@@ -676,14 +690,11 @@ int HttpsUpstream::error_reply(unsigned int status_code)
     ULOG(FATAL, this) << "evbuffer_add() failed";
     return -1;
   }
-  auto downstream = get_downstream();
+
   if(downstream) {
     downstream->set_response_state(Downstream::MSG_COMPLETE);
   }
-  if(get_config()->accesslog) {
-    upstream_response(this->get_client_handler()->get_ipaddr(), status_code,
-                      downstream);
-  }
+
   return 0;
 }
 
@@ -810,7 +821,7 @@ int HttpsUpstream::on_downstream_header_complete(Downstream *downstream)
   if(LOG_ENABLED(INFO)) {
     const char *hdrp;
     std::string nhdrs;
-    if(get_config()->tty) {
+    if(worker_config.errorlog_tty) {
       nhdrs = http::colorizeHeaders(hdrs.c_str());
       hdrp = nhdrs.c_str();
     } else {
@@ -823,10 +834,14 @@ int HttpsUpstream::on_downstream_header_complete(Downstream *downstream)
     ULOG(FATAL, this) << "evbuffer_add() failed";
     return -1;
   }
-  if(get_config()->accesslog) {
-    upstream_response(this->get_client_handler()->get_ipaddr(),
-                      downstream->get_response_http_status(), downstream);
+
+  if(downstream->get_upgraded()) {
+    upstream_accesslog(this->get_client_handler()->get_ipaddr(),
+                       downstream->get_response_http_status(), downstream);
   }
+
+  downstream->clear_response_headers();
+
   return 0;
 }
 
@@ -875,12 +890,25 @@ int HttpsUpstream::on_downstream_body_complete(Downstream *downstream)
   if(LOG_ENABLED(INFO)) {
     DLOG(INFO, downstream) << "HTTP response completed";
   }
+
+  if(!downstream->get_upgraded()) {
+    upstream_accesslog(get_client_handler()->get_ipaddr(),
+                       downstream->get_response_http_status(),
+                       downstream);
+  }
+
   if(downstream->get_request_connection_close() ||
      downstream->get_response_connection_close()) {
     auto handler = get_client_handler();
     handler->set_should_close_after_write(true);
   }
   return 0;
+}
+
+int HttpsUpstream::on_downstream_abort_request(Downstream *downstream,
+                                               unsigned int status_code)
+{
+  return error_reply(status_code);
 }
 
 } // namespace shrpx

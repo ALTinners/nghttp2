@@ -35,6 +35,7 @@
 #include <cstdio>
 #include <vector>
 #include <memory>
+#include <atomic>
 
 #include <event.h>
 #include <openssl/ssl.h>
@@ -70,7 +71,10 @@ extern const char SHRPX_OPT_FRONTEND_READ_TIMEOUT[];
 extern const char SHRPX_OPT_FRONTEND_WRITE_TIMEOUT[];
 extern const char SHRPX_OPT_BACKEND_READ_TIMEOUT[];
 extern const char SHRPX_OPT_BACKEND_WRITE_TIMEOUT[];
-extern const char SHRPX_OPT_ACCESSLOG[];
+extern const char SHRPX_OPT_ACCESSLOG_FILE[];
+extern const char SHRPX_OPT_ACCESSLOG_SYSLOG[];
+extern const char SHRPX_OPT_ERRORLOG_FILE[];
+extern const char SHRPX_OPT_ERRORLOG_SYSLOG[];
 extern const char SHRPX_OPT_BACKEND_KEEP_ALIVE_TIMEOUT[];
 extern const char SHRPX_OPT_FRONTEND_HTTP2_WINDOW_BITS[];
 extern const char SHRPX_OPT_BACKEND_HTTP2_WINDOW_BITS[];
@@ -80,11 +84,9 @@ extern const char SHRPX_OPT_FRONTEND_NO_TLS[];
 extern const char SHRPX_OPT_BACKEND_NO_TLS[];
 extern const char SHRPX_OPT_PID_FILE[];
 extern const char SHRPX_OPT_USER[];
-extern const char SHRPX_OPT_SYSLOG[];
 extern const char SHRPX_OPT_SYSLOG_FACILITY[];
 extern const char SHRPX_OPT_BACKLOG[];
 extern const char SHRPX_OPT_CIPHERS[];
-extern const char SHRPX_OPT_HONOR_CIPHER_ORDER[];
 extern const char SHRPX_OPT_CLIENT[];
 extern const char SHRPX_OPT_INSECURE[];
 extern const char SHRPX_OPT_CACERT[];
@@ -92,10 +94,6 @@ extern const char SHRPX_OPT_BACKEND_IPV4[];
 extern const char SHRPX_OPT_BACKEND_IPV6[];
 extern const char SHRPX_OPT_BACKEND_HTTP_PROXY_URI[];
 extern const char SHRPX_OPT_BACKEND_TLS_SNI_FIELD[];
-extern const char SHRPX_OPT_READ_RATE[];
-extern const char SHRPX_OPT_READ_BURST[];
-extern const char SHRPX_OPT_WRITE_RATE[];
-extern const char SHRPX_OPT_WRITE_BURST[];
 extern const char SHRPX_OPT_WORKER_READ_RATE[];
 extern const char SHRPX_OPT_WORKER_READ_BURST[];
 extern const char SHRPX_OPT_WORKER_WRITE_RATE[];
@@ -113,6 +111,7 @@ extern const char SHRPX_OPT_FRONTEND_FRAME_DEBUG[];
 extern const char SHRPX_OPT_PADDING[];
 extern const char SHRPX_OPT_ALTSVC[];
 extern const char SHRPX_OPT_ADD_RESPONSE_HEADER[];
+extern const char SHRPX_OPT_WORKER_FRONTEND_CONNECTIONS[];
 
 union sockaddr_union {
   sockaddr sa;
@@ -153,6 +152,8 @@ struct Config {
   std::vector<std::pair<std::string, std::string>> subcerts;
   std::vector<AltSvc> altsvcs;
   std::vector<std::pair<std::string, std::string>> add_response_headers;
+  std::vector<unsigned char> alpn_prefs;
+  std::shared_ptr<std::string> cached_time;
   sockaddr_union downstream_addr;
   // binary form of http proxy host and port
   sockaddr_union downstream_http_proxy_addr;
@@ -162,41 +163,41 @@ struct Config {
   timeval downstream_read_timeout;
   timeval downstream_write_timeout;
   timeval downstream_idle_read_timeout;
-  char *host;
-  char *private_key_file;
-  char *private_key_passwd;
-  char *cert_file;
-  char *dh_param_file;
+  std::unique_ptr<char[]> host;
+  std::unique_ptr<char[]> private_key_file;
+  std::unique_ptr<char[]> private_key_passwd;
+  std::unique_ptr<char[]> cert_file;
+  std::unique_ptr<char[]> dh_param_file;
   SSL_CTX *default_ssl_ctx;
   ssl::CertLookupTree *cert_tree;
   const char *server_name;
-  char *downstream_host;
-  char *downstream_hostport;
-  char *backend_tls_sni_name;
-  char *pid_file;
-  char *conf_path;
-  char *ciphers;
-  char *cacert;
+  std::unique_ptr<char[]> downstream_host;
+  std::unique_ptr<char[]> downstream_hostport;
+  std::unique_ptr<char[]> backend_tls_sni_name;
+  std::unique_ptr<char[]> pid_file;
+  std::unique_ptr<char[]> conf_path;
+  std::unique_ptr<char[]> ciphers;
+  std::unique_ptr<char[]> cacert;
   // userinfo in http proxy URI, not percent-encoded form
-  char *downstream_http_proxy_userinfo;
+  std::unique_ptr<char[]> downstream_http_proxy_userinfo;
   // host in http proxy URI
-  char *downstream_http_proxy_host;
-  // Rate limit configuration per connection
-  ev_token_bucket_cfg *rate_limit_cfg;
+  std::unique_ptr<char[]> downstream_http_proxy_host;
   // Rate limit configuration per worker (thread)
   ev_token_bucket_cfg *worker_rate_limit_cfg;
   // list of supported NPN/ALPN protocol strings in the order of
   // preference. The each element of this list is a NULL-terminated
   // string.
-  char **npn_list;
+  std::vector<char*> npn_list;
   // list of supported SSL/TLS protocol strings. The each element of
   // this list is a NULL-terminated string.
-  char **tls_proto_list;
+  std::vector<char*> tls_proto_list;
   // Path to file containing CA certificate solely used for client
   // certificate validation
-  char *verify_client_cacert;
-  char *client_private_key_file;
-  char *client_cert_file;
+  std::unique_ptr<char[]> verify_client_cacert;
+  std::unique_ptr<char[]> client_private_key_file;
+  std::unique_ptr<char[]> client_cert_file;
+  std::unique_ptr<char[]> accesslog_file;
+  std::unique_ptr<char[]> errorlog_file;
   FILE *http2_upstream_dump_request_header;
   FILE *http2_upstream_dump_response_header;
   nghttp2_option *http2_option;
@@ -217,11 +218,11 @@ struct Config {
   size_t worker_read_burst;
   size_t worker_write_rate;
   size_t worker_write_burst;
-  // The number of elements in npn_list
-  size_t npn_list_len;
-  // The number of elements in tls_proto_list
-  size_t tls_proto_list_len;
   size_t padding;
+  size_t worker_frontend_connections;
+  // Bit mask to disable SSL/TLS protocol versions.  This will be
+  // passed to SSL_CTX_set_options().
+  long int tls_proto_mask;
   // downstream protocol; this will be determined by given options.
   shrpx_proto downstream_proto;
   int syslog_facility;
@@ -240,21 +241,18 @@ struct Config {
   bool client_proxy;
   bool add_x_forwarded_for;
   bool no_via;
-  bool accesslog;
   bool upstream_no_tls;
   bool downstream_no_tls;
-  bool syslog;
-  // This member finally decides syslog is used or not
-  bool use_syslog;
-  bool honor_cipher_order;
+  // Send accesslog to syslog, ignoring accesslog_file.
+  bool accesslog_syslog;
+  // Send errorlog to syslog, ignoring errorlog_file.
+  bool errorlog_syslog;
   bool client;
   // true if --client or --client-proxy are enabled.
   bool client_mode;
   bool insecure;
   bool backend_ipv4;
   bool backend_ipv6;
-  // true if stderr refers to a terminal.
-  bool tty;
   bool http2_no_cookie_crumbling;
   bool upstream_frame_debug;
 };
@@ -278,14 +276,18 @@ std::string read_passwd_from_file(const char *filename);
 
 // Parses comma delimited strings in |s| and returns the array of
 // pointers, each element points to the each substring in |s|.  The
-// number of elements are stored in |*outlen|.  The |s| must be comma
-// delimited list of strings.  The strings must be delimited by a
-// single comma and any white spaces around it are treated as a part
-// of protocol strings.  This function may modify |s| and the caller
-// must leave it as is after this call.  This function copies |s| and
-// first element in the return value points to it.  It is caller's
-// responsibility to deallocate its memory.
-std::unique_ptr<char*[]> parse_config_str_list(size_t *outlen, const char *s);
+// |s| must be comma delimited list of strings.  The strings must be
+// delimited by a single comma and any white spaces around it are
+// treated as a part of protocol strings.  This function may modify
+// |s| and the caller must leave it as is after this call.  This
+// function copies |s| and first element in the return value points to
+// it.  It is caller's responsibility to deallocate its memory.
+std::vector<char*> parse_config_str_list(const char *s);
+
+// Clears all elements of |list|, which is returned by
+// parse_config_str_list().  If list is not empty, list[0] is freed by
+// free(2).  After this call, list.empty() must be true.
+void clear_config_str_list(std::vector<char*>& list);
 
 // Parses header field in |optarg|.  We expect header field is formed
 // like "NAME: VALUE".  We require that NAME is non empty string.  ":"
@@ -293,9 +295,11 @@ std::unique_ptr<char*[]> parse_config_str_list(size_t *outlen, const char *s);
 // allowed.  This function returns pair of NAME and VALUE.
 std::pair<std::string, std::string> parse_header(const char *optarg);
 
-// Copies NULL-terminated string |val| to |*destp|. If |*destp| is not
-// NULL, it is freed before copying.
-void set_config_str(char **destp, const char *val);
+// Returns a copy of NULL-terminated string |val|.
+std::unique_ptr<char[]> strcopy(const char *val);
+
+// Returns a copy of val.c_str().
+std::unique_ptr<char[]> strcopy(const std::string& val);
 
 // Returns string for syslog |facility|.
 const char* str_syslog_facility(int facility);

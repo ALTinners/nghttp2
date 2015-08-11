@@ -41,12 +41,14 @@ class Upstream;
 class DownstreamConnection;
 class Http2Session;
 class HttpsUpstream;
+struct WorkerStat;
 
 class ClientHandler {
 public:
   ClientHandler(bufferevent *bev,
                 bufferevent_rate_limit_group *rate_limit_group,
-                int fd, SSL *ssl, const char *ipaddr);
+                int fd, SSL *ssl, const char *ipaddr,
+                WorkerStat *worker_stat);
   ~ClientHandler();
   int on_read();
   int on_event();
@@ -94,6 +96,8 @@ private:
   // HTTP2. Not deleted by this object.
   Http2Session *http2session_;
   SSL *ssl_;
+  event *reneg_shutdown_timerev_;
+  WorkerStat *worker_stat_;
   // The number of bytes of HTTP/2 client connection header to read
   size_t left_connhd_len_;
   int fd_;

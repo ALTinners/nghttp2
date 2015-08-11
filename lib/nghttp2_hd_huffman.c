@@ -95,7 +95,7 @@ static ssize_t huff_encode_sym(nghttp2_bufs *bufs, size_t *avail_ptr,
       *avail_ptr = nghttp2_bufs_cur_avail(bufs);
     }
   }
-  return rembits;
+  return (ssize_t)rembits;
 }
 
 size_t nghttp2_hd_huff_encode_count(const uint8_t *src, size_t len)
@@ -114,7 +114,7 @@ int nghttp2_hd_huff_encode(nghttp2_bufs *bufs,
                            const uint8_t *src, size_t srclen)
 {
   int rv;
-  int rembits = 8;
+  ssize_t rembits = 8;
   size_t i;
   size_t avail;
 
@@ -135,7 +135,7 @@ int nghttp2_hd_huff_encode(nghttp2_bufs *bufs,
     }
     rembits = huff_encode_sym(bufs, &avail, rembits, sym);
     if(rembits < 0) {
-      return rembits;
+      return (int)rembits;
     }
   }
   /* 256 is special terminal symbol, pad with its prefix */
@@ -203,5 +203,5 @@ ssize_t nghttp2_hd_huff_decode(nghttp2_hd_huff_decode_context *ctx,
   if(final && !ctx->accept) {
     return NGHTTP2_ERR_HEADER_COMP;
   }
-  return i;
+  return (ssize_t)i;
 }

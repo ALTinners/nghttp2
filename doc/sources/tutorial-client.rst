@@ -249,17 +249,22 @@ data is available to read in the bufferevent input buffer::
     static void readcb(struct bufferevent *bev, void *ptr)
     {
       http2_session_data *session_data = (http2_session_data*)ptr;
-      int rv;
+      ssize_t readlen;
       struct evbuffer *input = bufferevent_get_input(bev);
       size_t datalen = evbuffer_get_length(input);
       unsigned char *data = evbuffer_pullup(input, -1);
-      rv = nghttp2_session_mem_recv(session_data->session, data, datalen);
-      if(rv < 0) {
-        warnx("Fatal error: %s", nghttp2_strerror(rv));
+
+      readlen = nghttp2_session_mem_recv(session_data->session, data, datalen);
+      if(readlen < 0) {
+        warnx("Fatal error: %s", nghttp2_strerror((int)readlen));
         delete_http2_session_data(session_data);
         return;
       }
-      evbuffer_drain(input, rv);
+      if(evbuffer_drain(input, readlen) != 0) {
+        warnx("Fatal error: evbuffer_drain failed");
+        delete_http2_session_data(session_data);
+        return;
+      }
       if(session_send(session_data) != 0) {
         delete_http2_session_data(session_data);
         return;

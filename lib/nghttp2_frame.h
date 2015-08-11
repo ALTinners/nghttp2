@@ -45,17 +45,23 @@
 
 #define NGHTTP2_MAX_PAYLOADLEN 16383
 /* The one frame buffer length for tranmission.  We may use several of
-   them to support CONTINUATION.  To account for padding specifiers
-   (PAD_HIGH and PAD_LOW), we allocate extra 2 bytes, which saves
-   extra large memcopying. */
+   them to support CONTINUATION.  To account for Pad Length field, we
+   allocate extra 1 byte, which saves extra large memcopying. */
 #define NGHTTP2_FRAMEBUF_CHUNKLEN \
-  (NGHTTP2_FRAME_HDLEN + 2 + NGHTTP2_MAX_PAYLOADLEN)
+  (NGHTTP2_FRAME_HDLEN + 1 + NGHTTP2_MAX_PAYLOADLEN)
+
+/* Number of inbound buffer */
+#define NGHTTP2_FRAMEBUF_MAX_NUM 5
 
 /* The maximum length of DATA frame payload. */
 #define NGHTTP2_DATA_PAYLOADLEN 4096
 
+/* Maximum headers payload length, calculated in compressed form.
+   This applies to both transmission and reception. */
+#define NGHTTP2_MAX_HEADERSLEN 65536
+
 /* The number of bytes for each SETTINGS entry */
-#define NGHTTP2_FRAME_SETTINGS_ENTRY_LENGTH 5
+#define NGHTTP2_FRAME_SETTINGS_ENTRY_LENGTH 6
 
 /* The maximum header table size in SETTINGS_HEADER_TABLE_SIZE */
 #define NGHTTP2_MAX_HEADER_TABLE_SIZE ((1u << 31) - 1)
@@ -64,13 +70,12 @@
 #define NGHTTP2_PRIORITY_SPECLEN 5
 
 /* Length of fixed part in ALTSVC frame, that is the sum of fields of
-   Max-Age, Port, Reserved and PID_LEN. */
-#define NGHTTP2_ALTSVC_FIXED_PARTLEN 8
+   Max-Age, Port and Proto-Len. */
+#define NGHTTP2_ALTSVC_FIXED_PARTLEN 7
 
-/* Minimum length of ALTSVC frame.  NGHTTP2_ALTSVC_FIXED_PARTLEN +
-   HOST_LEN. */
-#define NGHTTP2_ALTSVC_MINLEN 9
-
+/* Minimum length of ALTSVC extension frame payload.
+   NGHTTP2_ALTSVC_FIXED_PARTLEN + Host-Len. */
+#define NGHTTP2_ALTSVC_MINLEN 8
 
 /* Category of frames. */
 typedef enum {
@@ -79,6 +84,11 @@ typedef enum {
   /* DATA frame */
   NGHTTP2_CAT_DATA
 } nghttp2_frame_category;
+
+/* Union of extension frame payload */
+typedef union {
+  nghttp2_ext_altsvc altsvc;
+} nghttp2_ext_frame_payload;
 
 /**
  * @struct
@@ -93,8 +103,8 @@ typedef struct {
    */
   nghttp2_data_provider data_prd;
   /**
-   * The number of bytes added as padding. This includes PAD_HIGH and
-   * PAD_LOW.
+   * The number of bytes added as padding.  This includes Pad Length
+   * field (1 byte).
    */
   size_t padlen;
   /**
@@ -169,7 +179,7 @@ int nghttp2_frame_pack_headers(nghttp2_bufs *bufs,
 /*
  * Unpacks HEADERS frame byte sequence into |frame|.  This function
  * only unapcks bytes that come before name/value header block and
- * after PAD_HIGH and PAD_LOW.
+ * after possible Pad Length field.
  *
  * This function always succeeds and returns 0.
  */
@@ -301,7 +311,7 @@ int nghttp2_frame_pack_push_promise(nghttp2_bufs *bufs,
 /*
  * Unpacks PUSH_PROMISE frame byte sequence into |frame|.  This
  * function only unapcks bytes that come before name/value header
- * block and after PAD_HIGH and PAD_LOW.
+ * block and after possible Pad Length field.
  *
  * This function returns 0 if it succeeds or one of the following
  * negative error codes:
@@ -403,6 +413,9 @@ void nghttp2_frame_unpack_window_update_payload(nghttp2_window_update *frame,
  * The caller must make sure that nghttp2_bufs_reset(bufs) is called
  * before calling this function.
  *
+ * The caller must make sure that frame->payload points to
+ * nghttp2_ext_altsvc object.
+ *
  * This function returns 0 if it succeeds or one of the following
  * negative error codes:
  *
@@ -411,7 +424,7 @@ void nghttp2_frame_unpack_window_update_payload(nghttp2_window_update *frame,
  * NGHTTP2_ERR_FRAME_SIZE_ERROR
  *     The length of the frame is too large.
  */
-int nghttp2_frame_pack_altsvc(nghttp2_bufs *bufs, nghttp2_altsvc *frame);
+int nghttp2_frame_pack_altsvc(nghttp2_bufs *bufs, nghttp2_extension *frame);
 
 
 /*
@@ -422,27 +435,20 @@ int nghttp2_frame_pack_altsvc(nghttp2_bufs *bufs, nghttp2_altsvc *frame);
  * and then |frame|.  The |var_gift_payloadlen| must be freed by
  * nghttp2_frame_altsvc_free().
  *
+ * The caller must make sure that frame->payload points to
+ * nghttp2_ext_altsvc object.
+ *
  * This function returns 0 if it succeeds or one of the following
  * negative error codes:
  *
  * NGHTTP2_ERR_FRAME_SIZE_ERROR
  *   The |var_gift_payload| does not contain required data.
  */
-int nghttp2_frame_unpack_altsvc_payload(nghttp2_altsvc *frame,
+int nghttp2_frame_unpack_altsvc_payload(nghttp2_extension *frame,
                                         const uint8_t *payload,
                                         size_t payloadlen,
                                         uint8_t *var_gift_payload,
                                         size_t var_gift_payloadlen);
-
-/*
- * Packs BLOCKED frame |frame| in wire format and store it in |bufs|.
- *
- * The caller must make sure that nghttp2_bufs_reset(bufs) is called
- * before calling this function.
- *
- * This function always returns 0.
- */
-int nghttp2_frame_pack_blocked(nghttp2_bufs *bufs, nghttp2_blocked *frame);
 
 /*
  * Initializes HEADERS frame |frame| with given values.  |frame| takes
@@ -525,7 +531,7 @@ void nghttp2_frame_window_update_free(nghttp2_window_update *frame);
    |protocol_id_len| == 0 and |host_len| + |origin_len| > 0.  If
    |protocol_id_len|, |host_len| and |origin_len| are all zero,
    |protocol_id| can be NULL. */
-void nghttp2_frame_altsvc_init(nghttp2_altsvc *frame, int32_t stream_id,
+void nghttp2_frame_altsvc_init(nghttp2_extension *frame, int32_t stream_id,
                                uint32_t max_age,
                                uint16_t port,
                                uint8_t *protocol_id,
@@ -533,18 +539,18 @@ void nghttp2_frame_altsvc_init(nghttp2_altsvc *frame, int32_t stream_id,
                                uint8_t *host, size_t host_len,
                                uint8_t *origin, size_t origin_len);
 
-void nghttp2_frame_altsvc_free(nghttp2_altsvc *frame);
-
-void nghttp2_frame_blocked_init(nghttp2_blocked *frame, int32_t stream_id);
-
-void nghttp2_frame_blocked_free(nghttp2_blocked *frame);
+/*
+ *  Frees resources used by |frame|.  This function does not free
+ *  frame->payload itself.
+ */
+void nghttp2_frame_altsvc_free(nghttp2_extension *frame);
 
 void nghttp2_frame_data_init(nghttp2_data *frame, nghttp2_private_data *pdata);
 
 /*
- * Returns the number of padding bytes after payload. The total
- * padding length is given in the |padlen|. The returned value does
- * not include the PAD_HIGH and PAD_LOW.
+ * Returns the number of padding bytes after payload.  The total
+ * padding length is given in the |padlen|.  The returned value does
+ * not include the Pad Length field.
  */
 size_t nghttp2_frame_trail_padlen(nghttp2_frame *frame, size_t padlen);
 
@@ -576,14 +582,14 @@ void nghttp2_nv_array_sort(nghttp2_nv *nva, size_t nvlen);
  *
  * The |*nva_ptr| must be freed using nghttp2_nv_array_del().
  *
- * This function returns the number of name/value pairs in |*nva_ptr|,
- * or one of the following negative error codes:
+ * This function returns 0 if it succeeds or one of the following
+ * negative error codes:
  *
  * NGHTTP2_ERR_NOMEM
  *     Out of memory.
  */
-ssize_t nghttp2_nv_array_copy(nghttp2_nv **nva_ptr,
-                              const nghttp2_nv *nva, size_t nvlen);
+int nghttp2_nv_array_copy(nghttp2_nv **nva_ptr,
+                          const nghttp2_nv *nva, size_t nvlen);
 
 /*
  * Returns nonzero if the name/value pair |a| equals to |b|. The name
@@ -606,11 +612,10 @@ void nghttp2_nv_array_del(nghttp2_nv *nva);
 int nghttp2_iv_check(const nghttp2_settings_entry *iv, size_t niv);
 
 /*
- * Sets PAD_HIGH and PAD_LOW fields, flags and adjust frame header
- * position of each buffers in |bufs|.  The padding is given in the
- * |padlen|. The |hd| is the frame header for the serialized data.
- * The |type| is used as a frame type when padding requires additional
- * buffers.
+ * Sets Pad Length field and flags and adjusts frame header position
+ * of each buffers in |bufs|.  The number of padding is given in the
+ * |padlen| including Pad Length field.  The |hd| is the frame header
+ * for the serialized data.
  *
  * This function returns 0 if it succeeds, or one of the following
  * negative error codes:
@@ -621,6 +626,6 @@ int nghttp2_iv_check(const nghttp2_settings_entry *iv, size_t niv);
  *     The length of the resulting frame is too large.
  */
 int nghttp2_frame_add_pad(nghttp2_bufs *bufs, nghttp2_frame_hd *hd,
-                          size_t padlen, nghttp2_frame_type type);
+                          size_t padlen);
 
 #endif /* NGHTTP2_FRAME_H */

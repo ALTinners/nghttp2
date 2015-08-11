@@ -36,7 +36,7 @@
 #include "shrpx_downstream_connection.h"
 #include "shrpx_config.h"
 #include "shrpx_http.h"
-#include "shrpx_accesslog.h"
+#include "shrpx_worker_config.h"
 #include "http2.h"
 #include "util.h"
 
@@ -164,7 +164,9 @@ void on_ctrl_recv_callback
     const char *scheme = nullptr;
     const char *host = nullptr;
     const char *method = nullptr;
-    const char *content_length = 0;
+    const char *content_length = nullptr;
+    const char *user_agent = nullptr;
+
     for(size_t i = 0; nv[i]; i += 2) {
       if(strcmp(nv[i], ":path") == 0) {
         path = nv[i+1];
@@ -177,6 +179,8 @@ void on_ctrl_recv_callback
       } else if(nv[i][0] != ':') {
         if(strcmp(nv[i], "content-length") == 0) {
           content_length = nv[i+1];
+        } else if(strcmp(nv[i], "user-agent") == 0) {
+          user_agent = nv[i+1];
         }
         downstream->add_request_header(nv[i], nv[i+1]);
       }
@@ -204,7 +208,15 @@ void on_ctrl_recv_callback
       downstream->set_request_path(path);
     }
 
-    downstream->check_upgrade_request();
+    if(user_agent) {
+      downstream->set_request_user_agent(user_agent);
+    }
+
+    if(!(frame->syn_stream.hd.flags & SPDYLAY_CTRL_FLAG_FIN)) {
+      downstream->set_request_http2_expect_body(true);
+    }
+
+    downstream->inspect_http2_request();
 
     if(LOG_ENABLED(INFO)) {
       std::stringstream ss;
@@ -251,11 +263,13 @@ void on_data_chunk_recv_callback(spdylay_session *session,
   auto downstream = upstream->find_downstream(stream_id);
 
   if(!downstream) {
+    upstream->handle_ign_data_chunk(len);
     return;
   }
 
   if(downstream->push_upload_data_chunk(data, len) != 0) {
     upstream->rst_stream(downstream, SPDYLAY_INTERNAL_ERROR);
+    upstream->handle_ign_data_chunk(len);
     return;
   }
 
@@ -379,7 +393,8 @@ uint32_t infer_upstream_rst_stream_status_code
 
 SpdyUpstream::SpdyUpstream(uint16_t version, ClientHandler *handler)
   : handler_(handler),
-    session_(nullptr)
+    session_(nullptr),
+    recv_ign_window_size_(0)
 {
   //handler->set_bev_cb(spdy_readcb, 0, spdy_eventcb);
   handler->set_upstream_timeouts(&get_config()->http2_upstream_read_timeout,
@@ -726,10 +741,17 @@ int SpdyUpstream::rst_stream(Downstream *downstream, int status_code)
 int SpdyUpstream::window_update(Downstream *downstream, int32_t delta)
 {
   int rv;
-  rv = spdylay_submit_window_update(session_,
-                                    downstream ?
-                                    downstream->get_stream_id() : 0,
-                                    delta);
+  int32_t stream_id;
+
+  if(downstream) {
+    stream_id = downstream->get_stream_id();
+  } else {
+    stream_id = 0;
+    recv_ign_window_size_ = 0;
+  }
+
+  rv = spdylay_submit_window_update(session_, stream_id, delta);
+
   if(rv < SPDYLAY_ERR_FATAL) {
     ULOG(FATAL, this) << "spdylay_submit_window_update() failed: "
                       << spdylay_strerror(rv);
@@ -759,6 +781,9 @@ ssize_t spdy_data_read_callback(spdylay_session *session,
      downstream->get_response_state() == Downstream::MSG_COMPLETE) {
     if(!downstream->get_upgraded()) {
       *eof = 1;
+
+      upstream_accesslog(upstream->get_client_handler()->get_ipaddr(),
+                         downstream->get_response_http_status(), downstream);
     } else {
       // For tunneling, issue RST_STREAM to finish the stream.
       if(LOG_ENABLED(INFO)) {
@@ -786,6 +811,7 @@ int SpdyUpstream::error_reply(Downstream *downstream, unsigned int status_code)
 {
   int rv;
   auto html = http::create_error_html(status_code);
+  downstream->set_response_http_status(status_code);
   downstream->init_response_body_buf();
   auto body = downstream->get_response_body_buf();
   rv = evbuffer_add(body, html.c_str(), html.size());
@@ -817,10 +843,7 @@ int SpdyUpstream::error_reply(Downstream *downstream, unsigned int status_code)
                       << spdylay_strerror(rv);
     DIE();
   }
-  if(get_config()->accesslog) {
-    upstream_response(get_client_handler()->get_ipaddr(),
-                      status_code, downstream);
-  }
+
   return 0;
 }
 
@@ -935,11 +958,14 @@ int SpdyUpstream::on_downstream_header_complete(Downstream *downstream)
     ULOG(FATAL, this) << "spdylay_submit_response() failed";
     return -1;
   }
-  if(get_config()->accesslog) {
-    upstream_response(get_client_handler()->get_ipaddr(),
-                      downstream->get_response_http_status(),
-                      downstream);
+
+  if(downstream->get_upgraded()) {
+    upstream_accesslog(get_client_handler()->get_ipaddr(),
+                       downstream->get_response_http_status(), downstream);
   }
+
+  downstream->clear_response_headers();
+
   return 0;
 }
 
@@ -1025,6 +1051,38 @@ int SpdyUpstream::resume_read(IOCtrlReason reason, Downstream *downstream)
     }
   }
   return send();
+}
+
+int SpdyUpstream::on_downstream_abort_request(Downstream *downstream,
+                                              unsigned int status_code)
+{
+  int rv;
+
+  rv = error_reply(downstream, status_code);
+
+  if(rv != 0) {
+    return -1;
+  }
+
+  return send();
+}
+
+int SpdyUpstream::handle_ign_data_chunk(size_t len)
+{
+  int32_t window_size;
+
+  if(spdylay_session_get_recv_data_length(session_) == -1) {
+    // No connection flow control
+    return 0;
+  }
+
+  window_size = 1 << get_config()->http2_upstream_connection_window_bits;
+
+  if(recv_ign_window_size_ >= window_size / 2) {
+    window_update(0, recv_ign_window_size_);
+  }
+
+  return 0;
 }
 
 } // namespace shrpx

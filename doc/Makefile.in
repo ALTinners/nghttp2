@@ -107,8 +107,9 @@ DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/Makefile.am \
 	$(srcdir)/package_README.rst.in \
 	$(srcdir)/tutorial-client.rst.in \
 	$(srcdir)/tutorial-server.rst.in \
-	$(srcdir)/nghttpx-howto.rst.in $(srcdir)/nghttp2.h.rst.in \
-	$(srcdir)/nghttp2ver.h.rst.in
+	$(srcdir)/tutorial-hpack.rst.in $(srcdir)/nghttpx-howto.rst.in \
+	$(srcdir)/h2load-howto.rst.in $(srcdir)/python-apiref.rst.in \
+	$(srcdir)/nghttp2.h.rst.in $(srcdir)/nghttp2ver.h.rst.in
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/ax_check_compile_flag.m4 \
 	$(top_srcdir)/m4/ax_cxx_compile_stdcxx_11.m4 \
@@ -121,7 +122,8 @@ am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 mkinstalldirs = $(install_sh) -d
 CONFIG_HEADER = $(top_builddir)/config.h
 CONFIG_CLEAN_FILES = conf.py index.rst package_README.rst \
-	tutorial-client.rst tutorial-server.rst nghttpx-howto.rst \
+	tutorial-client.rst tutorial-server.rst tutorial-hpack.rst \
+	nghttpx-howto.rst h2load-howto.rst python-apiref.rst \
 	nghttp2.h.rst nghttp2ver.h.rst
 CONFIG_CLEAN_VPATH_FILES =
 AM_V_P = $(am__v_P_@AM_V@)
@@ -345,10 +347,17 @@ EXTRA_DIST = \
 	mkapiref.py \
 	README.rst \
 	apiref-header.rst \
+	nghttp.1.rst \
+	nghttpd.1.rst \
+	nghttpx.1.rst \
+	h2load.1.rst \
 	sources/index.rst \
 	sources/tutorial-client.rst \
 	sources/tutorial-server.rst \
+	sources/tutorial-hpack.rst \
 	sources/nghttpx-howto.rst \
+	sources/h2load-howto.rst \
+	sources/python-apiref.rst \
 	_themes/sphinx_rtd_theme/footer.html \
 	_themes/sphinx_rtd_theme/theme.conf \
 	_themes/sphinx_rtd_theme/layout_old.html \
@@ -425,7 +434,13 @@ tutorial-client.rst: $(top_builddir)/config.status $(srcdir)/tutorial-client.rst
 	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
 tutorial-server.rst: $(top_builddir)/config.status $(srcdir)/tutorial-server.rst.in
 	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
+tutorial-hpack.rst: $(top_builddir)/config.status $(srcdir)/tutorial-hpack.rst.in
+	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
 nghttpx-howto.rst: $(top_builddir)/config.status $(srcdir)/nghttpx-howto.rst.in
+	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
+h2load-howto.rst: $(top_builddir)/config.status $(srcdir)/h2load-howto.rst.in
+	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
+python-apiref.rst: $(top_builddir)/config.status $(srcdir)/python-apiref.rst.in
 	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
 nghttp2.h.rst: $(top_builddir)/config.status $(srcdir)/nghttp2.h.rst.in
 	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@

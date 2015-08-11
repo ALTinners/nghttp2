@@ -21,13 +21,13 @@ dnl LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 dnl OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 dnl WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 AC_PREREQ(2.61)
-AC_INIT([nghttp2], [0.4.1], [t-tujikawa@users.sourceforge.net])
+AC_INIT([nghttp2], [0.5.0], [t-tujikawa@users.sourceforge.net])
 LT_PREREQ([2.2.6])
 LT_INIT()
 dnl See versioning rule:
 dnl  http://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
-AC_SUBST(LT_CURRENT, 3)
-AC_SUBST(LT_REVISION, 1)
+AC_SUBST(LT_CURRENT, 4)
+AC_SUBST(LT_REVISION, 0)
 AC_SUBST(LT_AGE, 0)
 
 major=`echo $PACKAGE_VERSION |cut -d. -f1 | sed -e "s/[^0-9]//g"`
@@ -137,12 +137,13 @@ fi
 
 AX_CXX_COMPILE_STDCXX_11([noext], [optional])
 
+AC_LANG_PUSH(C++)
+
 # Check that std::chrono::steady_clock is available. In particular,
 # gcc 4.6 does not have one, but has monotonic_clock which is the old
 # name existed in the pre-standard draft. If steady_clock is not
 # available, don't define HAVE_STEADY_CLOCK and replace steady_clock
 # with monotonic_clock.
-AC_LANG_PUSH(C++)
 AC_MSG_CHECKING([whether std::chrono::steady_clock is available])
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
 [[
@@ -155,6 +156,24 @@ auto tp = std::chrono::steady_clock::now();
                [Define to 1 if you have the `std::chrono::steady_clock`.])
      AC_MSG_RESULT([yes])],
     [AC_MSG_RESULT([no])])
+
+# Check that std::future is available.
+AC_MSG_CHECKING([whether std::future is available])
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
+[[
+#include <vector>
+#include <future>
+]],
+[[
+std::vector<std::future<int>> v;
+]])],
+    [AC_DEFINE([HAVE_STD_FUTURE], [1],
+               [Define to 1 if you have the `std::future`.])
+     have_std_future=yes
+     AC_MSG_RESULT([yes])],
+    [have_std_future=no
+     AC_MSG_RESULT([no])])
+
 AC_LANG_POP()
 
 # Checks for libraries.
@@ -194,6 +213,7 @@ esac
 if test "x$android_build" = "xyes"; then
   # Use zlib provided by NDK
   SRC_LIBS="-lz $SRC_LIBS"
+  have_zlib=yes
 else
   PKG_CHECK_MODULES([ZLIB], [zlib >= 1.2.3], [have_zlib=yes], [have_zlib=no])
 
@@ -323,6 +343,7 @@ if test "x${request_app}" = "xyes" &&
 fi
 
 AM_CONDITIONAL([ENABLE_APP], [ test "x${enable_app}" = "xyes" ])
+AM_CONDITIONAL([ENABLE_H2LOAD], [ test "x${have_std_future}" = "xyes" ])
 
 enable_hpack_tools=no
 # HPACK tools requires jansson
@@ -454,6 +475,7 @@ if test "x$werror" != "xno"; then
     AX_CHECK_COMPILE_FLAG([-Waddress], [CFLAGS="$CFLAGS -Waddress"])
     AX_CHECK_COMPILE_FLAG([-Wattributes], [CFLAGS="$CFLAGS -Wattributes"])
     AX_CHECK_COMPILE_FLAG([-Wdiv-by-zero], [CFLAGS="$CFLAGS -Wdiv-by-zero"])
+    AX_CHECK_COMPILE_FLAG([-Wshorten-64-to-32], [CFLAGS="$CFLAGS -Wshorten-64-to-32"])
 
     # Only work with Clang for the moment
     AX_CHECK_COMPILE_FLAG([-Wheader-guard], [CFLAGS="$CFLAGS -Wheader-guard"])
@@ -489,7 +511,10 @@ AC_CONFIG_FILES([
   doc/package_README.rst
   doc/tutorial-client.rst
   doc/tutorial-server.rst
+  doc/tutorial-hpack.rst
   doc/nghttpx-howto.rst
+  doc/h2load-howto.rst
+  doc/python-apiref.rst
   doc/nghttp2.h.rst
   doc/nghttp2ver.h.rst
 ])

@@ -64,6 +64,9 @@
 /* Define to 1 if you have the <stdlib.h> header file. */
 #undef HAVE_STDLIB_H
 
+/* Define to 1 if you have the `std::future`. */
+#undef HAVE_STD_FUTURE
+
 /* Define to 1 if you have the `std::chrono::steady_clock`. */
 #undef HAVE_STEADY_CLOCK
 

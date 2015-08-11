@@ -46,6 +46,8 @@ public:
   virtual int on_read();
   virtual int on_write();
   virtual int on_event();
+  virtual int on_downstream_abort_request(Downstream *downstream,
+                                          unsigned int status_code);
   int send();
   virtual ClientHandler* get_client_handler() const;
   virtual bufferevent_data_cb get_downstream_readcb();
@@ -79,12 +81,16 @@ public:
   int upgrade_upstream(HttpsUpstream *upstream);
   int start_settings_timer();
   void stop_settings_timer();
+  int handle_ign_data_chunk(size_t len);
 private:
   DownstreamQueue downstream_queue_;
   std::unique_ptr<HttpsUpstream> pre_upstream_;
   ClientHandler *handler_;
   nghttp2_session *session_;
   event *settings_timerev_;
+  // Received DATA frame size while it is not sent to backend before
+  // any connection-level WINDOW_UPDATE
+  int32_t recv_ign_window_size_;
   bool flow_control_;
 };
 

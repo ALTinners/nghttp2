@@ -63,6 +63,7 @@ struct Config {
   std::string host;
   std::string private_key_file;
   std::string cert_file;
+  std::string dh_param_file;
   timeval stream_read_timeout;
   timeval stream_write_timeout;
   void *data_ptr;
@@ -75,6 +76,7 @@ struct Config {
   bool verify_client;
   bool no_tls;
   bool error_gzip;
+  bool early_response;
   Config();
 };
 
@@ -88,7 +90,6 @@ struct Stream {
   event *wtimer;
   int32_t stream_id;
   int file;
-  bool enable_compression;
   Stream(Http2Handler *handler, int32_t stream_id);
   ~Stream();
 };
@@ -140,7 +141,6 @@ public:
   void remove_settings_timer();
   void terminate_session(nghttp2_error_code error_code);
   int tls_handshake();
-  void decide_compression(const std::string& path, Stream *stream);
 private:
   int handle_ssl_temporal_error(int err);
   int tls_write(const uint8_t *data, size_t datalen);

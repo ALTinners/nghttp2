@@ -30,6 +30,7 @@
 #include "shrpx_config.h"
 #include "shrpx_error.h"
 #include "shrpx_http.h"
+#include "shrpx_worker_config.h"
 #include "http2.h"
 #include "util.h"
 
@@ -164,6 +165,14 @@ int HttpDownstreamConnection::push_request_headers()
     hdrs += "\r\n";
   }
 
+  if(downstream_->get_request_method() != "CONNECT" &&
+     downstream_->get_request_http2_expect_body() &&
+     downstream_->get_norm_request_header("content-length") == end_headers) {
+
+    downstream_->set_chunked_request(true);
+    hdrs += "Transfer-Encoding: chunked\r\n";
+  }
+
   if(downstream_->get_request_connection_close()) {
     hdrs += "Connection: close\r\n";
   }
@@ -226,7 +235,7 @@ int HttpDownstreamConnection::push_request_headers()
   if(LOG_ENABLED(INFO)) {
     const char *hdrp;
     std::string nhdrs;
-    if(get_config()->tty) {
+    if(worker_config.errorlog_tty) {
       nhdrs = http::colorizeHeaders(hdrs.c_str());
       hdrp = nhdrs.c_str();
     } else {
@@ -251,6 +260,8 @@ int HttpDownstreamConnection::push_request_headers()
   bufferevent_set_timeouts(bev_,
                            &get_config()->downstream_read_timeout,
                            &get_config()->downstream_write_timeout);
+
+  downstream_->clear_request_headers();
 
   return 0;
 }
@@ -381,6 +392,19 @@ bool HttpDownstreamConnection::get_output_buffer_full()
 }
 
 namespace {
+int htp_msg_begincb(http_parser *htp)
+{
+  auto downstream = static_cast<Downstream*>(htp->data);
+
+  if(downstream->get_response_state() != Downstream::INITIAL) {
+    return -1;
+  }
+
+  return 0;
+}
+} // namespace
+
+namespace {
 int htp_hdrs_completecb(http_parser *htp)
 {
   auto downstream = static_cast<Downstream*>(htp->data);
@@ -389,6 +413,7 @@ int htp_hdrs_completecb(http_parser *htp)
   downstream->set_response_minor(htp->http_minor);
   downstream->set_response_connection_close(!http_should_keep_alive(htp));
   downstream->set_response_state(Downstream::HEADER_COMPLETE);
+  downstream->inspect_http1_response();
   downstream->check_upgrade_fulfilled();
   if(downstream->get_upgraded()) {
     downstream->set_response_connection_close(true);
@@ -468,6 +493,9 @@ namespace {
 int htp_bodycb(http_parser *htp, const char *data, size_t len)
 {
   auto downstream = static_cast<Downstream*>(htp->data);
+
+  downstream->add_response_bodylen(len);
+
   return downstream->get_upstream()->on_downstream_body
     (downstream, reinterpret_cast<const uint8_t*>(data), len, true);
 }
@@ -488,7 +516,7 @@ int htp_msg_completecb(http_parser *htp)
 
 namespace {
 http_parser_settings htp_hooks = {
-  nullptr, // http_cb      on_message_begin;
+  htp_msg_begincb, // http_cb on_message_begin;
   nullptr, // http_data_cb on_url;
   nullptr, // http_data_cb on_status;
   htp_hdr_keycb, // http_data_cb on_header_field;

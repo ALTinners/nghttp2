@@ -48,8 +48,9 @@
 #include "shrpx_log.h"
 #include "shrpx_client_handler.h"
 #include "shrpx_config.h"
-#include "shrpx_accesslog.h"
+#include "shrpx_worker.h"
 #include "util.h"
+#include "ssl.h"
 
 using namespace nghttp2;
 
@@ -58,17 +59,12 @@ namespace shrpx {
 namespace ssl {
 
 namespace {
-std::pair<unsigned char*, size_t> next_proto;
-unsigned char proto_list[256];
-} // namespace
-
-namespace {
 int next_proto_cb(SSL *s, const unsigned char **data, unsigned int *len,
                   void *arg)
 {
-  auto next_proto = static_cast<std::pair<unsigned char*, size_t>*>(arg);
-  *data = next_proto->first;
-  *len = next_proto->second;
+  auto& prefs = get_config()->alpn_prefs;
+  *data = prefs.data();
+  *len = prefs.size();
   return SSL_TLSEXT_ERR_OK;
 }
 } // namespace
@@ -87,33 +83,38 @@ int verify_callback(int preverify_ok, X509_STORE_CTX *ctx)
 }
 } // namespace
 
-namespace {
-size_t set_npn_prefs(unsigned char *out, char **protos, size_t len)
+std::vector<unsigned char> set_alpn_prefs(const std::vector<char*>& protos)
 {
-  unsigned char *ptr = out;
-  size_t listlen = 0;
-  for(size_t i = 0; i < len; ++i) {
-    size_t plen = strlen(protos[i]);
+  unsigned char out[256];
+  auto ptr = out;
+  auto end = ptr + sizeof(out);
+
+  for(auto proto : protos) {
+    auto plen = strlen(proto);
+
+    if(ptr + plen + 1 > end) {
+      LOG(FATAL) << "Too long alpn list";
+      DIE();
+    }
+
     *ptr = plen;
-    memcpy(ptr+1, protos[i], *ptr);
-    ptr += *ptr+1;
-    listlen += 1 + plen;
+    memcpy(ptr + 1, proto, plen);
+    ptr += plen + 1;
   }
-  return listlen;
+  return std::vector<unsigned char>(out, ptr);
 }
-} // namespace
 
 namespace {
 int ssl_pem_passwd_cb(char *buf, int size, int rwflag, void *user_data)
 {
   auto config = static_cast<Config*>(user_data);
-  int len = (int)strlen(config->private_key_passwd);
+  int len = (int)strlen(config->private_key_passwd.get());
   if (size < len + 1) {
     LOG(ERROR) << "ssl_pem_passwd_cb: buf is too small " << size;
     return 0;
   }
   // Copy string including last '\0'.
-  memcpy(buf, config->private_key_passwd, len+1);
+  memcpy(buf, config->private_key_passwd.get(), len + 1);
   return len;
 }
 } // namespace
@@ -157,7 +158,7 @@ void info_callback(const SSL *ssl, int where, int ret)
 
 #if OPENSSL_VERSION_NUMBER >= 0x10002000L
 namespace {
-int alpn_select_proto_cb(SSL* ssl,
+int alpn_select_proto_cb(SSL *ssl,
                          const unsigned char **out,
                          unsigned char *outlen,
                          const unsigned char *in, unsigned int inlen,
@@ -166,29 +167,17 @@ int alpn_select_proto_cb(SSL* ssl,
   // We assume that get_config()->npn_list contains ALPN protocol
   // identifier sorted by preference order.  So we just break when we
   // found the first overlap.
-  for(auto needle_ptr = get_config()->npn_list,
-        end_needle_ptr = needle_ptr + get_config()->npn_list_len;
-      needle_ptr < end_needle_ptr; ++needle_ptr) {
-
-    auto target_proto_id = *needle_ptr;
+  for(auto target_proto_id : get_config()->npn_list) {
     auto target_proto_len =
       strlen(reinterpret_cast<const char*>(target_proto_id));
-
-    if(target_proto_len == NGHTTP2_PROTO_VERSION_ID_LEN &&
-       memcmp(target_proto_id, NGHTTP2_PROTO_VERSION_ID,
-              NGHTTP2_PROTO_VERSION_ID_LEN) == 0) {
-
-      if(!check_http2_requirement(ssl)) {
-        continue;
-      }
-    }
 
     for(auto p = in, end = in + inlen; p < end;) {
       auto proto_id = p + 1;
       auto proto_len = *p;
 
       if(proto_id + proto_len <= end &&
-         util::streq(target_proto_id, target_proto_len, proto_id, proto_len)) {
+         target_proto_len == proto_len &&
+         memcmp(target_proto_id, proto_id, proto_len) == 0) {
 
         *out = reinterpret_cast<const unsigned char*>(proto_id);
         *outlen = proto_len;
@@ -206,27 +195,29 @@ int alpn_select_proto_cb(SSL* ssl,
 #endif // OPENSSL_VERSION_NUMBER >= 0x10002000L
 
 namespace {
-const char *names[] = { "TLSv1.2", "TLSv1.1", "TLSv1.0", "SSLv3" };
-const size_t namelen = sizeof(names)/sizeof(names[0]);
-const long int masks[] = { SSL_OP_NO_TLSv1_2, SSL_OP_NO_TLSv1_1,
-                           SSL_OP_NO_TLSv1, SSL_OP_NO_SSLv3 };
-long int create_tls_proto_mask(char **tls_proto_list, size_t len)
+const char *tls_names[] = { "TLSv1.2", "TLSv1.1", "TLSv1.0", "SSLv3" };
+const size_t tls_namelen = sizeof(tls_names)/sizeof(tls_names[0]);
+const long int tls_masks[] = { SSL_OP_NO_TLSv1_2, SSL_OP_NO_TLSv1_1,
+                               SSL_OP_NO_TLSv1, SSL_OP_NO_SSLv3 };
+} // namespace
+
+long int create_tls_proto_mask(const std::vector<char*>& tls_proto_list)
 {
   long int res = 0;
-  for(size_t i = 0; i < namelen; ++i) {
+
+  for(size_t i = 0; i < tls_namelen; ++i) {
     size_t j;
-    for(j = 0; j < len; ++j) {
-      if(strcasecmp(names[i], tls_proto_list[j]) == 0) {
+    for(j = 0; j < tls_proto_list.size(); ++j) {
+      if(util::strieq(tls_names[i], tls_proto_list[j])) {
         break;
       }
     }
-    if(j == len) {
-      res |= masks[i];
+    if(j == tls_proto_list.size()) {
+      res |= tls_masks[i];
     }
   }
   return res;
 }
-} // namespace
 
 SSL_CTX* create_ssl_context(const char *private_key_file,
                             const char *cert_file)
@@ -243,8 +234,7 @@ SSL_CTX* create_ssl_context(const char *private_key_file,
                       SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION |
                       SSL_OP_SINGLE_ECDH_USE | SSL_OP_SINGLE_DH_USE |
                       SSL_OP_NO_TICKET |
-                      create_tls_proto_mask(get_config()->tls_proto_list,
-                                            get_config()->tls_proto_list_len));
+                      get_config()->tls_proto_mask);
 
   const unsigned char sid_ctx[] = "shrpx";
   SSL_CTX_set_session_id_context(ssl_ctx, sid_ctx, sizeof(sid_ctx)-1);
@@ -252,15 +242,13 @@ SSL_CTX* create_ssl_context(const char *private_key_file,
 
   const char *ciphers;
   if(get_config()->ciphers) {
-    ciphers = get_config()->ciphers;
-    // If ciphers are given, honor its order unconditionally
-    SSL_CTX_set_options(ssl_ctx, SSL_OP_CIPHER_SERVER_PREFERENCE);
+    ciphers = get_config()->ciphers.get();
   } else {
-    ciphers = "HIGH:!aNULL:!eNULL";
-    if(get_config()->honor_cipher_order) {
-      SSL_CTX_set_options(ssl_ctx, SSL_OP_CIPHER_SERVER_PREFERENCE);
-    }
+    ciphers = nghttp2::ssl::DEFAULT_CIPHER_LIST;
   }
+
+  SSL_CTX_set_options(ssl_ctx, SSL_OP_CIPHER_SERVER_PREFERENCE);
+
   if(SSL_CTX_set_cipher_list(ssl_ctx, ciphers) == 0) {
     LOG(FATAL) << "SSL_CTX_set_cipher_list " << ciphers << " failed: "
                << ERR_error_string(ERR_get_error(), nullptr);
@@ -269,9 +257,12 @@ SSL_CTX* create_ssl_context(const char *private_key_file,
 
 #ifndef OPENSSL_NO_EC
 
-#if OPENSSL_VERSION_NUMBER >= 0x10002000L
-  SSL_CTX_set_ecdh_auto(ssl_ctx, 1);
-#else // OPENSSL_VERSION_NUBMER < 0x10002000L
+  // Disabled SSL_CTX_set_ecdh_auto, because computational cost of
+  // chosen curve is much higher than P-256.
+
+// #if OPENSSL_VERSION_NUMBER >= 0x10002000L
+//   SSL_CTX_set_ecdh_auto(ssl_ctx, 1);
+// #else // OPENSSL_VERSION_NUBMER < 0x10002000L
   // Use P-256, which is sufficiently secure at the time of this
   // writing.
   auto ecdh = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
@@ -282,13 +273,13 @@ SSL_CTX* create_ssl_context(const char *private_key_file,
   }
   SSL_CTX_set_tmp_ecdh(ssl_ctx, ecdh);
   EC_KEY_free(ecdh);
-#endif // OPENSSL_VERSION_NUBMER < 0x10002000L
+// #endif // OPENSSL_VERSION_NUBMER < 0x10002000L
 
 #endif // OPENSSL_NO_EC
 
   if(get_config()->dh_param_file) {
     // Read DH parameters from file
-    auto bio = BIO_new_file(get_config()->dh_param_file, "r");
+    auto bio = BIO_new_file(get_config()->dh_param_file.get(), "r");
     if(bio == nullptr) {
       LOG(FATAL) << "BIO_new_file() failed: "
                  << ERR_error_string(ERR_get_error(), nullptr);
@@ -330,11 +321,11 @@ SSL_CTX* create_ssl_context(const char *private_key_file,
   }
   if(get_config()->verify_client) {
     if(get_config()->verify_client_cacert) {
-      if(SSL_CTX_load_verify_locations(ssl_ctx,
-                                       get_config()->verify_client_cacert,
-                                       nullptr) != 1) {
+      if(SSL_CTX_load_verify_locations
+         (ssl_ctx, get_config()->verify_client_cacert.get(), nullptr) != 1) {
+
         LOG(FATAL) << "Could not load trusted ca certificates from "
-                   << get_config()->verify_client_cacert << ": "
+                   << get_config()->verify_client_cacert.get() << ": "
                    << ERR_error_string(ERR_get_error(), nullptr);
         DIE();
       }
@@ -342,10 +333,11 @@ SSL_CTX* create_ssl_context(const char *private_key_file,
       // error even though it returns success. See
       // http://forum.nginx.org/read.php?29,242540
       ERR_clear_error();
-      auto list = SSL_load_client_CA_file(get_config()->verify_client_cacert);
+      auto list = SSL_load_client_CA_file
+        (get_config()->verify_client_cacert.get());
       if(!list) {
         LOG(FATAL) << "Could not load ca certificates from "
-                   << get_config()->verify_client_cacert << ": "
+                   << get_config()->verify_client_cacert.get() << ": "
                    << ERR_error_string(ERR_get_error(), nullptr);
         DIE();
       }
@@ -360,11 +352,7 @@ SSL_CTX* create_ssl_context(const char *private_key_file,
   SSL_CTX_set_info_callback(ssl_ctx, info_callback);
 
   // NPN advertisement
-  auto proto_list_len = set_npn_prefs(proto_list, get_config()->npn_list,
-                                      get_config()->npn_list_len);
-  next_proto.first = proto_list;
-  next_proto.second = proto_list_len;
-  SSL_CTX_set_next_protos_advertised_cb(ssl_ctx, next_proto_cb, &next_proto);
+  SSL_CTX_set_next_protos_advertised_cb(ssl_ctx, next_proto_cb, nullptr);
 #if OPENSSL_VERSION_NUMBER >= 0x10002000L
   // ALPN selection callback
   SSL_CTX_set_alpn_select_cb(ssl_ctx, alpn_select_proto_cb, nullptr);
@@ -397,14 +385,13 @@ SSL_CTX* create_ssl_client_context()
   SSL_CTX_set_options(ssl_ctx,
                       SSL_OP_ALL | SSL_OP_NO_SSLv2 | SSL_OP_NO_COMPRESSION |
                       SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION |
-                      create_tls_proto_mask(get_config()->tls_proto_list,
-                                            get_config()->tls_proto_list_len));
+                      get_config()->tls_proto_mask);
 
   const char *ciphers;
   if(get_config()->ciphers) {
-    ciphers = get_config()->ciphers;
+    ciphers = get_config()->ciphers.get();
   } else {
-    ciphers = "HIGH:!aNULL:!eNULL";
+    ciphers = "HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!3DES:!MD5:!PSK";
   }
   if(SSL_CTX_set_cipher_list(ssl_ctx, ciphers) == 0) {
     LOG(FATAL) << "SSL_CTX_set_cipher_list " << ciphers << " failed: "
@@ -422,10 +409,11 @@ SSL_CTX* create_ssl_client_context()
   }
 
   if(get_config()->cacert) {
-    if(SSL_CTX_load_verify_locations(ssl_ctx, get_config()->cacert, nullptr)
-       != 1) {
+    if(SSL_CTX_load_verify_locations
+       (ssl_ctx, get_config()->cacert.get(), nullptr) != 1) {
+
       LOG(FATAL) << "Could not load trusted ca certificates from "
-                 << get_config()->cacert << ": "
+                 << get_config()->cacert.get() << ": "
                  << ERR_error_string(ERR_get_error(), nullptr);
       DIE();
     }
@@ -433,20 +421,20 @@ SSL_CTX* create_ssl_client_context()
 
   if(get_config()->client_private_key_file) {
     if(SSL_CTX_use_PrivateKey_file(ssl_ctx,
-                                   get_config()->client_private_key_file,
+                                   get_config()->client_private_key_file.get(),
                                    SSL_FILETYPE_PEM) != 1) {
       LOG(FATAL) << "Could not load client private key from "
-                 << get_config()->client_private_key_file << ": "
+                 << get_config()->client_private_key_file.get() << ": "
                  << ERR_error_string(ERR_get_error(), nullptr);
       DIE();
     }
   }
   if(get_config()->client_cert_file) {
-    if(SSL_CTX_use_certificate_chain_file(ssl_ctx,
-                                          get_config()->client_cert_file)
-       != 1) {
+    if(SSL_CTX_use_certificate_chain_file
+       (ssl_ctx, get_config()->client_cert_file.get()) != 1) {
+
       LOG(FATAL) << "Could not load client certificate from "
-                 << get_config()->client_cert_file << ": "
+                 << get_config()->client_cert_file.get() << ": "
                  << ERR_error_string(ERR_get_error(), nullptr);
       DIE();
     }
@@ -455,12 +443,15 @@ SSL_CTX* create_ssl_client_context()
   SSL_CTX_set_next_proto_select_cb(ssl_ctx, select_next_proto_cb, nullptr);
 
 #if OPENSSL_VERSION_NUMBER >= 0x10002000L
-  // ALPN advertisement
-  auto proto_list_len = set_npn_prefs(proto_list, get_config()->npn_list,
-                                      get_config()->npn_list_len);
-  next_proto.first = proto_list;
-  next_proto.second = proto_list_len;
-  SSL_CTX_set_alpn_protos(ssl_ctx, proto_list, proto_list[0] + 1);
+  // ALPN advertisement; We only advertise HTTP/2
+  unsigned char proto_list[256];
+
+  proto_list[0] = NGHTTP2_PROTO_VERSION_ID_LEN;
+  memcpy(proto_list + 1, NGHTTP2_PROTO_VERSION_ID,
+         NGHTTP2_PROTO_VERSION_ID_LEN);
+  auto proto_list_len = 1 + NGHTTP2_PROTO_VERSION_ID_LEN;
+
+  SSL_CTX_set_alpn_protos(ssl_ctx, proto_list, proto_list_len);
 #endif // OPENSSL_VERSION_NUMBER >= 0x10002000L
 
   return ssl_ctx;
@@ -471,56 +462,58 @@ ClientHandler* accept_connection
  bufferevent_rate_limit_group *rate_limit_group,
  SSL_CTX *ssl_ctx,
  evutil_socket_t fd,
- sockaddr *addr, int addrlen)
+ sockaddr *addr, int addrlen,
+ WorkerStat *worker_stat)
 {
   char host[NI_MAXHOST];
   int rv;
   rv = getnameinfo(addr, addrlen, host, sizeof(host), nullptr, 0,
                    NI_NUMERICHOST);
-  if(rv == 0) {
-    if(get_config()->accesslog) {
-      upstream_connect(host);
-    }
-
-    int val = 1;
-    rv = setsockopt(fd, IPPROTO_TCP, TCP_NODELAY,
-                    reinterpret_cast<char *>(&val), sizeof(val));
-    if(rv == -1) {
-      LOG(WARNING) << "Setting option TCP_NODELAY failed: errno="
-                   << errno;
-    }
-    SSL *ssl = nullptr;
-    bufferevent *bev;
-    if(ssl_ctx) {
-      ssl = SSL_new(ssl_ctx);
-      if(!ssl) {
-        LOG(ERROR) << "SSL_new() failed: "
-                   << ERR_error_string(ERR_get_error(), nullptr);
-        return nullptr;
-      }
-      SSL_set_fd(ssl, fd);
-      // To detect TLS renegotiation and deal with it, we have to use
-      // filter-based OpenSSL bufferevent and set evbuffer callback by
-      // our own.
-      auto underlying_bev = bufferevent_socket_new(evbase, fd, 0);
-      bev = bufferevent_openssl_filter_new(evbase, underlying_bev, ssl,
-                                           BUFFEREVENT_SSL_ACCEPTING,
-                                           BEV_OPT_DEFER_CALLBACKS);
-    } else {
-      bev = bufferevent_socket_new(evbase, fd, BEV_OPT_DEFER_CALLBACKS);
-    }
-    if(!bev) {
-      LOG(ERROR) << "bufferevent_socket_new() failed";
-      if(ssl) {
-        SSL_free(ssl);
-      }
-      return nullptr;
-    }
-    return new ClientHandler(bev, rate_limit_group, fd, ssl, host);
-  } else {
+  if(rv != 0) {
     LOG(ERROR) << "getnameinfo() failed: " << gai_strerror(rv);
+
     return nullptr;
   }
+
+  int val = 1;
+  rv = setsockopt(fd, IPPROTO_TCP, TCP_NODELAY,
+                  reinterpret_cast<char *>(&val), sizeof(val));
+  if(rv == -1) {
+    LOG(WARNING) << "Setting option TCP_NODELAY failed: errno="
+                 << errno;
+  }
+  SSL *ssl = nullptr;
+  bufferevent *bev;
+  if(ssl_ctx) {
+    ssl = SSL_new(ssl_ctx);
+    if(!ssl) {
+      LOG(ERROR) << "SSL_new() failed: "
+                 << ERR_error_string(ERR_get_error(), nullptr);
+      return nullptr;
+    }
+
+    if(SSL_set_fd(ssl, fd) == 0) {
+      LOG(ERROR) << "SSL_set_fd() failed: "
+                 << ERR_error_string(ERR_get_error(), nullptr);
+      SSL_free(ssl);
+      return nullptr;
+    }
+
+    bev = bufferevent_openssl_socket_new(evbase, fd, ssl,
+                                         BUFFEREVENT_SSL_ACCEPTING,
+                                         BEV_OPT_DEFER_CALLBACKS);
+  } else {
+    bev = bufferevent_socket_new(evbase, fd, BEV_OPT_DEFER_CALLBACKS);
+  }
+  if(!bev) {
+    LOG(ERROR) << "bufferevent_socket_new() failed";
+    if(ssl) {
+      SSL_free(ssl);
+    }
+    return nullptr;
+  }
+
+  return new ClientHandler(bev, rate_limit_group, fd, ssl, host, worker_stat);
 }
 
 namespace {
@@ -683,7 +676,7 @@ int check_cert(SSL *ssl)
   std::vector<std::string> dns_names;
   std::vector<std::string> ip_addrs;
   get_altnames(cert, dns_names, ip_addrs, common_name);
-  if(verify_hostname(get_config()->downstream_host,
+  if(verify_hostname(get_config()->downstream_host.get(),
                      &get_config()->downstream_addr,
                      get_config()->downstream_addrlen,
                      dns_names, ip_addrs, common_name) != 0) {
@@ -895,34 +888,104 @@ int cert_lookup_tree_add_cert_from_file(CertLookupTree *lt, SSL_CTX *ssl_ctx,
   return 0;
 }
 
-bool in_proto_list(char **protos, size_t len,
-                   const unsigned char *proto, size_t protolen)
+bool in_proto_list(const std::vector<char*>& protos,
+                   const unsigned char *needle, size_t len)
 {
-  for(size_t i = 0; i < len; ++i) {
-    if(strlen(protos[i]) == protolen &&
-       memcmp(protos[i], proto, protolen) == 0) {
+  for(auto proto : protos) {
+    if(strlen(proto) == len && memcmp(proto, needle, len) == 0) {
       return true;
     }
   }
   return false;
 }
 
+// This enum was generated by mkcipherlist.py
+enum {
+  TLS_DHE_RSA_WITH_AES_128_GCM_SHA256 = 0x009Eu,
+  TLS_DHE_RSA_WITH_AES_256_GCM_SHA384 = 0x009Fu,
+  TLS_DHE_DSS_WITH_AES_128_GCM_SHA256 = 0x00A2u,
+  TLS_DHE_DSS_WITH_AES_256_GCM_SHA384 = 0x00A3u,
+  TLS_DHE_PSK_WITH_AES_128_GCM_SHA256 = 0x00AAu,
+  TLS_DHE_PSK_WITH_AES_256_GCM_SHA384 = 0x00ABu,
+  TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 = 0xC02Bu,
+  TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 = 0xC02Cu,
+  TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 = 0xC02Fu,
+  TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 = 0xC030u,
+  TLS_DHE_RSA_WITH_ARIA_128_GCM_SHA256 = 0xC052u,
+  TLS_DHE_RSA_WITH_ARIA_256_GCM_SHA384 = 0xC053u,
+  TLS_DHE_DSS_WITH_ARIA_128_GCM_SHA256 = 0xC056u,
+  TLS_DHE_DSS_WITH_ARIA_256_GCM_SHA384 = 0xC057u,
+  TLS_ECDHE_ECDSA_WITH_ARIA_128_GCM_SHA256 = 0xC05Cu,
+  TLS_ECDHE_ECDSA_WITH_ARIA_256_GCM_SHA384 = 0xC05Du,
+  TLS_ECDHE_RSA_WITH_ARIA_128_GCM_SHA256 = 0xC060u,
+  TLS_ECDHE_RSA_WITH_ARIA_256_GCM_SHA384 = 0xC061u,
+  TLS_DHE_PSK_WITH_ARIA_128_GCM_SHA256 = 0xC06Cu,
+  TLS_DHE_PSK_WITH_ARIA_256_GCM_SHA384 = 0xC06Du,
+  TLS_DHE_RSA_WITH_CAMELLIA_128_GCM_SHA256 = 0xC07Cu,
+  TLS_DHE_RSA_WITH_CAMELLIA_256_GCM_SHA384 = 0xC07Du,
+  TLS_DHE_DSS_WITH_CAMELLIA_128_GCM_SHA256 = 0xC080u,
+  TLS_DHE_DSS_WITH_CAMELLIA_256_GCM_SHA384 = 0xC081u,
+  TLS_ECDHE_ECDSA_WITH_CAMELLIA_128_GCM_SHA256 = 0xC086u,
+  TLS_ECDHE_ECDSA_WITH_CAMELLIA_256_GCM_SHA384 = 0xC087u,
+  TLS_ECDHE_RSA_WITH_CAMELLIA_128_GCM_SHA256 = 0xC08Au,
+  TLS_ECDHE_RSA_WITH_CAMELLIA_256_GCM_SHA384 = 0xC08Bu,
+  TLS_DHE_PSK_WITH_CAMELLIA_128_GCM_SHA256 = 0xC090u,
+  TLS_DHE_PSK_WITH_CAMELLIA_256_GCM_SHA384 = 0xC091u,
+};
+
 bool check_http2_requirement(SSL *ssl)
 {
   auto tls_ver = SSL_version(ssl);
 
   switch(tls_ver) {
-  case TLS1_1_VERSION:
   case TLS1_2_VERSION:
     break;
   default:
-    LOG(INFO) << "TLSv1.2 or TLSv1.1 was not negotiated. "
+    LOG(INFO) << "TLSv1.2 was not negotiated. "
               << "HTTP/2 must not be negotiated.";
     return false;
   }
 
-  // TODO Figure out that ECDHE or DHE was negotiated and their key
-  // size.  SSL_get_server_tmp_key() cannot be used on server side.
+  auto cipher = SSL_get_current_cipher(ssl);
+
+  switch(SSL_CIPHER_get_id(cipher) & 0xffffu) {
+    // This case labels were generated by mkcipherlist.py
+  case TLS_DHE_RSA_WITH_AES_128_GCM_SHA256:
+  case TLS_DHE_RSA_WITH_AES_256_GCM_SHA384:
+  case TLS_DHE_DSS_WITH_AES_128_GCM_SHA256:
+  case TLS_DHE_DSS_WITH_AES_256_GCM_SHA384:
+  case TLS_DHE_PSK_WITH_AES_128_GCM_SHA256:
+  case TLS_DHE_PSK_WITH_AES_256_GCM_SHA384:
+  case TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256:
+  case TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384:
+  case TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256:
+  case TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384:
+  case TLS_DHE_RSA_WITH_ARIA_128_GCM_SHA256:
+  case TLS_DHE_RSA_WITH_ARIA_256_GCM_SHA384:
+  case TLS_DHE_DSS_WITH_ARIA_128_GCM_SHA256:
+  case TLS_DHE_DSS_WITH_ARIA_256_GCM_SHA384:
+  case TLS_ECDHE_ECDSA_WITH_ARIA_128_GCM_SHA256:
+  case TLS_ECDHE_ECDSA_WITH_ARIA_256_GCM_SHA384:
+  case TLS_ECDHE_RSA_WITH_ARIA_128_GCM_SHA256:
+  case TLS_ECDHE_RSA_WITH_ARIA_256_GCM_SHA384:
+  case TLS_DHE_PSK_WITH_ARIA_128_GCM_SHA256:
+  case TLS_DHE_PSK_WITH_ARIA_256_GCM_SHA384:
+  case TLS_DHE_RSA_WITH_CAMELLIA_128_GCM_SHA256:
+  case TLS_DHE_RSA_WITH_CAMELLIA_256_GCM_SHA384:
+  case TLS_DHE_DSS_WITH_CAMELLIA_128_GCM_SHA256:
+  case TLS_DHE_DSS_WITH_CAMELLIA_256_GCM_SHA384:
+  case TLS_ECDHE_ECDSA_WITH_CAMELLIA_128_GCM_SHA256:
+  case TLS_ECDHE_ECDSA_WITH_CAMELLIA_256_GCM_SHA384:
+  case TLS_ECDHE_RSA_WITH_CAMELLIA_128_GCM_SHA256:
+  case TLS_ECDHE_RSA_WITH_CAMELLIA_256_GCM_SHA384:
+  case TLS_DHE_PSK_WITH_CAMELLIA_128_GCM_SHA256:
+  case TLS_DHE_PSK_WITH_CAMELLIA_256_GCM_SHA384:
+    break;
+  default:
+    return false;
+  }
+
+  // TODO Check number of bits
 
   return true;
 }

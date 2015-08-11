@@ -35,7 +35,7 @@
 #include "shrpx_downstream_connection.h"
 #include "shrpx_config.h"
 #include "shrpx_http.h"
-#include "shrpx_accesslog.h"
+#include "shrpx_worker_config.h"
 #include "http2.h"
 #include "util.h"
 #include "base64.h"
@@ -112,16 +112,14 @@ int on_stream_close_callback
 int Http2Upstream::upgrade_upstream(HttpsUpstream *http)
 {
   int rv;
-  std::string settings_payload;
   auto downstream = http->get_downstream();
-  for(auto& hd : downstream->get_request_headers()) {
-    if(util::strieq(hd.name.c_str(), "http2-settings")) {
-      auto val = hd.value;
-      util::to_base64(val);
-      settings_payload = base64::decode(std::begin(val), std::end(val));
-      break;
-    }
-  }
+
+  auto http2_settings = downstream->get_http2_settings();
+  util::to_base64(http2_settings);
+
+  auto settings_payload = base64::decode(std::begin(http2_settings),
+                                         std::end(http2_settings));
+
   rv = nghttp2_session_upgrade
     (session_,
      reinterpret_cast<const uint8_t*>(settings_payload.c_str()),
@@ -214,11 +212,20 @@ int on_header_callback(nghttp2_session *session,
     return 0;
   }
   if(downstream->get_request_headers_sum() > Downstream::MAX_HEADERS_SUM) {
+    if(downstream->get_response_state() == Downstream::MSG_COMPLETE) {
+      return 0;
+    }
+
     if(LOG_ENABLED(INFO)) {
       ULOG(INFO, upstream) << "Too large header block size="
                            << downstream->get_request_headers_sum();
     }
-    return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
+
+    if(upstream->error_reply(downstream, 431) != 0) {
+      return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
+    }
+
+    return 0;
   }
   if(!http2::check_nv(name, namelen, value, valuelen)) {
     return 0;
@@ -269,6 +276,10 @@ int on_request_headers(Http2Upstream *upstream,
 {
   int rv;
 
+  if(downstream->get_response_state() == Downstream::MSG_COMPLETE) {
+    return 0;
+  }
+
   downstream->normalize_request_headers();
   auto& nva = downstream->get_request_headers();
 
@@ -287,7 +298,10 @@ int on_request_headers(Http2Upstream *upstream,
   }
 
   if(!http2::check_http2_headers(nva)) {
-    upstream->rst_stream(downstream, NGHTTP2_PROTOCOL_ERROR);
+    if(upstream->error_reply(downstream, 400) != 0) {
+      upstream->rst_stream(downstream, NGHTTP2_PROTOCOL_ERROR);
+    }
+
     return 0;
   }
 
@@ -296,6 +310,8 @@ int on_request_headers(Http2Upstream *upstream,
   auto path = http2::get_unique_header(nva, ":path");
   auto method = http2::get_unique_header(nva, ":method");
   auto scheme = http2::get_unique_header(nva, ":scheme");
+  auto user_agent = http2::get_header(nva, "user-agent");
+
   bool is_connect = method  && "CONNECT" == method->value;
   bool having_host = http2::non_empty_value(host);
   bool having_authority = http2::non_empty_value(authority);
@@ -303,7 +319,11 @@ int on_request_headers(Http2Upstream *upstream,
   if(is_connect) {
     // Here we strictly require :authority header field.
     if(scheme || path || !having_authority) {
-      upstream->rst_stream(downstream, NGHTTP2_PROTOCOL_ERROR);
+
+      if(upstream->error_reply(downstream, 400) != 0) {
+        upstream->rst_stream(downstream, NGHTTP2_PROTOCOL_ERROR);
+      }
+
       return 0;
     }
   } else {
@@ -314,17 +334,11 @@ int on_request_headers(Http2Upstream *upstream,
        (get_config()->http2_proxy && !having_authority) ||
        (!get_config()->http2_proxy && !having_authority && !having_host) ||
        !http2::non_empty_value(path)) {
-      upstream->rst_stream(downstream, NGHTTP2_PROTOCOL_ERROR);
-      return 0;
-    }
-  }
-  if(!is_connect &&
-     (frame->hd.flags & NGHTTP2_FLAG_END_STREAM) == 0) {
-    auto content_length = http2::get_header(nva, "content-length");
-    if(!content_length || http2::value_lws(content_length)) {
-      // If content-length is missing,
-      // Downstream::push_upload_data_chunk will fail and
-      upstream->rst_stream(downstream, NGHTTP2_PROTOCOL_ERROR);
+
+      if(upstream->error_reply(downstream, 400) != 0) {
+        upstream->rst_stream(downstream, NGHTTP2_PROTOCOL_ERROR);
+      }
+
       return 0;
     }
   }
@@ -333,20 +347,32 @@ int on_request_headers(Http2Upstream *upstream,
   downstream->set_request_http2_scheme(http2::value_to_str(scheme));
   downstream->set_request_http2_authority(http2::value_to_str(authority));
   downstream->set_request_path(http2::value_to_str(path));
+  downstream->set_request_user_agent(http2::value_to_str(user_agent));
 
-  downstream->check_upgrade_request();
+  if(!(frame->hd.flags & NGHTTP2_FLAG_END_STREAM)) {
+    downstream->set_request_http2_expect_body(true);
+  }
+
+  downstream->inspect_http2_request();
 
   auto dconn = upstream->get_client_handler()->get_downstream_connection();
   rv = dconn->attach_downstream(downstream);
   if(rv != 0) {
-    // If downstream connection fails, issue RST_STREAM.
-    upstream->rst_stream(downstream, NGHTTP2_INTERNAL_ERROR);
+    // downstream connection fails, send error page
+    if(upstream->error_reply(downstream, 503) != 0) {
+      upstream->rst_stream(downstream, NGHTTP2_INTERNAL_ERROR);
+    }
+
     downstream->set_request_state(Downstream::CONNECT_FAIL);
+
     return 0;
   }
   rv = downstream->push_request_headers();
   if(rv != 0) {
-    upstream->rst_stream(downstream, NGHTTP2_INTERNAL_ERROR);
+    if(upstream->error_reply(downstream, 503) != 0) {
+      upstream->rst_stream(downstream, NGHTTP2_INTERNAL_ERROR);
+    }
+
     return 0;
   }
   downstream->set_request_state(Downstream::HEADER_COMPLETE);
@@ -421,6 +447,19 @@ int on_frame_recv_callback
       return NGHTTP2_ERR_CALLBACK_FAILURE;
     }
     break;
+  case NGHTTP2_GOAWAY:
+    if(LOG_ENABLED(INFO)) {
+      auto debug_data = util::ascii_dump(frame->goaway.opaque_data,
+                                         frame->goaway.opaque_data_len);
+
+      ULOG(INFO, upstream) << "GOAWAY received: last-stream-id="
+                           << frame->goaway.last_stream_id
+                           << ", error_code="
+                           << frame->goaway.error_code
+                           << ", debug_data="
+                           << debug_data;
+    }
+    break;
   default:
     break;
   }
@@ -438,11 +477,18 @@ int on_data_chunk_recv_callback(nghttp2_session *session,
   auto downstream = upstream->find_downstream(stream_id);
 
   if(!downstream) {
+    upstream->handle_ign_data_chunk(len);
+    return 0;
+  }
+
+  if(!downstream->get_downstream_connection()) {
+    upstream->handle_ign_data_chunk(len);
     return 0;
   }
 
   if(downstream->push_upload_data_chunk(data, len) != 0) {
     upstream->rst_stream(downstream, NGHTTP2_INTERNAL_ERROR);
+    upstream->handle_ign_data_chunk(len);
     return 0;
   }
 
@@ -458,11 +504,28 @@ int on_frame_send_callback(nghttp2_session* session,
     verbose_on_frame_send_callback(session, frame, user_data);
   }
   auto upstream = static_cast<Http2Upstream*>(user_data);
-  if(frame->hd.type == NGHTTP2_SETTINGS &&
-     (frame->hd.flags & NGHTTP2_FLAG_ACK) == 0) {
-    if(upstream->start_settings_timer() != 0) {
+
+  switch(frame->hd.type) {
+  case NGHTTP2_SETTINGS:
+    if((frame->hd.flags & NGHTTP2_FLAG_ACK) == 0 &&
+       upstream->start_settings_timer() != 0) {
+
       return NGHTTP2_ERR_CALLBACK_FAILURE;
     }
+    break;
+  case NGHTTP2_GOAWAY:
+    if(LOG_ENABLED(INFO)) {
+      auto debug_data = util::ascii_dump(frame->goaway.opaque_data,
+                                         frame->goaway.opaque_data_len);
+
+      ULOG(INFO, upstream) << "Sending GOAWAY: last-stream-id="
+                           << frame->goaway.last_stream_id
+                           << ", error_code="
+                           << frame->goaway.error_code
+                           << ", debug_data="
+                           << debug_data;
+    }
+    break;
   }
   return 0;
 }
@@ -508,12 +571,14 @@ namespace {
 nghttp2_error_code infer_upstream_rst_stream_error_code
 (nghttp2_error_code downstream_error_code)
 {
-  // Only propagate NGHTTP2_REFUSED_STREAM so that upstream client
-  // can resend request.
-  if(downstream_error_code != NGHTTP2_REFUSED_STREAM) {
-    return NGHTTP2_INTERNAL_ERROR;
-  } else {
+  // NGHTTP2_REFUSED_STREAM is important because it tells upstream
+  // client to retry.
+  switch(downstream_error_code) {
+  case NGHTTP2_NO_ERROR:
+  case NGHTTP2_REFUSED_STREAM:
     return downstream_error_code;
+  default:
+    return NGHTTP2_INTERNAL_ERROR;
   }
 }
 } // namespace
@@ -521,7 +586,8 @@ nghttp2_error_code infer_upstream_rst_stream_error_code
 Http2Upstream::Http2Upstream(ClientHandler *handler)
   : handler_(handler),
     session_(nullptr),
-    settings_timerev_(nullptr)
+    settings_timerev_(nullptr),
+    recv_ign_window_size_(0)
 {
   handler->set_upstream_timeouts(&get_config()->http2_upstream_read_timeout,
                                  &get_config()->upstream_write_timeout);
@@ -874,7 +940,7 @@ void downstream_eventcb(bufferevent *bev, short events, void *ptr)
       // stream, we don't have to do anything since response was
       // complete.
       if(downstream->get_upgraded()) {
-        upstream->rst_stream(downstream, NGHTTP2_INTERNAL_ERROR);
+        upstream->rst_stream(downstream, NGHTTP2_NO_ERROR);
       }
     } else {
       if(downstream->get_response_state() == Downstream::HEADER_COMPLETE) {
@@ -927,10 +993,18 @@ int Http2Upstream::window_update(Downstream *downstream,
                                  int32_t window_size_increment)
 {
   int rv;
+  int32_t stream_id;
+
+  if(downstream) {
+    stream_id = downstream->get_stream_id();
+  } else {
+    stream_id = 0;
+    recv_ign_window_size_ = 0;
+  }
+
   rv = nghttp2_submit_window_update(session_, NGHTTP2_FLAG_NONE,
-                                    downstream ?
-                                    downstream->get_stream_id() : 0,
-                                    window_size_increment);
+                                    stream_id, window_size_increment);
+
   if(rv < NGHTTP2_ERR_FATAL) {
     ULOG(FATAL, this) << "nghttp2_submit_window_update() failed: "
                       << nghttp2_strerror(rv);
@@ -972,14 +1046,21 @@ ssize_t downstream_data_read_callback(nghttp2_session *session,
      downstream->get_response_state() == Downstream::MSG_COMPLETE) {
     if(!downstream->get_upgraded()) {
       *data_flags |= NGHTTP2_DATA_FLAG_EOF;
+
+      upstream_accesslog(upstream->get_client_handler()->get_ipaddr(),
+                         downstream->get_response_http_status(),
+                         downstream);
+
+      if(nghttp2_session_get_stream_remote_close(session, stream_id) == 0) {
+        upstream->rst_stream(downstream, NGHTTP2_NO_ERROR);
+      }
     } else {
       // For tunneling, issue RST_STREAM to finish the stream.
       if(LOG_ENABLED(INFO)) {
         ULOG(INFO, upstream) << "RST_STREAM to tunneled stream stream_id="
                              << stream_id;
       }
-      upstream->rst_stream(downstream, infer_upstream_rst_stream_error_code
-                           (downstream->get_response_rst_stream_error_code()));
+      upstream->rst_stream(downstream, NGHTTP2_NO_ERROR);
     }
   }
 
@@ -999,6 +1080,7 @@ int Http2Upstream::error_reply(Downstream *downstream,
 {
   int rv;
   auto html = http::create_error_html(status_code);
+  downstream->set_response_http_status(status_code);
   downstream->init_response_body_buf();
   auto body = downstream->get_response_body_buf();
   rv = evbuffer_add(body, html.c_str(), html.size());
@@ -1028,10 +1110,7 @@ int Http2Upstream::error_reply(Downstream *downstream,
                       << nghttp2_strerror(rv);
     DIE();
   }
-  if(get_config()->accesslog) {
-    upstream_response(get_client_handler()->get_ipaddr(),
-                      status_code, downstream);
-  }
+
   return 0;
 }
 
@@ -1142,11 +1221,14 @@ int Http2Upstream::on_downstream_header_complete(Downstream *downstream)
     ULOG(FATAL, this) << "nghttp2_submit_response() failed";
     return -1;
   }
-  if(get_config()->accesslog) {
-    upstream_response(get_client_handler()->get_ipaddr(),
-                      downstream->get_response_http_status(),
-                      downstream);
+
+  if(downstream->get_upgraded()) {
+    upstream_accesslog(get_client_handler()->get_ipaddr(),
+                       downstream->get_response_http_status(), downstream);
   }
+
+  downstream->clear_response_headers();
+
   return 0;
 }
 
@@ -1213,6 +1295,35 @@ int Http2Upstream::resume_read(IOCtrlReason reason, Downstream *downstream)
     }
   }
   return send();
+}
+
+int Http2Upstream::on_downstream_abort_request(Downstream *downstream,
+                                               unsigned int status_code)
+{
+  int rv;
+
+  rv = error_reply(downstream, status_code);
+
+  if(rv != 0) {
+    return -1;
+  }
+
+  return send();
+}
+
+int Http2Upstream::handle_ign_data_chunk(size_t len)
+{
+  int32_t window_size;
+
+  recv_ign_window_size_ += len;
+
+  window_size = nghttp2_session_get_effective_local_window_size(session_);
+
+  if(recv_ign_window_size_ >= window_size / 2) {
+    window_update(nullptr, recv_ign_window_size_);
+  }
+
+  return 0;
 }
 
 } // namespace shrpx

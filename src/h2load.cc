@@ -108,13 +108,16 @@ Stream::Stream()
   : status_success(-1)
 {}
 
-Client::Client(Worker *worker)
+Client::Client(Worker *worker, size_t req_todo)
   : worker(worker),
     ssl(nullptr),
     bev(nullptr),
     next_addr(config.addrs),
     reqidx(0),
-    state(CLIENT_IDLE)
+    state(CLIENT_IDLE),
+    req_todo(req_todo),
+    req_started(0),
+    req_done(0)
 {}
 
 Client::~Client()
@@ -158,12 +161,19 @@ int Client::connect()
   return 0;
 }
 
-void Client::disconnect()
+void Client::fail()
 {
   process_abandoned_streams();
+
   if(worker->stats.req_done == worker->stats.req_todo) {
     worker->schedule_terminate();
   }
+
+  disconnect();
+}
+
+void Client::disconnect()
+{
   int fd = -1;
   streams.clear();
   session.reset();
@@ -192,13 +202,16 @@ void Client::submit_request()
 {
   session->submit_request();
   ++worker->stats.req_started;
+  ++req_started;
 }
 
 void Client::process_abandoned_streams()
 {
-  worker->stats.req_failed += streams.size();
-  worker->stats.req_error += streams.size();
-  worker->stats.req_done += streams.size();
+  auto req_abandoned = req_todo - req_done;
+
+  worker->stats.req_failed += req_abandoned;
+  worker->stats.req_error += req_abandoned;
+  worker->stats.req_done += req_abandoned;
 }
 
 void Client::report_progress()
@@ -265,6 +278,7 @@ void Client::on_header(int32_t stream_id,
 void Client::on_stream_close(int32_t stream_id, bool success)
 {
   ++worker->stats.req_done;
+  ++req_done;
   if(success && streams[stream_id].status_success == 1) {
     ++worker->stats.req_success;
   } else {
@@ -277,7 +291,7 @@ void Client::on_stream_close(int32_t stream_id, bool success)
     return;
   }
 
-  if(worker->stats.req_started < worker->stats.req_todo) {
+  if(req_started < req_todo) {
     submit_request();
     return;
   }
@@ -287,13 +301,13 @@ int Client::on_connect()
 {
   session->on_connect();
 
-  auto nreq = std::min(worker->stats.req_todo - worker->stats.req_started,
-                       std::min(worker->stats.req_todo / worker->clients.size(),
-                                (size_t)config.max_concurrent_streams));
+  auto nreq = std::min(req_todo - req_started,
+                       (size_t)config.max_concurrent_streams);
+
   for(; nreq > 0; --nreq) {
     submit_request();
   }
-  return 0;
+  return session->on_write();
 }
 
 int Client::on_read()
@@ -315,17 +329,29 @@ int Client::on_write()
 Worker::Worker(uint32_t id, SSL_CTX *ssl_ctx, size_t req_todo, size_t nclients,
                Config *config)
   : stats{0}, evbase(event_base_new()), ssl_ctx(ssl_ctx), config(config),
-    id(id), term_timer_started(false)
+    term_timer(nullptr), id(id)
 {
   stats.req_todo = req_todo;
   progress_interval = std::max((size_t)1, req_todo / 10);
+
+  auto nreqs_per_client = req_todo / nclients;
+  auto nreqs_rem = req_todo % nclients;
+
   for(size_t i = 0; i < nclients; ++i) {
-    clients.push_back(util::make_unique<Client>(this));
+    auto req_todo = nreqs_per_client;
+    if(nreqs_rem > 0) {
+      ++req_todo;
+      --nreqs_rem;
+    }
+    clients.push_back(util::make_unique<Client>(this, req_todo));
   }
 }
 
 Worker::~Worker()
 {
+  if(term_timer) {
+    event_free(term_timer);
+  }
   event_base_free(evbase);
 }
 
@@ -334,7 +360,7 @@ void Worker::run()
   for(auto& client : clients) {
     if(client->connect() != 0) {
       std::cerr << "client could not connect to host" << std::endl;
-      client->disconnect();
+      client->fail();
     }
   }
   event_base_loop(evbase, 0);
@@ -350,11 +376,11 @@ void term_timeout_cb(evutil_socket_t fd, short what, void *arg)
 
 void Worker::schedule_terminate()
 {
-  if(term_timer_started) {
+  if(term_timer) {
     return;
   }
-  term_timer_started = true;
-  auto term_timer = evtimer_new(evbase, term_timeout_cb, this);
+
+  term_timer = evtimer_new(evbase, term_timeout_cb, this);
   timeval timeout = { 0, 0 };
   evtimer_add(term_timer, &timeout);
 }
@@ -400,7 +426,7 @@ void eventcb(bufferevent *bev, short events, void *ptr)
 
       if(!next_proto) {
         debug_nextproto_error();
-        client->disconnect();
+        client->fail();
         return;
       }
 
@@ -416,12 +442,12 @@ void eventcb(bufferevent *bev, short events, void *ptr)
                                                            spdy_version);
         } else {
           debug_nextproto_error();
-          client->disconnect();
+          client->fail();
           return;
         }
 #else // !HAVE_SPDYLAY
         debug_nextproto_error();
-        client->disconnect();
+        client->fail();
         return;
 #endif // !HAVE_SPDYLAY
       }
@@ -458,7 +484,7 @@ void eventcb(bufferevent *bev, short events, void *ptr)
     return;
   }
   if(events & BEV_EVENT_EOF) {
-    client->disconnect();
+    client->fail();
     return;
   }
   if(events & (BEV_EVENT_ERROR | BEV_EVENT_TIMEOUT)) {
@@ -470,7 +496,7 @@ void eventcb(bufferevent *bev, short events, void *ptr)
       }
     }
     debug("error/eof\n");
-    client->disconnect();
+    client->fail();
     return;
   }
 }
@@ -483,7 +509,7 @@ void readcb(bufferevent *bev, void *ptr)
   auto client = static_cast<Client*>(ptr);
   rv = client->on_read();
   if(rv != 0) {
-    client->disconnect();
+    client->fail();
   }
 }
 } // namespace
@@ -498,7 +524,7 @@ void writecb(bufferevent *bev, void *ptr)
   auto client = static_cast<Client*>(ptr);
   rv = client->on_write();
   if(rv != 0) {
-    client->disconnect();
+    client->fail();
   }
 }
 } // namespace
@@ -551,11 +577,11 @@ std::string get_reqline(const char *uri, const http_parser_url& u)
 } // namespace
 
 namespace {
-std::unique_ptr<Worker> run(std::unique_ptr<Worker> worker)
+Stats run(std::unique_ptr<Worker> worker)
 {
   worker->run();
 
-  return worker;
+  return worker->stats;
 }
 } // namespace
 
@@ -890,6 +916,10 @@ int main(int argc, char **argv)
 
   resolve_host();
 
+  if(config.nclients == 1) {
+    config.nthreads = 1;
+  }
+
   size_t nreqs_per_thread = config.nreqs / config.nthreads;
   ssize_t nreqs_rem = config.nreqs % config.nthreads;
 
@@ -898,7 +928,7 @@ int main(int argc, char **argv)
 
   std::cout << "starting benchmark..." << std::endl;
 
-  std::vector<std::future<std::unique_ptr<Worker>>> futures;
+  std::vector<std::future<Stats>> futures;
   auto start = std::chrono::steady_clock::now();
 
   std::vector<std::unique_ptr<Worker>> workers;
@@ -924,8 +954,7 @@ int main(int argc, char **argv)
   worker.run();
 
   for(auto& fut : futures) {
-    auto subworker = fut.get();
-    auto& stats = subworker->stats;
+    auto stats = fut.get();
 
     worker.stats.req_todo += stats.req_todo;
     worker.stats.req_started += stats.req_started;
@@ -995,6 +1024,9 @@ int main(int argc, char **argv)
             << worker.stats.bytes_head << " bytes headers, "
             << worker.stats.bytes_body << " bytes data"
             << std::endl;
+
+  SSL_CTX_free(ssl_ctx);
+
   return 0;
 }
 

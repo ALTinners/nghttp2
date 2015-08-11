@@ -35,6 +35,7 @@
 #include <unistd.h>
 #include <getopt.h>
 #include <syslog.h>
+#include <signal.h>
 
 #include <limits>
 #include <cstdlib>
@@ -52,6 +53,7 @@
 #include "shrpx_config.h"
 #include "shrpx_listen_handler.h"
 #include "shrpx_ssl.h"
+#include "shrpx_worker_config.h"
 #include "util.h"
 #include "app_helper.h"
 #include "ssl.h"
@@ -59,6 +61,10 @@
 using namespace nghttp2;
 
 namespace shrpx {
+
+namespace {
+const int REOPEN_LOG_SIGNAL = SIGUSR1;
+} // namespace
 
 namespace {
 void ssl_acceptcb(evconnlistener *listener, int fd,
@@ -104,16 +110,20 @@ int resolve_hostname(sockaddr_union *addr, size_t *addrlen,
   char host[NI_MAXHOST];
   rv = getnameinfo(res->ai_addr, res->ai_addrlen, host, sizeof(host),
                   0, 0, NI_NUMERICHOST);
-  if(rv == 0) {
-    if(LOG_ENABLED(INFO)) {
-      LOG(INFO) << "Address resolution for " << hostname << " succeeded: "
-                << host;
-    }
-  } else {
+  if(rv != 0) {
     LOG(FATAL) << "Address resolution for " << hostname << " failed: "
                << gai_strerror(rv);
+
+    freeaddrinfo(res);
+
     return -1;
   }
+
+  if(LOG_ENABLED(INFO)) {
+    LOG(INFO) << "Address resolution for " << hostname << " succeeded: "
+              << host;
+  }
+
   memcpy(addr, res->ai_addr, res->ai_addrlen);
   *addrlen = res->ai_addrlen;
   freeaddrinfo(res);
@@ -133,7 +143,7 @@ evconnlistener* create_evlistener(ListenHandler *handler, int family)
 {
   addrinfo hints;
   int fd = -1;
-  int r;
+  int rv;
 
   auto service = util::utos(get_config()->port);
   memset(&hints, 0, sizeof(addrinfo));
@@ -144,17 +154,18 @@ evconnlistener* create_evlistener(ListenHandler *handler, int family)
   hints.ai_flags |= AI_ADDRCONFIG;
 #endif // AI_ADDRCONFIG
 
-  auto node = strcmp("*", get_config()->host) == 0 ? NULL : get_config()->host;
+  auto node = strcmp("*", get_config()->host.get()) == 0 ?
+    nullptr : get_config()->host.get();
 
   addrinfo *res, *rp;
-  r = getaddrinfo(node, service.c_str(), &hints, &res);
-  if(r != 0) {
+  rv = getaddrinfo(node, service.c_str(), &hints, &res);
+  if(rv != 0) {
     if(LOG_ENABLED(INFO)) {
       LOG(INFO) << "Unable to get IPv" << (family == AF_INET ? "4" : "6")
-                << " address for " << get_config()->host << ": "
-                << gai_strerror(r);
+                << " address for " << get_config()->host.get() << ": "
+                << gai_strerror(rv);
     }
-    return NULL;
+    return nullptr;
   }
   for(rp = res; rp; rp = rp->ai_next) {
     fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
@@ -182,27 +193,32 @@ evconnlistener* create_evlistener(ListenHandler *handler, int family)
     }
     close(fd);
   }
-  if(rp) {
-    char host[NI_MAXHOST];
-    r = getnameinfo(rp->ai_addr, rp->ai_addrlen, host, sizeof(host),
-                        0, 0, NI_NUMERICHOST);
-    if(r == 0) {
-      if(LOG_ENABLED(INFO)) {
-        LOG(INFO) << "Listening on " << host << ", port "
-                  << get_config()->port;
-      }
-    } else {
-      LOG(FATAL) << gai_strerror(r);
-      DIE();
-    }
+
+  if(!rp) {
+    LOG(WARNING) << "Listening " << (family == AF_INET ? "IPv4" : "IPv6")
+                 << " socket failed";
+
+    freeaddrinfo(res);
+
+    return nullptr;
   }
+
+  char host[NI_MAXHOST];
+  rv = getnameinfo(rp->ai_addr, rp->ai_addrlen, host, sizeof(host),
+                   nullptr, 0, NI_NUMERICHOST);
+
   freeaddrinfo(res);
-  if(rp == 0) {
-    if(LOG_ENABLED(INFO)) {
-      LOG(INFO) << "Listening " << (family == AF_INET ? "IPv4" : "IPv6")
-                << " socket failed";
-    }
-    return 0;
+
+  if(rv != 0) {
+    LOG(WARNING) << gai_strerror(rv);
+
+    close(fd);
+
+    return nullptr;
+  }
+
+  if(LOG_ENABLED(INFO)) {
+    LOG(INFO) << "Listening on " << host << ", port " << get_config()->port;
   }
 
   auto evlistener = evconnlistener_new
@@ -240,19 +256,68 @@ void drop_privileges()
 namespace {
 void save_pid()
 {
-  std::ofstream out(get_config()->pid_file, std::ios::binary);
+  std::ofstream out(get_config()->pid_file.get(), std::ios::binary);
   out << getpid() << "\n";
   out.close();
   if(!out) {
-    LOG(ERROR) << "Could not save PID to file " << get_config()->pid_file;
+    LOG(ERROR) << "Could not save PID to file "
+               << get_config()->pid_file.get();
     exit(EXIT_FAILURE);
   }
 }
 } // namespace
 
 namespace {
+void reopen_log_signal_cb(evutil_socket_t sig, short events, void *arg)
+{
+  auto listener_handler = static_cast<ListenHandler*>(arg);
+
+  if(LOG_ENABLED(INFO)) {
+    LOG(INFO) << "Reopening log files: worker_info(" << &worker_config << ")";
+  }
+
+  (void)reopen_log_files();
+
+  if(get_config()->num_worker > 1) {
+    listener_handler->worker_reopen_log_files();
+  }
+}
+} // namespace
+
+namespace {
+std::unique_ptr<std::string> generate_time()
+{
+  char buf[32];
+
+  // Format data like this:
+  // 03/Jul/2014:00:19:38 +0900
+  struct tm tms;
+  auto now = time(nullptr);
+
+  if(localtime_r(&now, &tms) == nullptr) {
+    return util::make_unique<std::string>("");
+  }
+
+  if(strftime(buf, sizeof(buf), "%d/%b/%Y:%T %z", &tms) == 0) {
+    return util::make_unique<std::string>("");
+  }
+
+  return util::make_unique<std::string>(buf);
+}
+} // namespace
+
+namespace {
+void refresh_cb(evutil_socket_t sig, short events, void *arg)
+{
+  mod_config()->cached_time = generate_time();
+}
+} // namespace
+
+namespace {
 int event_loop()
 {
+  int rv;
+
   auto evbase = event_base_new();
   if(!evbase) {
     LOG(FATAL) << "event_base_new() failed";
@@ -288,7 +353,7 @@ int event_loop()
   auto evlistener4 = create_evlistener(listener_handler, AF_INET);
   if(!evlistener6 && !evlistener4) {
     LOG(FATAL) << "Failed to listen on address "
-               << get_config()->host << ", port " << get_config()->port;
+               << get_config()->host.get() << ", port " << get_config()->port;
     exit(EXIT_FAILURE);
   }
 
@@ -296,16 +361,72 @@ int event_loop()
   // After that, we drop the root privileges if needed.
   drop_privileges();
 
+#ifndef NOTHREADS
+  sigset_t signals;
+  sigemptyset(&signals);
+  sigaddset(&signals, REOPEN_LOG_SIGNAL);
+
+  rv = pthread_sigmask(SIG_BLOCK, &signals, nullptr);
+  if(rv != 0) {
+    LOG(ERROR) << "Blocking REOPEN_LOG_SIGNAL failed: " << strerror(rv);
+  }
+#endif // !NOTHREADS
+
   if(get_config()->num_worker > 1) {
     listener_handler->create_worker_thread(get_config()->num_worker);
   } else if(get_config()->downstream_proto == PROTO_HTTP2) {
     listener_handler->create_http2_session();
   }
 
+#ifndef NOTHREADS
+  rv = pthread_sigmask(SIG_UNBLOCK, &signals, nullptr);
+  if(rv != 0) {
+    LOG(ERROR) << "Unblocking REOPEN_LOG_SIGNAL failed: " << strerror(rv);
+  }
+#endif // !NOTHREADS
+
+  auto reopen_log_signal_event = evsignal_new(evbase, REOPEN_LOG_SIGNAL,
+                                              reopen_log_signal_cb,
+                                              listener_handler);
+
+  if(!reopen_log_signal_event) {
+    LOG(ERROR) << "evsignal_new failed";
+  } else {
+    rv = event_add(reopen_log_signal_event, nullptr);
+    if(rv < 0) {
+      LOG(ERROR) << "event_add for reopen_log_signal_event failed";
+    }
+  }
+
+  auto refresh_event = event_new(evbase, -1, EV_PERSIST, refresh_cb,
+                                 nullptr);
+
+  if(!refresh_event) {
+    LOG(ERROR) << "event_new failed";
+
+    exit(EXIT_FAILURE);
+  }
+
+  timeval refresh_timeout = { 1, 0 };
+  rv = event_add(refresh_event, &refresh_timeout);
+
+  if(rv == -1) {
+    LOG(ERROR) << "Adding refresh_event failed";
+
+    exit(EXIT_FAILURE);
+  }
+
   if(LOG_ENABLED(INFO)) {
     LOG(INFO) << "Entering event loop";
   }
   event_base_loop(evbase, 0);
+
+  if(refresh_event) {
+    event_free(refresh_event);
+  }
+  if(reopen_log_signal_event) {
+    event_free(reopen_log_signal_event);
+  }
   if(evlistener4) {
     evconnlistener_free(evlistener4);
   }
@@ -335,7 +456,7 @@ const char *DEFAULT_NPN_LIST = NGHTTP2_PROTO_VERSION_ID ","
 } // namespace
 
 namespace {
-const char *DEFAULT_TLS_PROTO_LIST = "TLSv1.2,TLSv1.1,TLSv1.0";
+const char *DEFAULT_TLS_PROTO_LIST = "TLSv1.2,TLSv1.1";
 } // namespace
 
 namespace {
@@ -347,11 +468,11 @@ void fill_default_config()
   mod_config()->daemon = false;
 
   mod_config()->server_name = "nghttpx nghttp2/" NGHTTP2_VERSION;
-  set_config_str(&mod_config()->host, "*");
+  mod_config()->host = strcopy("*");
   mod_config()->port = 3000;
-  mod_config()->private_key_file = 0;
-  mod_config()->private_key_passwd = 0;
-  mod_config()->cert_file = 0;
+  mod_config()->private_key_file = nullptr;
+  mod_config()->private_key_passwd = nullptr;
+  mod_config()->cert_file = nullptr;
 
   // Read timeout for HTTP2 upstream connection
   mod_config()->http2_upstream_read_timeout.tv_sec = 180;
@@ -388,52 +509,46 @@ void fill_default_config()
   mod_config()->upstream_no_tls = false;
   mod_config()->downstream_no_tls = false;
 
-  set_config_str(&mod_config()->downstream_host, "127.0.0.1");
+  mod_config()->downstream_host = strcopy("127.0.0.1");
   mod_config()->downstream_port = 80;
-  mod_config()->downstream_hostport = 0;
+  mod_config()->downstream_hostport = nullptr;
   mod_config()->downstream_addrlen = 0;
 
   mod_config()->num_worker = 1;
   mod_config()->http2_max_concurrent_streams = 100;
   mod_config()->add_x_forwarded_for = false;
   mod_config()->no_via = false;
-  mod_config()->accesslog = false;
-  set_config_str(&mod_config()->conf_path, "/etc/nghttpx/nghttpx.conf");
-  mod_config()->syslog = false;
+  mod_config()->accesslog_file = nullptr;
+  mod_config()->accesslog_syslog = false;
+  mod_config()->errorlog_file = strcopy("/dev/stderr");
+  mod_config()->errorlog_syslog = false;
+  mod_config()->conf_path = strcopy("/etc/nghttpx/nghttpx.conf");
   mod_config()->syslog_facility = LOG_DAEMON;
-  mod_config()->use_syslog = false;
   // Default accept() backlog
   mod_config()->backlog = -1;
-  mod_config()->ciphers = 0;
-  mod_config()->honor_cipher_order = false;
+  mod_config()->ciphers = nullptr;
   mod_config()->http2_proxy = false;
   mod_config()->http2_bridge = false;
   mod_config()->client_proxy = false;
   mod_config()->client = false;
   mod_config()->client_mode = false;
   mod_config()->insecure = false;
-  mod_config()->cacert = 0;
-  mod_config()->pid_file = 0;
+  mod_config()->cacert = nullptr;
+  mod_config()->pid_file = nullptr;
   mod_config()->uid = 0;
   mod_config()->gid = 0;
   mod_config()->backend_ipv4 = false;
   mod_config()->backend_ipv6 = false;
-  mod_config()->tty = isatty(fileno(stderr));
-  mod_config()->cert_tree = 0;
-  mod_config()->downstream_http_proxy_userinfo = 0;
-  mod_config()->downstream_http_proxy_host = 0;
+  mod_config()->cert_tree = nullptr;
+  mod_config()->downstream_http_proxy_userinfo = nullptr;
+  mod_config()->downstream_http_proxy_host = nullptr;
   mod_config()->downstream_http_proxy_port = 0;
   mod_config()->downstream_http_proxy_addrlen = 0;
-  mod_config()->rate_limit_cfg = nullptr;
-  mod_config()->read_rate = 1024*1024;
-  mod_config()->read_burst = 4*1024*1024;
-  mod_config()->write_rate = 0;
-  mod_config()->write_burst = 0;
   mod_config()->worker_read_rate = 0;
   mod_config()->worker_read_burst = 0;
   mod_config()->worker_write_rate = 0;
   mod_config()->worker_write_burst = 0;
-  mod_config()->npn_list = nullptr;
+  mod_config()->worker_rate_limit_cfg = nullptr;
   mod_config()->verify_client = false;
   mod_config()->verify_client_cacert = nullptr;
   mod_config()->client_private_key_file = nullptr;
@@ -443,6 +558,7 @@ void fill_default_config()
   mod_config()->http2_no_cookie_crumbling = false;
   mod_config()->upstream_frame_debug = false;
   mod_config()->padding = 0;
+  mod_config()->worker_frontend_connections = 0;
 
   nghttp2_option_new(&mod_config()->http2_option);
 
@@ -450,6 +566,9 @@ void fill_default_config()
     (mod_config()->http2_option, 1);
   nghttp2_option_set_no_auto_connection_window_update
     (mod_config()->http2_option, 1);
+
+  mod_config()->tls_proto_mask = 0;
+  mod_config()->cached_time = generate_time();
 }
 } // namespace
 
@@ -497,14 +616,14 @@ Connections:
   -b, --backend=<HOST,PORT>
                      Set backend host and port.
                      Default: ')"
-      << get_config()->downstream_host << ","
+      << get_config()->downstream_host.get() << ","
       << get_config()->downstream_port << R"('
   -f, --frontend=<HOST,PORT>
                      Set frontend host and port.  If <HOST> is '*', it
                      assumes  all addresses  including  both IPv4  and
                      IPv6.
                      Default: ')"
-      << get_config()->host << "," << get_config()->port << R"('
+      << get_config()->host.get() << "," << get_config()->port << R"('
   --backlog=<NUM>    Set  listen  backlog  size.    If  -1  is  given,
                      libevent will choose suitable value.
                      Default: )"
@@ -517,30 +636,6 @@ Performance:
                      Set the number of worker threads.
                      Default: )"
       << get_config()->num_worker << R"(
-  --read-rate=<RATE>
-                     Set  maximum   average  read  rate   on  frontend
-                     connection.  Setting 0 to  this option means read
-                     rate is unlimited.
-                     Default: )"
-      << get_config()->read_rate << R"(
-  --read-burst=<SIZE>
-                     Set   maximum  read   burst   size  on   frontend
-                     connection.  Setting 0 to  this option means read
-                     burst size is unlimited.
-                     Default: )"
-      << get_config()->read_burst << R"(
-  --write-rate=<RATE>
-                     Set  maximum  average   write  rate  on  frontend
-                     connection.  Setting 0 to this option means write
-                     rate is unlimited.
-                     Default: )"
-      << get_config()->write_rate << R"(
-  --write-burst=<SIZE>
-                     Set   maximum  write   burst  size   on  frontend
-                     connection.  Setting 0 to this option means write
-                     burst size is unlimited.
-                     Default: )"
-      << get_config()->write_burst << R"(
   --worker-read-rate=<RATE>
                      Set  maximum   average  read  rate   on  frontend
                      connection per worker.  Setting  0 to this option
@@ -565,6 +660,10 @@ Performance:
                      means write burst size is unlimited.
                      Default: )"
       << get_config()->worker_write_burst << R"(
+  --worker-frontend-connections=<NUM>
+                     Set  maximum number  of simultaneous  connections
+                     frontend accepts.  Setting 0 means unlimited.
+                     Default: 0
 
 Timeout:
   --frontend-http2-read-timeout=<SEC>
@@ -613,12 +712,7 @@ Timeout:
 
 SSL/TLS:
   --ciphers=<SUITE>  Set  allowed  cipher  list.  The  format  of  the
-                     string  is described  in OpenSSL  ciphers(1).  If
-                     this  option  is  used,  --honor-cipher-order  is
-                     implicitly enabled.
-  --honor-cipher-order
-                     Honor server cipher order,  giving the ability to
-                     mitigate BEAST attacks.
+                     string  is described  in OpenSSL  ciphers(1).
   -k, --insecure
                      Don't verify backend  server's certificate if -p,
                      --client   or   --http2-bridge  are   given   and
@@ -745,8 +839,19 @@ Logging:
                      Set the  severity level  of log  output.  <LEVEL>
                      must be one of INFO, WARNING, ERROR and FATAL.
                      Default: WARNING
-  --accesslog        Print simple accesslog to stderr.
-  --syslog           Send log messages to syslog.
+  --accesslog-file=<PATH>
+                     Set path  to write  access log.  To  reopen file,
+                     send USR1 signal to nghttpx.
+  --accesslog-syslog
+                     Send  access log  to syslog.   If this  option is
+                     used, --access-file option is ignored.
+  --errorlog-file=<PATH>
+                     Set  path to  write error  log.  To  reopen file,
+                     send USR1 signal to nghttpx.
+                     Default: )"
+      << get_config()->errorlog_file.get() << R"(
+  --errorlog-syslog  Send  error log  to  syslog.  If  this option  is
+                     used, --errorlog-file option is ignored.
   --syslog-facility=<FACILITY>
                      Set syslog facility to <FACILITY>.
                      Default: )"
@@ -798,7 +903,7 @@ Misc:
                      intended to be used to drop root privileges.
   --conf=<PATH>      Load configuration from <PATH>.
                      Default: )"
-      << get_config()->conf_path << R"(
+      << get_config()->conf_path.get() << R"(
   -v, --version      Print version and exit.
   -h, --help         Print this help and exit.)"
       << std::endl;
@@ -833,13 +938,12 @@ int main(int argc, char **argv)
       {"frontend-write-timeout", required_argument, &flag, 4},
       {"backend-read-timeout", required_argument, &flag, 5},
       {"backend-write-timeout", required_argument, &flag, 6},
-      {"accesslog", no_argument, &flag, 7},
+      {"accesslog-file", required_argument, &flag, 7},
       {"backend-keep-alive-timeout", required_argument, &flag, 8},
       {"frontend-http2-window-bits", required_argument, &flag, 9},
       {"pid-file", required_argument, &flag, 10},
       {"user", required_argument, &flag, 11},
       {"conf", required_argument, &flag, 12},
-      {"syslog", no_argument, &flag, 13},
       {"syslog-facility", required_argument, &flag, 14},
       {"backlog", required_argument, &flag, 15},
       {"ciphers", required_argument, &flag, 16},
@@ -856,12 +960,7 @@ int main(int argc, char **argv)
       {"backend-no-tls", no_argument, &flag, 27},
       {"frontend-no-tls", no_argument, &flag, 29},
       {"backend-tls-sni-field", required_argument, &flag, 31},
-      {"honor-cipher-order", no_argument, &flag, 32},
       {"dh-param-file", required_argument, &flag, 33},
-      {"read-rate", required_argument, &flag, 34},
-      {"read-burst", required_argument, &flag, 35},
-      {"write-rate", required_argument, &flag, 36},
-      {"write-burst", required_argument, &flag, 37},
       {"npn-list", required_argument, &flag, 38},
       {"verify-client", no_argument, &flag, 39},
       {"verify-client-cacert", required_argument, &flag, 40},
@@ -880,6 +979,10 @@ int main(int argc, char **argv)
       {"worker-write-burst", required_argument, &flag, 53},
       {"altsvc", required_argument, &flag, 54},
       {"add-response-header", required_argument, &flag, 55},
+      {"worker-frontend-connections", required_argument, &flag, 56},
+      {"accesslog-syslog", no_argument, &flag, 57},
+      {"errorlog-file", required_argument, &flag, 58},
+      {"errorlog-syslog", no_argument, &flag, 59},
       {nullptr, 0, nullptr, 0 }
     };
 
@@ -913,7 +1016,7 @@ int main(int argc, char **argv)
       break;
     case 'n':
 #ifdef NOTHREADS
-	  LOG(WARNING) << "Threading disabled at build time, no threads created.";
+      LOG(WARNING) << "Threading disabled at build time, no threads created.";
 #else
       cmdcfgs.emplace_back(SHRPX_OPT_WORKERS, optarg);
 #endif // NOTHREADS
@@ -960,7 +1063,7 @@ int main(int argc, char **argv)
         cmdcfgs.emplace_back(SHRPX_OPT_BACKEND_WRITE_TIMEOUT, optarg);
         break;
       case 7:
-        cmdcfgs.emplace_back(SHRPX_OPT_ACCESSLOG, "yes");
+        cmdcfgs.emplace_back(SHRPX_OPT_ACCESSLOG_FILE, optarg);
         break;
       case 8:
         // --backend-keep-alive-timeout
@@ -978,11 +1081,7 @@ int main(int argc, char **argv)
         break;
       case 12:
         // --conf
-        set_config_str(&mod_config()->conf_path, optarg);
-        break;
-      case 13:
-        // --syslog
-        cmdcfgs.emplace_back(SHRPX_OPT_SYSLOG, "yes");
+        mod_config()->conf_path = strcopy(optarg);
         break;
       case 14:
         // --syslog-facility
@@ -1048,29 +1147,9 @@ int main(int argc, char **argv)
         // --backend-tls-sni-field
         cmdcfgs.emplace_back(SHRPX_OPT_BACKEND_TLS_SNI_FIELD, optarg);
         break;
-      case 32:
-        // --honor-cipher-order
-        cmdcfgs.emplace_back(SHRPX_OPT_HONOR_CIPHER_ORDER, "yes");
-        break;
       case 33:
         // --dh-param-file
         cmdcfgs.emplace_back(SHRPX_OPT_DH_PARAM_FILE, optarg);
-        break;
-      case 34:
-        // --read-rate
-        cmdcfgs.emplace_back(SHRPX_OPT_READ_RATE, optarg);
-        break;
-      case 35:
-        // --read-burst
-        cmdcfgs.emplace_back(SHRPX_OPT_READ_BURST, optarg);
-        break;
-      case 36:
-        // --write-rate
-        cmdcfgs.emplace_back(SHRPX_OPT_WRITE_RATE, optarg);
-        break;
-      case 37:
-        // --write-burst
-        cmdcfgs.emplace_back(SHRPX_OPT_WRITE_BURST, optarg);
         break;
       case 38:
         // --npn-list
@@ -1148,6 +1227,22 @@ int main(int argc, char **argv)
         // --add-response-header
         cmdcfgs.emplace_back(SHRPX_OPT_ADD_RESPONSE_HEADER, optarg);
         break;
+      case 56:
+        // --worker-frontend-connections
+        cmdcfgs.emplace_back(SHRPX_OPT_WORKER_FRONTEND_CONNECTIONS, optarg);
+        break;
+      case 57:
+        // --accesslog-syslog
+        cmdcfgs.emplace_back(SHRPX_OPT_ACCESSLOG_SYSLOG, "yes");
+        break;
+      case 58:
+        // --errorlog-file
+        cmdcfgs.emplace_back(SHRPX_OPT_ERRORLOG_FILE, optarg);
+        break;
+      case 59:
+        // --errorlog-syslog
+        cmdcfgs.emplace_back(SHRPX_OPT_ERRORLOG_SYSLOG, "yes");
+        break;
       default:
         break;
       }
@@ -1166,10 +1261,10 @@ int main(int argc, char **argv)
   nghttp2::ssl::LibsslGlobalLock();
 #endif // NOTHREADS
 
-  if(conf_exists(get_config()->conf_path)) {
-    if(load_config(get_config()->conf_path) == -1) {
+  if(conf_exists(get_config()->conf_path.get())) {
+    if(load_config(get_config()->conf_path.get()) == -1) {
       LOG(FATAL) << "Failed to load configuration from "
-                 << get_config()->conf_path;
+                 << get_config()->conf_path.get();
       exit(EXIT_FAILURE);
     }
   }
@@ -1186,14 +1281,28 @@ int main(int argc, char **argv)
     }
   }
 
-  if(!get_config()->npn_list) {
-    mod_config()->npn_list = parse_config_str_list(&mod_config()->npn_list_len,
-                                                   DEFAULT_NPN_LIST).release();
+  if(get_config()->accesslog_syslog || get_config()->errorlog_syslog) {
+    openlog("nghttpx", LOG_NDELAY | LOG_NOWAIT | LOG_PID,
+            get_config()->syslog_facility);
   }
-  if(!get_config()->tls_proto_list) {
+
+  if(reopen_log_files() != 0) {
+    LOG(FATAL) << "Failed to open log file";
+    exit(EXIT_FAILURE);
+  }
+
+  if(get_config()->npn_list.empty()) {
+    mod_config()->npn_list = parse_config_str_list(DEFAULT_NPN_LIST);
+  }
+  if(get_config()->tls_proto_list.empty()) {
     mod_config()->tls_proto_list = parse_config_str_list
-      (&mod_config()->tls_proto_list_len, DEFAULT_TLS_PROTO_LIST).release();
+      (DEFAULT_TLS_PROTO_LIST);
   }
+
+  mod_config()->tls_proto_mask =
+    ssl::create_tls_proto_mask(get_config()->tls_proto_list);
+
+  mod_config()->alpn_prefs = ssl::set_alpn_prefs(get_config()->npn_list);
 
   if(!get_config()->subcerts.empty()) {
     mod_config()->cert_tree = ssl::cert_lookup_tree_new();
@@ -1211,13 +1320,13 @@ int main(int argc, char **argv)
 
   if(get_config()->cert_file && get_config()->private_key_file) {
     mod_config()->default_ssl_ctx =
-      ssl::create_ssl_context(get_config()->private_key_file,
-                              get_config()->cert_file);
+      ssl::create_ssl_context(get_config()->private_key_file.get(),
+                              get_config()->cert_file.get());
     if(get_config()->cert_tree) {
-      if(ssl::cert_lookup_tree_add_cert_from_file(get_config()->cert_tree,
-                                                  get_config()->default_ssl_ctx,
-                                                  get_config()->cert_file)
-         == -1) {
+      if(ssl::cert_lookup_tree_add_cert_from_file
+         (get_config()->cert_tree,
+          get_config()->default_ssl_ctx,
+          get_config()->cert_file.get()) == -1) {
         LOG(FATAL) << "Failed to parse command-line argument.";
         exit(EXIT_FAILURE);
       }
@@ -1228,6 +1337,11 @@ int main(int argc, char **argv)
     LOG(FATAL) << "--backend-ipv4 and --backend-ipv6 cannot be used at the "
                << "same time.";
     exit(EXIT_FAILURE);
+  }
+
+  if(get_config()->worker_frontend_connections == 0) {
+    mod_config()->worker_frontend_connections =
+      std::numeric_limits<size_t>::max();
   }
 
   if(get_config()->http2_proxy + get_config()->http2_bridge +
@@ -1256,31 +1370,33 @@ int main(int argc, char **argv)
   }
 
   bool downstream_ipv6_addr =
-    is_ipv6_numeric_addr(get_config()->downstream_host);
+    is_ipv6_numeric_addr(get_config()->downstream_host.get());
 
-  std::string hostport;
+  {
+    std::string hostport;
 
-  if(downstream_ipv6_addr) {
-    hostport += "[";
+    if(downstream_ipv6_addr) {
+      hostport += "[";
+    }
+
+    hostport += get_config()->downstream_host.get();
+
+    if(downstream_ipv6_addr) {
+      hostport += "]";
+    }
+
+    hostport += ":";
+    hostport += util::utos(get_config()->downstream_port);
+
+    mod_config()->downstream_hostport = strcopy(hostport);
   }
-
-  hostport += get_config()->downstream_host;
-
-  if(downstream_ipv6_addr) {
-    hostport += "]";
-  }
-
-  hostport += ":";
-  hostport += util::utos(get_config()->downstream_port);
-
-  set_config_str(&mod_config()->downstream_hostport, hostport.c_str());
 
   if(LOG_ENABLED(INFO)) {
     LOG(INFO) << "Resolving backend address";
   }
   if(resolve_hostname(&mod_config()->downstream_addr,
                       &mod_config()->downstream_addrlen,
-                      get_config()->downstream_host,
+                      get_config()->downstream_host.get(),
                       get_config()->downstream_port,
                       get_config()->backend_ipv4 ? AF_INET :
                       (get_config()->backend_ipv6 ?
@@ -1294,25 +1410,12 @@ int main(int argc, char **argv)
     }
     if(resolve_hostname(&mod_config()->downstream_http_proxy_addr,
                         &mod_config()->downstream_http_proxy_addrlen,
-                        get_config()->downstream_http_proxy_host,
+                        get_config()->downstream_http_proxy_host.get(),
                         get_config()->downstream_http_proxy_port,
                         AF_UNSPEC) == -1) {
       exit(EXIT_FAILURE);
     }
   }
-
-  if(get_config()->syslog) {
-    openlog("nghttpx", LOG_NDELAY | LOG_NOWAIT | LOG_PID,
-            get_config()->syslog_facility);
-    mod_config()->use_syslog = true;
-  }
-
-  mod_config()->rate_limit_cfg = ev_token_bucket_cfg_new
-    (get_rate_limit(get_config()->read_rate),
-     get_rate_limit(get_config()->read_burst),
-     get_rate_limit(get_config()->write_rate),
-     get_rate_limit(get_config()->write_burst),
-     nullptr);
 
   mod_config()->worker_rate_limit_cfg = ev_token_bucket_cfg_new
     (get_rate_limit(get_config()->worker_read_rate),

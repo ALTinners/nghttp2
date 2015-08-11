@@ -34,9 +34,15 @@
 
 namespace shrpx {
 
+struct WorkerStat {
+  WorkerStat() : num_connections(0) {}
+
+  size_t num_connections;
+};
+
 class Worker {
 public:
-  Worker(WorkerInfo *info);
+  Worker(const WorkerInfo& info);
   ~Worker();
   void run();
 private:
@@ -46,7 +52,7 @@ private:
   int fd_;
 };
 
-void start_threaded_worker(WorkerInfo *info);
+void start_threaded_worker(WorkerInfo info);
 
 } // namespace shrpx
 

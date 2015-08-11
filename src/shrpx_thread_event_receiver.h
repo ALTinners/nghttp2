@@ -27,6 +27,8 @@
 
 #include "shrpx.h"
 
+#include <memory>
+
 #include <openssl/ssl.h>
 
 #include <event2/bufferevent.h>
@@ -36,11 +38,22 @@
 namespace shrpx {
 
 class Http2Session;
+struct WorkerStat;
+
+enum WorkerEventType {
+  NEW_CONNECTION = 0x01,
+  REOPEN_LOG = 0x02
+};
 
 struct WorkerEvent {
-  sockaddr_union client_addr;
-  size_t client_addrlen;
-  evutil_socket_t client_fd;
+  WorkerEventType type;
+  union {
+    struct {
+      sockaddr_union client_addr;
+      size_t client_addrlen;
+      evutil_socket_t client_fd;
+    };
+  };
 };
 
 class ThreadEventReceiver {
@@ -56,6 +69,7 @@ private:
   // mode. Not deleted by this object.
   Http2Session *http2session_;
   bufferevent_rate_limit_group *rate_limit_group_;
+  std::unique_ptr<WorkerStat> worker_stat_;
 };
 
 } // namespace shrpx

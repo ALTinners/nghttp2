@@ -76,19 +76,23 @@ typedef enum {
   NGHTTP2_IB_READ_ALTSVC,
   NGHTTP2_IB_EXPECT_CONTINUATION,
   NGHTTP2_IB_IGN_CONTINUATION,
-  NGHTTP2_IB_READ_PAD_CONTINUATION,
-  NGHTTP2_IB_IGN_PAD_CONTINUATION,
   NGHTTP2_IB_READ_PAD_DATA,
   NGHTTP2_IB_READ_DATA,
   NGHTTP2_IB_IGN_DATA
 } nghttp2_inbound_state;
 
+#define NGHTTP2_INBOUND_NUM_IV 5
+
 typedef struct {
   nghttp2_frame frame;
+  /* Storage for extension frame payload.  frame->ext.payload points
+     to this structure to avoid frequent memory allocation. */
+  nghttp2_ext_frame_payload ext_frame_payload;
   /* The received SETTINGS entry. The protocol says that we only cares
      about the defined settings ID. If unknown ID is received, it is
-     subject to connection error */
-  nghttp2_settings_entry iv[5];
+     ignored.  We use last entry to hold minimum header table size if
+     same settings are multiple times. */
+  nghttp2_settings_entry iv[NGHTTP2_INBOUND_NUM_IV];
   /* buffer pointers to small buffer, raw_sbuf */
   nghttp2_buf sbuf;
   /* buffer pointers to large buffer, raw_lbuf */
@@ -101,9 +105,19 @@ typedef struct {
   size_t payloadleft;
   /* padding length for the current frame */
   size_t padlen;
+  /* Sum of payload of (HEADERS | PUSH_PROMISE) + possible
+     CONTINUATION received so far. */
+  size_t headers_payload_length;
   nghttp2_inbound_state state;
   uint8_t raw_sbuf[8];
 } nghttp2_inbound_frame;
+
+typedef struct {
+  uint32_t header_table_size;
+  uint32_t enable_push;
+  uint32_t max_concurrent_streams;
+  uint32_t initial_window_size;
+} nghttp2_settings_storage;
 
 typedef enum {
   NGHTTP2_GOAWAY_NONE = 0,
@@ -158,10 +172,10 @@ struct nghttp2_session {
      in-flight SETTINGS. */
   ssize_t inflight_niv;
   /* The number of outgoing streams. This will be capped by
-     remote_settings[NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS]. */
+     remote_settings.max_concurrent_streams. */
   size_t num_outgoing_streams;
   /* The number of incoming streams. This will be capped by
-     local_settings[NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS]. */
+     local_settings.max_concurrent_streams. */
   size_t num_incoming_streams;
   /* The number of closed streams still kept in |streams| hash.  The
      closed streams can be accessed through single linked list
@@ -181,8 +195,10 @@ struct nghttp2_session {
   /* Counter of unique ID of PING. Wraps when it exceeds
      NGHTTP2_MAX_UNIQUE_ID */
   uint32_t next_unique_id;
+  /* This is the last-stream-ID we have sent in GOAWAY */
+  int32_t local_last_stream_id;
   /* This is the value in GOAWAY frame received from remote endpoint. */
-  int32_t last_stream_id;
+  int32_t remote_last_stream_id;
   /* Current sender window size. This value is computed against the
      current initial window size of remote endpoint. */
   int32_t remote_window_size;
@@ -190,6 +206,15 @@ struct nghttp2_session {
      WINDOW_UPDATE. This could be negative after submitting negative
      value to WINDOW_UPDATE. */
   int32_t recv_window_size;
+  /* The number of bytes in ignored DATA frame received without
+     connection-level WINDOW_UPDATE.  Since we do not call
+     on_data_chunk_recv_callback for ignored DATA chunk, if
+     nghttp2_option_set_no_auto_connection_window_update is used,
+     application may not have a chance to send connection
+     WINDOW_UPDATE.  To fix this, we accumulate those received bytes,
+     and if it exceeds certain number, we automatically send
+     connection-level WINDOW_UPDATE. */
+  int32_t recv_ign_window_size;
   /* The amount of recv_window_size cut using submitting negative
      value to WINDOW_UPDATE */
   int32_t recv_reduction;
@@ -200,9 +225,9 @@ struct nghttp2_session {
   int32_t local_window_size;
   /* Settings value received from the remote endpoint. We just use ID
      as index. The index = 0 is unused. */
-  uint32_t remote_settings[NGHTTP2_SETTINGS_MAX+1];
+  nghttp2_settings_storage remote_settings;
   /* Settings value of the local endpoint. */
-  uint32_t local_settings[NGHTTP2_SETTINGS_MAX+1];
+  nghttp2_settings_storage local_settings;
   /* Option flags. This is bitwise-OR of 0 or more of nghttp2_optmask. */
   uint32_t opt_flags;
   /* Unacked local SETTINGS_MAX_CONCURRENT_STREAMS value. We use this
@@ -213,9 +238,6 @@ struct nghttp2_session {
   /* Flags indicating GOAWAY is sent and/or recieved. The flags are
      composed by bitwise OR-ing nghttp2_goaway_flag. */
   uint8_t goaway_flags;
-  /* nonzero if blocked was sent and remote_window_size is still 0 or
-     negative */
-  uint8_t blocked_sent;
 };
 
 /* Struct used when updating initial window size of each active
@@ -288,7 +310,7 @@ int nghttp2_session_add_rst_stream(nghttp2_session *session,
  *     Out of memory.
  */
 int nghttp2_session_add_ping(nghttp2_session *session, uint8_t flags,
-                             uint8_t *opaque_data);
+                             const uint8_t *opaque_data);
 
 /*
  * Adds GOAWAY frame with the last-stream-ID |last_stream_id| and the
@@ -591,19 +613,6 @@ int nghttp2_session_on_altsvc_received(nghttp2_session *session,
                                        nghttp2_frame *frame);
 
 /*
- * Called when BLOCKED is received, assuming |frame| is properly
- * initialized.
- *
- * This function returns 0 if it succeeds, or one of the following
- * negative error codes:
- *
- * NGHTTP2_ERR_CALLBACK_FAILURE
- *   The callback function failed.
- */
-int nghttp2_session_on_blocked_received(nghttp2_session *session,
-                                        nghttp2_frame *frame);
-
-/*
  * Called when DATA is received, assuming |frame| is properly
  * initialized.
  *
@@ -719,5 +728,20 @@ int nghttp2_session_update_local_settings(nghttp2_session *session,
 int nghttp2_session_reprioritize_stream
 (nghttp2_session *session, nghttp2_stream *stream,
  const nghttp2_priority_spec *pri_spec);
+
+/*
+ * Terminates current |session| with the |error_code|.  The |reason|
+ * is NULL-terminated debug string.
+ *
+ * This function returns 0 if it succeeds, or one of the following
+ * negative error codes:
+ *
+ * NGHTTP2_ERR_NOMEM
+ *     Out of memory.
+ * NGHTTP2_ERR_INVALID_ARGUMENT
+ *     The |reason| is too long.
+ */
+int nghttp2_session_terminate_session_with_reason
+(nghttp2_session *session, nghttp2_error_code error_code, const char *reason);
 
 #endif /* NGHTTP2_SESSION_H */

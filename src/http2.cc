@@ -63,17 +63,22 @@ std::string get_status_string(unsigned int status_code)
   case 410: return "410 Gone";
   case 411: return "411 Length Required";
   case 412: return "412 Precondition Failed";
-  case 413: return "413 Request Entity Too Large";
-  case 414: return "414 Request-URI Too Long";
+  case 413: return "413 Payload Too Large";
+  case 414: return "414 URI Too Long";
   case 415: return "415 Unsupported Media Type";
   case 416: return "416 Requested Range Not Satisfiable";
   case 417: return "417 Expectation Failed";
+  case 426: return "426 Upgrade Required";
+  case 428: return "428 Precondition Required";
+  case 429: return "429 Too Many Requests";
+  case 431: return "431 Request Header Fields Too Large";
   case 500: return "500 Internal Server Error";
   case 501: return "501 Not Implemented";
   case 502: return "502 Bad Gateway";
   case 503: return "503 Service Unavailable";
   case 504: return "504 Gateway Timeout";
   case 505: return "505 HTTP Version Not Supported";
+  case 511: return "511 Network Authentication Required";
   default: return util::utos(status_code);
   }
 }
