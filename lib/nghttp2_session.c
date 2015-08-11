@@ -1898,7 +1898,7 @@ static int session_detect_idle_stream(nghttp2_session *session,
 {
   /* Assume that stream object with stream_id does not exist */
   if(nghttp2_session_is_my_stream_id(session, stream_id)) {
-    if(session->next_stream_id >= (uint32_t)stream_id) {
+    if(session->next_stream_id <= (uint32_t)stream_id) {
       return 1;
     }
     return 0;
@@ -2914,7 +2914,7 @@ int nghttp2_session_on_push_promise_received(nghttp2_session *session,
   if(!stream || stream->state == NGHTTP2_STREAM_CLOSING) {
     if(!stream) {
       if(session_detect_idle_stream(session, frame->hd.stream_id)) {
-        return nghttp2_session_handle_invalid_connection
+        return nghttp2_session_inflate_handle_invalid_connection
           (session, frame, NGHTTP2_PROTOCOL_ERROR);
       }
     }
@@ -3686,12 +3686,6 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session,
       if(iframe->payloadleft) {
         break;
       }
-      if(iframe->state == NGHTTP2_IB_READ_HEADER_BLOCK) {
-        rv = session_after_header_block_received(session);
-        if(nghttp2_is_fatal(rv)) {
-          return rv;
-        }
-      }
       if((iframe->frame.hd.flags & NGHTTP2_FLAG_END_HEADERS) == 0) {
         iframe->left = NGHTTP2_FRAME_HEAD_LENGTH;
         iframe->error_code = 0;
@@ -3702,6 +3696,12 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session,
           iframe->state = NGHTTP2_IB_IGN_CONTINUATION;
         }
       } else {
+        if(iframe->state == NGHTTP2_IB_READ_HEADER_BLOCK) {
+          rv = session_after_header_block_received(session);
+          if(nghttp2_is_fatal(rv)) {
+            return rv;
+          }
+        }
         nghttp2_inbound_frame_reset(session);
       }
       break;
@@ -3807,6 +3807,8 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session,
       if(cont_hd.flags & NGHTTP2_FLAG_END_HEADERS) {
         iframe->frame.hd.flags |= NGHTTP2_FLAG_END_HEADERS;
       }
+      iframe->frame.hd.length += cont_hd.length;
+
       busy = 1;
       if(iframe->state == NGHTTP2_IB_EXPECT_CONTINUATION) {
         iframe->state = NGHTTP2_IB_READ_HEADER_BLOCK;
