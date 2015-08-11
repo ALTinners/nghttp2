@@ -28,9 +28,10 @@ Public Test Server
 The following endpoints are available to try out nghttp2
 implementation.
 
-* https://nghttp2.org/ (TLS + NPN / ALPN)
+* https://nghttp2.org/ (TLS + NPN)
 
-  ALPN and NPN offer ``h2-12``, ``spdy/3.1`` and ``http/1.1``.
+  NPN offer ``h2-12``, ``spdy/3.1`` and ``http/1.1``.
+  ALPN is currently disabled.
 
 * http://nghttp2.org/ (Upgrade / Direct)
 
@@ -121,6 +122,13 @@ used::
     $ autoconf
     $ ./configure
     $ make
+
+.. note::
+
+   Mac OS X users may need ``--disable-threads`` configure option to
+   disable multi threading in nghttpd, nghttpx and h2load to prevent
+   them from crashing.  Patch is welcome to make multi threading work
+   on Mac OS X platform.
 
 Building documentation
 ----------------------
