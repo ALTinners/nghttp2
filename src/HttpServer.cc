@@ -674,7 +674,6 @@ int Http2Handler::submit_non_final_response(const std::string& status,
 int Http2Handler::submit_push_promise(Stream *stream,
                                       const std::string& push_path)
 {
-  std::string authority;
   auto itr = std::lower_bound(std::begin(stream->headers),
                               std::end(stream->headers),
                               Header(":authority", ""));
@@ -1513,7 +1512,8 @@ int HttpServer::run()
     }
 
     SSL_CTX_set_options(ssl_ctx,
-                        SSL_OP_ALL | SSL_OP_NO_SSLv2 | SSL_OP_NO_COMPRESSION |
+                        SSL_OP_ALL | SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 |
+                        SSL_OP_NO_COMPRESSION |
                         SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION |
                         SSL_OP_SINGLE_ECDH_USE |
                         SSL_OP_NO_TICKET |

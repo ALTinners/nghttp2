@@ -33,6 +33,7 @@
 #include <cassert>
 #include <cstdlib>
 #include <iostream>
+#include <fstream>
 #include <chrono>
 #include <thread>
 #include <future>
@@ -70,6 +71,7 @@ Config::Config()
     connection_window_bits(16),
     no_tls_proto(PROTO_HTTP2),
     port(0),
+    default_port(0),
     verbose(false)
 {}
 
@@ -596,6 +598,73 @@ int client_select_next_proto_cb(SSL* ssl,
 } // namespace
 
 namespace {
+template<typename Iterator>
+std::vector<std::string> parse_uris(Iterator first, Iterator last)
+{
+  std::vector<std::string> reqlines;
+
+  // First URI is treated specially.  We use scheme, host and port of
+  // this URI and ignore those in the remaining URIs if present.
+  http_parser_url u;
+  memset(&u, 0, sizeof(u));
+
+  if(first == last) {
+    std::cerr << "no URI available" << std::endl;
+    exit(EXIT_FAILURE);
+  }
+
+  auto uri = (*first).c_str();
+  ++first;
+
+  if(http_parser_parse_url(uri, strlen(uri), 0, &u) != 0 ||
+     !util::has_uri_field(u, UF_SCHEMA) || !util::has_uri_field(u, UF_HOST)) {
+    std::cerr << "invalid URI: " << uri << std::endl;
+    exit(EXIT_FAILURE);
+  }
+
+  config.scheme = util::get_uri_field(uri, u, UF_SCHEMA);
+  config.host = util::get_uri_field(uri, u, UF_HOST);
+  config.default_port = util::get_default_port(uri, u);
+  if(util::has_uri_field(u, UF_PORT)) {
+    config.port = u.port;
+  } else {
+    config.port = config.default_port;
+  }
+
+  reqlines.push_back(get_reqline(uri, u));
+
+  for(; first != last; ++first) {
+    http_parser_url u;
+    memset(&u, 0, sizeof(u));
+
+    auto uri = (*first).c_str();
+
+    if(http_parser_parse_url(uri, strlen(uri), 0, &u) != 0) {
+      std::cerr << "invalid URI: " << uri << std::endl;
+      exit(EXIT_FAILURE);
+    }
+
+    reqlines.push_back(get_reqline(uri, u));
+  }
+
+  return reqlines;
+}
+} // namespace
+
+namespace {
+std::vector<std::string> read_uri_from_file(std::istream& infile)
+{
+  std::vector<std::string> uris;
+  std::string line_uri;
+  while(std::getline(infile, line_uri)) {
+    uris.push_back(line_uri);
+  }
+
+  return uris;
+}
+} // namespace
+
+namespace {
 void print_version(std::ostream& out)
 {
   out << "h2load nghttp2/" NGHTTP2_VERSION << std::endl;
@@ -605,7 +674,8 @@ void print_version(std::ostream& out)
 namespace {
 void print_usage(std::ostream& out)
 {
-  out << R"(Usage: h2load [OPTIONS]... <URI>...
+  out << R"(
+Usage: h2load [OPTIONS]... [URI]...
 benchmarking tool for HTTP/2 and SPDY server)" << std::endl;
 }
 } // namespace
@@ -630,6 +700,16 @@ Options:
       << config.nclients << R"(
   -t, --threads=<N>  Number of native threads. Default: )"
       << config.nthreads << R"(
+  -i, --input-file=<FILE>
+                     Path of  a file with multiple  URIs are seperated
+                     by EOLs.   This option will disable  URIs getting
+                     from command-line.   If '-'  is given  as <FILE>,
+                     URIs will be  read from stdin.  URIs  are used in
+                     this order  for each client.  All  URIs are used,
+                     then first URI  is used and then 2nd  URI, and so
+                     on.  The scheme, host  and port in the subsequent
+                     URIs,  if present,  are  ignored.   Those in  the
+                     first URI are used solely.
   -m, --max-concurrent-streams=(auto|<N>)
                      Max concurrent streams to  issue per session.  If
                      "auto"  is given,  the  number of  given URIs  is
@@ -642,6 +722,8 @@ Options:
                      (2**<N>)-1.  For  SPDY, if  <N> is  strictly less
                      than  16,  this  option  is  ignored.   Otherwise
                      2**<N> is used for SPDY.
+  -H, --header=<HEADER>
+                     Add/Override a header to the requests.
   -p, --no-tls-proto=<PROTOID>
                      Specify  ALPN identifier  of the  protocol to  be
                      used  when accessing  http  URI without  SSL/TLS.)";
@@ -674,6 +756,8 @@ int main(int argc, char **argv)
       {"max-concurrent-streams", required_argument, nullptr, 'm'},
       {"window-bits", required_argument, nullptr, 'w'},
       {"connection-window-bits", required_argument, nullptr, 'W'},
+      {"input-file", required_argument, nullptr, 'i'},
+      {"header", required_argument, nullptr, 'H'},
       {"no-tls-proto", required_argument, nullptr, 'p'},
       {"verbose", no_argument, nullptr, 'v'},
       {"help", no_argument, nullptr, 'h'},
@@ -681,7 +765,7 @@ int main(int argc, char **argv)
       {nullptr, 0, nullptr, 0 }
     };
     int option_index = 0;
-    auto c = getopt_long(argc, argv, "hvW:c:m:n:p:t:w:", long_options,
+    auto c = getopt_long(argc, argv, "hvW:c:m:n:p:t:w:H:i:", long_options,
                          &option_index);
     if(c == -1) {
       break;
@@ -727,6 +811,35 @@ int main(int argc, char **argv)
       }
       break;
     }
+    case 'H': {
+      char *header = optarg;
+      // Skip first possible ':' in the header name
+      char *value = strchr( optarg + 1, ':' );
+      if ( ! value || (header[0] == ':' && header + 1 == value)) {
+        std::cerr << "-H: invalid header: " << optarg
+                  << std::endl;
+        exit(EXIT_FAILURE);
+      }
+      *value = 0;
+      value++;
+      while( isspace( *value ) ) { value++; }
+      if ( *value == 0 ) {
+        // This could also be a valid case for suppressing a header
+        // similar to curl
+        std::cerr << "-H: invalid header - value missing: " << optarg
+                  << std::endl;
+        exit(EXIT_FAILURE);
+      }
+      // Note that there is no processing currently to handle multiple
+      // message-header fields with the same field name
+      config.custom_headers.emplace_back(header, value);
+      util::inp_strlower(config.custom_headers.back().name);
+      break;
+    }
+    case 'i': {
+      config.ifile = std::string(optarg);
+      break;
+    }
     case 'p':
       if(util::strieq(NGHTTP2_CLEARTEXT_PROTO_VERSION_ID, optarg)) {
         config.no_tls_proto = Config::PROTO_HTTP2;
@@ -766,8 +879,10 @@ int main(int argc, char **argv)
   }
 
   if(argc == optind) {
-    std::cerr << "no URI given" << std::endl;
-    exit(EXIT_FAILURE);
+    if(config.ifile.empty()){
+      std::cerr << "no URI or input file given" << std::endl;
+      exit(EXIT_FAILURE);
+    }
   }
 
   if(config.nreqs == 0) {
@@ -824,41 +939,27 @@ int main(int argc, char **argv)
   SSL_CTX_set_next_proto_select_cb(ssl_ctx,
                                    client_select_next_proto_cb, nullptr);
 
-  // First URI is treated specially.  We use scheme, host and port of
-  // this URI and ignore those in the remaining URIs if present.
-  http_parser_url u;
-  memset(&u, 0, sizeof(u));
-  auto uri = argv[optind];
-  if(http_parser_parse_url(uri, strlen(uri), 0, &u) != 0 ||
-     !util::has_uri_field(u, UF_SCHEMA) || !util::has_uri_field(u, UF_HOST)) {
-    std::cerr << "invalid URI: " << uri << std::endl;
-    exit(EXIT_FAILURE);
-  }
-
-  config.scheme = util::get_uri_field(uri, u, UF_SCHEMA);
-  config.host = util::get_uri_field(uri, u, UF_HOST);
-  if(util::has_uri_field(u, UF_PORT)) {
-    config.port = u.port;
-  } else {
-    config.port = util::get_default_port(uri, u);
-  }
-
   std::vector<std::string> reqlines;
 
-  reqlines.push_back(get_reqline(uri, u));
+  if(config.ifile.empty()) {
+    std::vector<std::string> uris;
+    std::copy(&argv[optind], &argv[argc], std::back_inserter(uris));
+    reqlines = parse_uris(std::begin(uris), std::end(uris));
+  } else {
+    std::vector<std::string> uris;
+    if(config.ifile == "-") {
+      uris = read_uri_from_file(std::cin);
+    } else {
+      std::ifstream infile(config.ifile);
+      if(!infile) {
+        std::cerr << "cannot read input file: " << config.ifile << std::endl;
+        exit(EXIT_FAILURE);
+      }
 
-  ++optind;
-  for(int i = optind; i < argc; ++i) {
-    memset(&u, 0, sizeof(u));
-
-    auto uri = argv[i];
-
-    if(http_parser_parse_url(uri, strlen(uri), 0, &u) != 0) {
-      std::cerr << "invalid URI: " << uri << std::endl;
-      exit(EXIT_FAILURE);
+      uris = read_uri_from_file(infile);
     }
 
-    reqlines.push_back(get_reqline(uri, u));
+    reqlines = parse_uris(std::begin(uris), std::end(uris));
   }
 
   if(config.max_concurrent_streams == -1) {
@@ -867,13 +968,34 @@ int main(int argc, char **argv)
 
   Headers shared_nva;
   shared_nva.emplace_back(":scheme", config.scheme);
-  if(config.port != util::get_default_port(uri, u)) {
+  if(config.port != config.default_port) {
     shared_nva.emplace_back(":authority",
-                     config.host + ":" + util::utos(config.port));
+                            config.host + ":" + util::utos(config.port));
   } else {
     shared_nva.emplace_back(":authority", config.host);
   }
   shared_nva.emplace_back(":method", "GET");
+
+  //list overridalbe headers
+  auto override_hdrs = std::vector<std::string>{
+    ":authority", ":host", ":method", ":scheme"
+  };
+
+  for(auto& kv : config.custom_headers) {
+    if(std::find(std::begin(override_hdrs), std::end(override_hdrs), kv.name)
+       != std::end(override_hdrs)) {
+      // override header
+      for(auto& nv : shared_nva) {
+        if((nv.name == ":authority" && kv.name == ":host")
+           || (nv.name == kv.name) ) {
+          nv.value = kv.value;
+        }
+      }
+    } else {
+      // add additional headers
+      shared_nva.push_back(kv);
+    }
+  }
 
   for(auto& req : reqlines) {
     // For nghttp2
