@@ -97,17 +97,16 @@ POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
 target_triplet = @target@
-bin_PROGRAMS = $(am__EXEEXT_1) $(am__EXEEXT_2) $(am__EXEEXT_3)
-check_PROGRAMS = $(am__EXEEXT_4)
-TESTS = $(am__EXEEXT_4)
-@ENABLE_APP_TRUE@am__append_1 = nghttp nghttpd nghttpx
+bin_PROGRAMS = $(am__EXEEXT_1) $(am__EXEEXT_2)
+check_PROGRAMS = $(am__EXEEXT_3)
+TESTS = $(am__EXEEXT_3)
+@ENABLE_APP_TRUE@am__append_1 = nghttp nghttpd nghttpx h2load
 @ENABLE_APP_TRUE@@HAVE_LIBXML2_TRUE@am__append_2 = HtmlParser.cc
-@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@am__append_3 = h2load
-@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@@HAVE_SPDYLAY_TRUE@am__append_4 = h2load_spdy_session.cc h2load_spdy_session.h
-@ENABLE_APP_TRUE@@HAVE_SPDYLAY_TRUE@am__append_5 = shrpx_spdy_upstream.cc shrpx_spdy_upstream.h
+@ENABLE_APP_TRUE@@HAVE_SPDYLAY_TRUE@am__append_3 = h2load_spdy_session.cc h2load_spdy_session.h
+@ENABLE_APP_TRUE@@HAVE_SPDYLAY_TRUE@am__append_4 = shrpx_spdy_upstream.cc shrpx_spdy_upstream.h
+@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@am__append_5 = nghttpx-unittest
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@am__append_6 = nghttpx-unittest
-@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@am__append_7 = nghttpx-unittest
-@ENABLE_HPACK_TOOLS_TRUE@am__append_8 = inflatehd deflatehd
+@ENABLE_HPACK_TOOLS_TRUE@am__append_7 = inflatehd deflatehd
 subdir = src
 DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/Makefile.am \
 	$(srcdir)/libnghttp2_asio.pc.in $(top_srcdir)/depcomp \
@@ -240,11 +239,10 @@ libnghttp2_asio_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CXX \
 	$(LDFLAGS) -o $@
 @ENABLE_ASIO_LIB_TRUE@am_libnghttp2_asio_la_rpath = -rpath $(libdir)
 @ENABLE_APP_TRUE@am__EXEEXT_1 = nghttp$(EXEEXT) nghttpd$(EXEEXT) \
-@ENABLE_APP_TRUE@	nghttpx$(EXEEXT)
-@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@am__EXEEXT_2 = h2load$(EXEEXT)
-@ENABLE_HPACK_TOOLS_TRUE@am__EXEEXT_3 = inflatehd$(EXEEXT) \
+@ENABLE_APP_TRUE@	nghttpx$(EXEEXT) h2load$(EXEEXT)
+@ENABLE_HPACK_TOOLS_TRUE@am__EXEEXT_2 = inflatehd$(EXEEXT) \
 @ENABLE_HPACK_TOOLS_TRUE@	deflatehd$(EXEEXT)
-@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@am__EXEEXT_4 =  \
+@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@am__EXEEXT_3 =  \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	nghttpx-unittest$(EXEEXT)
 PROGRAMS = $(bin_PROGRAMS)
 am__deflatehd_SOURCES_DIST = deflatehd.cc comp_helper.c comp_helper.h
@@ -260,16 +258,12 @@ am__h2load_SOURCES_DIST = util.cc util.h libevent_util.cc \
 	timegm.h ssl.cc ssl.h h2load_session.h h2load_http2_session.cc \
 	h2load_http2_session.h h2load_spdy_session.cc \
 	h2load_spdy_session.h
-@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@@HAVE_SPDYLAY_TRUE@am__objects_4 = h2load_spdy_session.$(OBJEXT)
-@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@am_h2load_OBJECTS =  \
-@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	util.$(OBJEXT) \
-@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	libevent_util.$(OBJEXT) \
-@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	http2.$(OBJEXT) \
-@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	h2load.$(OBJEXT) \
-@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	timegm.$(OBJEXT) \
-@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	ssl.$(OBJEXT) \
-@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	h2load_http2_session.$(OBJEXT) \
-@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	$(am__objects_4)
+@ENABLE_APP_TRUE@@HAVE_SPDYLAY_TRUE@am__objects_4 = h2load_spdy_session.$(OBJEXT)
+@ENABLE_APP_TRUE@am_h2load_OBJECTS = util.$(OBJEXT) \
+@ENABLE_APP_TRUE@	libevent_util.$(OBJEXT) http2.$(OBJEXT) \
+@ENABLE_APP_TRUE@	h2load.$(OBJEXT) timegm.$(OBJEXT) \
+@ENABLE_APP_TRUE@	ssl.$(OBJEXT) h2load_http2_session.$(OBJEXT) \
+@ENABLE_APP_TRUE@	$(am__objects_4)
 h2load_OBJECTS = $(am_h2load_OBJECTS)
 h2load_LDADD = $(LDADD)
 h2load_DEPENDENCIES = $(top_builddir)/lib/libnghttp2.la \
@@ -871,16 +865,11 @@ LDADD = \
 @ENABLE_APP_TRUE@	ssl.cc ssl.h \
 @ENABLE_APP_TRUE@	HttpServer.cc HttpServer.h
 
-@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@h2load_SOURCES = util.cc util.h \
-@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	libevent_util.cc \
-@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	libevent_util.h http2.cc \
-@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	http2.h h2load.cc \
-@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	h2load.h timegm.c \
-@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	timegm.h ssl.cc ssl.h \
-@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	h2load_session.h \
-@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	h2load_http2_session.cc \
-@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	h2load_http2_session.h \
-@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	$(am__append_4)
+@ENABLE_APP_TRUE@h2load_SOURCES = util.cc util.h libevent_util.cc \
+@ENABLE_APP_TRUE@	libevent_util.h http2.cc http2.h h2load.cc \
+@ENABLE_APP_TRUE@	h2load.h timegm.c timegm.h ssl.cc ssl.h \
+@ENABLE_APP_TRUE@	h2load_session.h h2load_http2_session.cc \
+@ENABLE_APP_TRUE@	h2load_http2_session.h $(am__append_3)
 @ENABLE_APP_TRUE@NGHTTPX_SRCS = util.cc util.h http2.cc http2.h \
 @ENABLE_APP_TRUE@	timegm.c timegm.h base64.h libevent_util.cc \
 @ENABLE_APP_TRUE@	libevent_util.h app_helper.cc app_helper.h \
@@ -911,7 +900,7 @@ LDADD = \
 @ENABLE_APP_TRUE@	shrpx_worker.h shrpx_worker_config.cc \
 @ENABLE_APP_TRUE@	shrpx_worker_config.h \
 @ENABLE_APP_TRUE@	shrpx_connect_blocker.cc \
-@ENABLE_APP_TRUE@	shrpx_connect_blocker.h $(am__append_5)
+@ENABLE_APP_TRUE@	shrpx_connect_blocker.h $(am__append_4)
 @ENABLE_APP_TRUE@noinst_LIBRARIES = libnghttpx.a
 @ENABLE_APP_TRUE@libnghttpx_a_SOURCES = ${NGHTTPX_SRCS}
 @ENABLE_APP_TRUE@nghttpx_SOURCES = shrpx.cc shrpx.h
