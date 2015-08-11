@@ -25,11 +25,18 @@
 #ifndef SHRPX_CONFIG_TEST_H
 #define SHRPX_CONFIG_TEST_H
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif // HAVE_CONFIG_H
+
 namespace shrpx {
 
 void test_shrpx_config_parse_config_str_list(void);
 void test_shrpx_config_parse_header(void);
 void test_shrpx_config_parse_log_format(void);
+void test_shrpx_config_read_tls_ticket_key_file(void);
+void test_shrpx_config_read_tls_ticket_key_file_aes_256(void);
+void test_shrpx_config_match_downstream_addr_group(void);
 
 } // namespace shrpx
 

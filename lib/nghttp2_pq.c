@@ -24,19 +24,20 @@
  */
 #include "nghttp2_pq.h"
 
-int nghttp2_pq_init(nghttp2_pq *pq, nghttp2_compar compar) {
+int nghttp2_pq_init(nghttp2_pq *pq, nghttp2_less less, nghttp2_mem *mem) {
+  pq->mem = mem;
   pq->capacity = 128;
-  pq->q = malloc(pq->capacity * sizeof(void *));
+  pq->q = nghttp2_mem_malloc(mem, pq->capacity * sizeof(void *));
   if (pq->q == NULL) {
     return NGHTTP2_ERR_NOMEM;
   }
   pq->length = 0;
-  pq->compar = compar;
+  pq->less = less;
   return 0;
 }
 
 void nghttp2_pq_free(nghttp2_pq *pq) {
-  free(pq->q);
+  nghttp2_mem_free(pq->mem, pq->q);
   pq->q = NULL;
 }
 
@@ -51,7 +52,7 @@ static void bubble_up(nghttp2_pq *pq, size_t index) {
     return;
   } else {
     size_t parent = (index - 1) / 2;
-    if (pq->compar(pq->q[parent], pq->q[index]) > 0) {
+    if (pq->less(pq->q[index], pq->q[parent])) {
       swap(pq, parent, index);
       bubble_up(pq, parent);
     }
@@ -61,7 +62,8 @@ static void bubble_up(nghttp2_pq *pq, size_t index) {
 int nghttp2_pq_push(nghttp2_pq *pq, void *item) {
   if (pq->capacity <= pq->length) {
     void *nq;
-    nq = realloc(pq->q, (pq->capacity * 2) * sizeof(void *));
+    nq = nghttp2_mem_realloc(pq->mem, pq->q,
+                             (pq->capacity * 2) * sizeof(void *));
     if (nq == NULL) {
       return NGHTTP2_ERR_NOMEM;
     }
@@ -91,7 +93,7 @@ static void bubble_down(nghttp2_pq *pq, size_t index) {
     if (j >= pq->length) {
       break;
     }
-    if (pq->compar(pq->q[minindex], pq->q[j]) > 0) {
+    if (pq->less(pq->q[j], pq->q[minindex])) {
       minindex = j;
     }
   }
@@ -127,4 +129,18 @@ void nghttp2_pq_update(nghttp2_pq *pq, nghttp2_pq_item_cb fun, void *arg) {
       bubble_down(pq, i - 1);
     }
   }
+}
+
+int nghttp2_pq_each(nghttp2_pq *pq, nghttp2_pq_item_cb fun, void *arg) {
+  size_t i;
+
+  if (pq->length == 0) {
+    return 0;
+  }
+  for (i = 0; i < pq->length; ++i) {
+    if ((*fun)(pq->q[i], arg)) {
+      return 1;
+    }
+  }
+  return 0;
 }

@@ -21,7 +21,9 @@ unpacked::
 
     $ build/tools/make-standalone-toolchain.sh \
       --install-dir=$ANDROID_HOME/toolchain \
-      --toolchain=arm-linux-androideabi-4.8
+      --toolchain=arm-linux-androideabi-4.9 \
+      --llvm-version=3.5 \
+      --platform=android-16
 
 The additional flag ``--system=linux-x86_64`` may be required if you
 are using x86_64 system.
@@ -29,13 +31,14 @@ are using x86_64 system.
 The platform level is not important here because we don't use Android
 specific C/C++ API.
 
-The dependent libraries, such as OpenSSL and libevent should be built
+The dependent libraries, such as OpenSSL and libev should be built
 with the toolchain and installed under ``$ANDROID_HOME/usr/local``.
 We recommend to build these libraries as static library to make the
 deployment easier.  libxml2 support is currently disabled.
 
-We use zlib which comes with Android NDK, so we don't have to build it
-by ourselves.
+Although zlib comes with Android NDK, it seems not to be a part of
+public API, so we have to built it for our own.  That also provides us
+proper .pc file as a bonus.
 
 If SPDY support is required for nghttpx and h2load, build and install
 spdylay as well.
@@ -46,7 +49,9 @@ correct path.  Also add ``$ANDROID_HOME/toolchain/bin`` to ``PATH``::
 
     $ export PATH=$PATH:$ANDROID_HOME/toolchain/bin
 
-To configure OpenSSL, use the following script::
+To configure OpenSSL, use the following script:
+
+.. code-block:: sh
 
     #!/bin/sh
 
@@ -63,7 +68,12 @@ To configure OpenSSL, use the following script::
 
 And run ``make install`` to build and install.
 
-To configure libevent, use the following script::
+We cannot compile libev without modification.  Apply `this patch
+<https://gist.github.com/tatsuhiro-t/48c45f08950f587180ed>`_ before
+configuring libev.  This patch is for libev-4.19.  After applying the
+patch, to configure libev, use the following script:
+
+.. code-block:: sh
 
     #!/bin/sh
 
@@ -86,7 +96,40 @@ To configure libevent, use the following script::
 
 And run ``make install`` to build and install.
 
-To configure spdylay, use the following script::
+To configure zlib, use the following script:
+
+.. code-block:: sh
+
+    #!/bin/sh -e
+
+    if [ -z "$ANDROID_HOME" ]; then
+        echo 'No $ANDROID_HOME specified.'
+        exit 1
+    fi
+    PREFIX=$ANDROID_HOME/usr/local
+    TOOLCHAIN=$ANDROID_HOME/toolchain
+    PATH=$TOOLCHAIN/bin:$PATH
+
+    HOST=arm-linux-androideabi
+
+    CC=$HOST-gcc \
+    AR=$HOST-ar \
+    LD=$HOST-ld \
+    RANLIB=$HOST-ranlib \
+    STRIP=$HOST-strip \
+    ./configure \
+        --prefix=$PREFIX \
+        --libdir=$PREFIX/lib \
+        --includedir=$PREFIX/include \
+        --static
+
+And run ``make install`` to build and install.
+
+To configure spdylay, use the following script:
+
+.. code-block:: sh
+
+    #!/bin/sh -e
 
     if [ -z "$ANDROID_HOME" ]; then
 	echo 'No $ANDROID_HOME specified.'
@@ -108,11 +151,7 @@ To configure spdylay, use the following script::
 	PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig" \
 	LDFLAGS="-L$PREFIX/lib"
 
-And run ``make install`` to build and install.  After spdylay
-installation, edit $ANDROID_HOME/usr/local/lib/pkgconfig/libspdylay.pc
-and remove the following line::
-
-    Requires.private: zlib
+And run ``make install`` to build and install.
 
 After prerequisite libraries are prepared, run ``android-config`` and
 then ``android-make`` to compile nghttp2 source files.

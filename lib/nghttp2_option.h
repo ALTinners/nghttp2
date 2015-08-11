@@ -57,7 +57,8 @@ typedef enum {
    * SETTINGS_MAX_CONCURRENT_STREAMS from the remote endpoint.
    */
   NGHTTP2_OPT_PEER_MAX_CONCURRENT_STREAMS = 1 << 1,
-  NGHTTP2_OPT_RECV_CLIENT_PREFACE = 1 << 2,
+  NGHTTP2_OPT_NO_RECV_CLIENT_MAGIC = 1 << 2,
+  NGHTTP2_OPT_NO_HTTP_MESSAGING = 1 << 3
 } nghttp2_option_flag;
 
 /**
@@ -78,9 +79,13 @@ struct nghttp2_option {
    */
   uint8_t no_auto_window_update;
   /**
-   * NGHTTP2_OPT_RECV_CLIENT_PREFACE
+   * NGHTTP2_OPT_NO_RECV_CLIENT_MAGIC
    */
-  uint8_t recv_client_preface;
+  uint8_t no_recv_client_magic;
+  /**
+   * NGHTTP2_OPT_NO_HTTP_MESSAGING
+   */
+  uint8_t no_http_messaging;
 };
 
 #endif /* NGHTTP2_OPTION_H */

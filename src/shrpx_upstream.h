@@ -26,28 +26,26 @@
 #define SHRPX_UPSTREAM_H
 
 #include "shrpx.h"
-
-#include <event2/bufferevent.h>
-
 #include "shrpx_io_control.h"
 
 namespace shrpx {
 
 class ClientHandler;
 class Downstream;
+class DownstreamConnection;
 
 class Upstream {
 public:
   virtual ~Upstream() {}
   virtual int on_read() = 0;
   virtual int on_write() = 0;
-  virtual int on_event() = 0;
   virtual int on_timeout(Downstream *downstream) { return 0; };
   virtual int on_downstream_abort_request(Downstream *downstream,
                                           unsigned int status_code) = 0;
-  virtual bufferevent_data_cb get_downstream_readcb() = 0;
-  virtual bufferevent_data_cb get_downstream_writecb() = 0;
-  virtual bufferevent_event_cb get_downstream_eventcb() = 0;
+  virtual int downstream_read(DownstreamConnection *dconn) = 0;
+  virtual int downstream_write(DownstreamConnection *dconn) = 0;
+  virtual int downstream_eof(DownstreamConnection *dconn) = 0;
+  virtual int downstream_error(DownstreamConnection *dconn, int events) = 0;
   virtual ClientHandler *get_client_handler() const = 0;
 
   virtual int on_downstream_header_complete(Downstream *downstream) = 0;
@@ -56,12 +54,14 @@ public:
   virtual int on_downstream_body_complete(Downstream *downstream) = 0;
 
   virtual void on_handler_delete() = 0;
+  // Called when downstream connection is reset.  Currently this is
+  // only used by Http2Session.  If |no_retry| is true, another
+  // connection attempt using new DownstreamConnection is not allowed.
+  virtual int on_downstream_reset(bool no_retry) = 0;
 
   virtual void pause_read(IOCtrlReason reason) = 0;
   virtual int resume_read(IOCtrlReason reason, Downstream *downstream,
                           size_t consumed) = 0;
-
-  virtual void reset_timeouts() = 0;
 };
 
 } // namespace shrpx

@@ -27,13 +27,15 @@
 
 #include "shrpx.h"
 
-#include <stdint.h>
-
+#include <cinttypes>
 #include <memory>
 
 #include "http-parser/http_parser.h"
 
 #include "shrpx_upstream.h"
+#include "memchunk.h"
+
+using namespace nghttp2;
 
 namespace shrpx {
 
@@ -49,14 +51,17 @@ public:
   virtual int on_downstream_abort_request(Downstream *downstream,
                                           unsigned int status_code);
   virtual ClientHandler *get_client_handler() const;
-  virtual bufferevent_data_cb get_downstream_readcb();
-  virtual bufferevent_data_cb get_downstream_writecb();
-  virtual bufferevent_event_cb get_downstream_eventcb();
+
+  virtual int downstream_read(DownstreamConnection *dconn);
+  virtual int downstream_write(DownstreamConnection *dconn);
+  virtual int downstream_eof(DownstreamConnection *dconn);
+  virtual int downstream_error(DownstreamConnection *dconn, int events);
+
   void attach_downstream(std::unique_ptr<Downstream> downstream);
   void delete_downstream();
   Downstream *get_downstream() const;
   std::unique_ptr<Downstream> pop_downstream();
-  int error_reply(unsigned int status_code);
+  void error_reply(unsigned int status_code);
 
   virtual void pause_read(IOCtrlReason reason);
   virtual int resume_read(IOCtrlReason reason, Downstream *downstream,
@@ -68,8 +73,7 @@ public:
   virtual int on_downstream_body_complete(Downstream *downstream);
 
   virtual void on_handler_delete();
-
-  virtual void reset_timeouts();
+  virtual int on_downstream_reset(bool no_retry);
 
   void reset_current_header_length();
   void log_response_headers(const std::string &hdrs) const;

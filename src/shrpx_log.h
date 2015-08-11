@@ -34,6 +34,9 @@
 #include <vector>
 #include <chrono>
 
+#include "shrpx_log_config.h"
+#include "ssl.h"
+
 namespace shrpx {
 
 class Downstream;
@@ -48,10 +51,9 @@ class Downstream;
 #define LLOG(SEVERITY, LISTEN)                                                 \
   (Log(SEVERITY, __FILE__, __LINE__) << "[LISTEN:" << LISTEN << "] ")
 
-// ThreadEventReceiver log
-#define TLOG(SEVERITY, THREAD_RECV)                                            \
-  (Log(SEVERITY, __FILE__, __LINE__) << "[THREAD_RECV:" << THREAD_RECV << "]"  \
-                                                                          " ")
+// Worker log
+#define WLOG(SEVERITY, WORKER)                                                 \
+  (Log(SEVERITY, __FILE__, __LINE__) << "[WORKER:" << WORKER << "] ")
 
 // ClientHandler log
 #define CLOG(SEVERITY, CLIENT_HANDLER)                                         \
@@ -73,6 +75,10 @@ class Downstream;
 // Downstream HTTP2 session log
 #define SSLOG(SEVERITY, HTTP2)                                                 \
   (Log(SEVERITY, __FILE__, __LINE__) << "[DHTTP2:" << HTTP2 << "] ")
+
+// Memcached connection log
+#define MCLOG(SEVERITY, MCONN)                                                 \
+  (Log(SEVERITY, __FILE__, __LINE__) << "[MCONN:" << MCONN << "] ")
 
 enum SeverityLevel { INFO, NOTICE, WARN, ERROR, FATAL };
 
@@ -96,8 +102,8 @@ private:
   static int severity_thres_;
 };
 
-#define TTY_HTTP_HD (worker_config->errorlog_tty ? "\033[1;34m" : "")
-#define TTY_RST (worker_config->errorlog_tty ? "\033[0m" : "")
+#define TTY_HTTP_HD (log_config()->errorlog_tty ? "\033[1;34m" : "")
+#define TTY_RST (log_config()->errorlog_tty ? "\033[0m" : "")
 
 enum LogFragmentType {
   SHRPX_LOGF_NONE,
@@ -114,9 +120,15 @@ enum LogFragmentType {
   SHRPX_LOGF_REQUEST_TIME,
   SHRPX_LOGF_PID,
   SHRPX_LOGF_ALPN,
+  SHRPX_LOGF_SSL_CIPHER,
+  SHRPX_LOGF_SSL_PROTOCOL,
+  SHRPX_LOGF_SSL_SESSION_ID,
+  SHRPX_LOGF_SSL_SESSION_REUSED,
 };
 
 struct LogFragment {
+  LogFragment(LogFragmentType type, std::unique_ptr<char[]> value = nullptr)
+      : type(type), value(std::move(value)) {}
   LogFragmentType type;
   std::unique_ptr<char[]> value;
 };
@@ -127,8 +139,10 @@ struct LogSpec {
   const char *method;
   const char *path;
   const char *alpn;
+  const nghttp2::ssl::TLSSessionInfo *tls_info;
+  std::chrono::system_clock::time_point time_now;
   std::chrono::high_resolution_clock::time_point request_start_time;
-  std::chrono::high_resolution_clock::time_point time_now;
+  std::chrono::high_resolution_clock::time_point request_end_time;
   int major, minor;
   unsigned int status;
   int64_t body_bytes_sent;
@@ -137,9 +151,12 @@ struct LogSpec {
   pid_t pid;
 };
 
-void upstream_accesslog(const std::vector<LogFragment> &lf, LogSpec *lgsp);
+void upstream_accesslog(const std::vector<LogFragment> &lf,
+                        const LogSpec &lgsp);
 
 int reopen_log_files();
+
+void redirect_stderr_to_errorlog();
 
 } // namespace shrpx
 

@@ -26,7 +26,9 @@ bin_PROGRAMS =
 check_PROGRAMS =
 TESTS =
 
+AM_CFLAGS = $(WARNCFLAGS)
 AM_CPPFLAGS = \
+	-DPKGDATADIR='"$(pkgdatadir)"' \
 	-Wall \
 	-I$(top_srcdir)/lib/includes \
 	-I$(top_builddir)/lib/includes \
@@ -35,32 +37,30 @@ AM_CPPFLAGS = \
 	-I$(top_srcdir)/third-party \
 	@LIBSPDYLAY_CFLAGS@ \
 	@XML_CPPFLAGS@	\
-	@LIBEVENT_OPENSSL_CFLAGS@ \
+	@LIBEV_CFLAGS@ \
 	@OPENSSL_CFLAGS@ \
 	@JANSSON_CFLAGS@ \
 	@ZLIB_CFLAGS@ \
 	@DEFS@
-AM_LDFLAGS = \
+
+LDADD = $(top_builddir)/lib/libnghttp2.la \
+	$(top_builddir)/third-party/libhttp-parser.la \
 	@JEMALLOC_LIBS@ \
 	@LIBSPDYLAY_LIBS@ \
 	@XML_LIBS@ \
-	@LIBEVENT_OPENSSL_LIBS@ \
+	@LIBEV_LIBS@ \
 	@OPENSSL_LIBS@ \
 	@JANSSON_LIBS@ \
 	@ZLIB_LIBS@ \
-	@SRC_LIBS@
-
-LDADD = \
-	$(top_builddir)/lib/libnghttp2.la \
-	$(top_builddir)/third-party/libhttp-parser.la
+	@APPLDFLAGS@
 
 if ENABLE_APP
 
 bin_PROGRAMS += nghttp nghttpd nghttpx
 
-HELPER_OBJECTS = util.cc libevent_util.cc \
+HELPER_OBJECTS = util.cc \
 	http2.cc timegm.c app_helper.cc nghttp2_gzip.c
-HELPER_HFILES = util.h libevent_util.h \
+HELPER_HFILES = util.h \
 	http2.h timegm.h app_helper.h nghttp2_config.h \
 	nghttp2_gzip.h
 
@@ -71,8 +71,9 @@ if HAVE_LIBXML2
 HTML_PARSER_OBJECTS += HtmlParser.cc
 endif # HAVE_LIBXML2
 
-nghttp_SOURCES = ${HELPER_OBJECTS} ${HELPER_HFILES} nghttp.cc \
-	${HTML_PARSER_OBJECTS} ${HTML_PARSER_HFILES}
+nghttp_SOURCES = ${HELPER_OBJECTS} ${HELPER_HFILES} nghttp.cc nghttp.h \
+	${HTML_PARSER_OBJECTS} ${HTML_PARSER_HFILES} \
+	ssl.cc ssl.h
 
 nghttpd_SOURCES = ${HELPER_OBJECTS} ${HELPER_HFILES} nghttpd.cc \
 	ssl.cc ssl.h \
@@ -80,7 +81,7 @@ nghttpd_SOURCES = ${HELPER_OBJECTS} ${HELPER_HFILES} nghttpd.cc \
 
 bin_PROGRAMS += h2load
 
-h2load_SOURCES = util.cc util.h libevent_util.cc libevent_util.h \
+h2load_SOURCES = util.cc util.h \
 	http2.cc http2.h h2load.cc h2load.h \
 	timegm.c timegm.h \
 	ssl.cc ssl.h \
@@ -93,31 +94,37 @@ endif # HAVE_SPDYLAY
 
 NGHTTPX_SRCS = \
 	util.cc util.h http2.cc http2.h timegm.c timegm.h base64.h \
-	libevent_util.cc libevent_util.h \
 	app_helper.cc app_helper.h \
 	ssl.cc ssl.h \
 	shrpx_config.cc shrpx_config.h \
 	shrpx_error.h \
-	shrpx_listen_handler.cc shrpx_listen_handler.h \
+	shrpx_accept_handler.cc shrpx_accept_handler.h \
+	shrpx_connection_handler.cc shrpx_connection_handler.h \
 	shrpx_client_handler.cc shrpx_client_handler.h \
 	shrpx_upstream.h \
 	shrpx_http2_upstream.cc shrpx_http2_upstream.h \
 	shrpx_https_upstream.cc shrpx_https_upstream.h \
-	shrpx_downstream_queue.cc shrpx_downstream_queue.h \
 	shrpx_downstream.cc shrpx_downstream.h \
 	shrpx_downstream_connection.cc shrpx_downstream_connection.h \
 	shrpx_http_downstream_connection.cc shrpx_http_downstream_connection.h \
 	shrpx_http2_downstream_connection.cc shrpx_http2_downstream_connection.h \
 	shrpx_http2_session.cc shrpx_http2_session.h \
+	shrpx_downstream_queue.cc shrpx_downstream_queue.h \
 	shrpx_log.cc shrpx_log.h \
 	shrpx_http.cc shrpx_http.h \
 	shrpx_io_control.cc shrpx_io_control.h \
 	shrpx_ssl.cc shrpx_ssl.h \
-	shrpx_thread_event_receiver.cc shrpx_thread_event_receiver.h \
 	shrpx_worker.cc shrpx_worker.h \
-	shrpx_worker_config.cc shrpx_worker_config.h \
+	shrpx_log_config.cc shrpx_log_config.h \
 	shrpx_connect_blocker.cc shrpx_connect_blocker.h \
-	shrpx_downstream_connection_pool.cc shrpx_downstream_connection_pool.h
+	shrpx_downstream_connection_pool.cc shrpx_downstream_connection_pool.h \
+	shrpx_rate_limit.cc shrpx_rate_limit.h \
+	shrpx_connection.cc shrpx_connection.h \
+	shrpx_memcached_dispatcher.cc shrpx_memcached_dispatcher.h \
+	shrpx_memcached_connection.cc shrpx_memcached_connection.h \
+	shrpx_memcached_request.h \
+	shrpx_memcached_result.h \
+	buffer.h memchunk.h template.h
 
 if HAVE_SPDYLAY
 NGHTTPX_SRCS += shrpx_spdy_upstream.cc shrpx_spdy_upstream.h
@@ -127,8 +134,7 @@ noinst_LIBRARIES = libnghttpx.a
 libnghttpx_a_SOURCES = ${NGHTTPX_SRCS}
 
 nghttpx_SOURCES = shrpx.cc shrpx.h
-nghttpx_LDFLAGS =
-nghttpx_LDADD = libnghttpx.a ${LDADD} ${AM_LDFLAGS}
+nghttpx_LDADD = libnghttpx.a ${LDADD}
 
 if HAVE_CUNIT
 check_PROGRAMS += nghttpx-unittest
@@ -139,12 +145,12 @@ nghttpx_unittest_SOURCES = shrpx-unittest.cc \
 	http2_test.cc http2_test.h \
 	util_test.cc util_test.h \
 	nghttp2_gzip_test.c nghttp2_gzip_test.h \
-	nghttp2_gzip.c nghttp2_gzip.h
+	nghttp2_gzip.c nghttp2_gzip.h \
+	buffer_test.cc buffer_test.h \
+	memchunk_test.cc memchunk_test.h
 nghttpx_unittest_CPPFLAGS = ${AM_CPPFLAGS}\
-	 -DNGHTTP2_TESTS_DIR=\"$(top_srcdir)/tests\"
-nghttpx_unittest_LDFLAGS = -static
-nghttpx_unittest_LDADD = libnghttpx.a ${LDADD} ${AM_LDFLAGS} \
-	@CUNIT_LIBS@ @TESTS_LIBS@
+	-DNGHTTP2_TESTS_DIR=\"$(top_srcdir)/tests\"
+nghttpx_unittest_LDADD = libnghttpx.a ${LDADD} @CUNIT_LIBS@ @TESTLDADD@
 
 TESTS += nghttpx-unittest
 endif # HAVE_CUNIT
@@ -172,23 +178,44 @@ DISTCLEANFILES = $(pkgconfig_DATA)
 lib_LTLIBRARIES = libnghttp2_asio.la
 
 libnghttp2_asio_la_SOURCES = \
-	asio_connection.h \
-	asio_server.cc asio_server.h \
-	asio_io_service_pool.cc asio_io_service_pool.h \
-	asio_http2_handler.cc asio_http2_handler.h \
-	asio_http2_impl.cc asio_http2_impl.h \
 	util.cc util.h http2.cc http2.h \
-	ssl.cc ssl.h
+	ssl.cc ssl.h \
+	timegm.c timegm.h \
+	asio_common.cc asio_common.h \
+	asio_io_service_pool.cc asio_io_service_pool.h \
+	asio_server_http2.cc \
+	asio_server_http2_impl.cc asio_server_http2_impl.h \
+	asio_server.cc asio_server.h \
+	asio_server_http2_handler.cc asio_server_http2_handler.h \
+	asio_server_connection.h \
+	asio_server_request.cc \
+	asio_server_request_impl.cc asio_server_request_impl.h \
+	asio_server_response.cc \
+	asio_server_response_impl.cc asio_server_response_impl.h \
+	asio_server_stream.cc asio_server_stream.h \
+	asio_server_serve_mux.cc asio_server_serve_mux.h \
+	asio_server_request_handler.cc asio_server_request_handler.h \
+	asio_server_tls_context.cc asio_server_tls_context.h \
+	asio_client_session.cc \
+	asio_client_session_impl.cc asio_client_session_impl.h \
+	asio_client_session_tcp_impl.cc asio_client_session_tcp_impl.h \
+	asio_client_session_tls_impl.cc asio_client_session_tls_impl.h \
+	asio_client_response.cc \
+	asio_client_response_impl.cc asio_client_response_impl.h \
+	asio_client_request.cc \
+	asio_client_request_impl.cc asio_client_request_impl.h \
+	asio_client_stream.cc asio_client_stream.h \
+	asio_client_tls_context.cc asio_client_tls_context.h
 
-libnghttp2_asio_la_CPPFLAGS= ${BOOST_CPPFLAGS} ${AM_CPPFLAGS}
-libnghttp2_asio_la_LDFLAGS = \
+libnghttp2_asio_la_CPPFLAGS = ${AM_CPPFLAGS} ${BOOST_CPPFLAGS}
+libnghttp2_asio_la_LDFLAGS = -no-undefined -version-info 1:0:0
+libnghttp2_asio_la_LIBADD = \
+	$(top_builddir)/lib/libnghttp2.la \
+	$(top_builddir)/third-party/libhttp-parser.la \
+	@OPENSSL_LIBS@ \
 	${BOOST_LDFLAGS} \
 	${BOOST_ASIO_LIB} \
 	${BOOST_THREAD_LIB} \
-	${BOOST_SYSTEM_LIB} \
-	@OPENSSL_LIBS@ \
-	-no-undefined \
-	-version-info 0:0:0
-libnghttp2_asio_la_LIBADD = $(top_builddir)/lib/libnghttp2.la
+	${BOOST_SYSTEM_LIB}
 
 endif # ENABLE_ASIO_LIB

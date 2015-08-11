@@ -39,14 +39,20 @@
   } while (0)
 #endif
 
-typedef int (*nghttp2_compar)(const void *lhs, const void *rhs);
+/* "less" function, return nonzero if |lhs| is less than |rhs|. */
+typedef int (*nghttp2_less)(const void *lhs, const void *rhs);
 
 /* Internal error code. They must be in the range [-499, -100],
    inclusive. */
 typedef enum {
   NGHTTP2_ERR_CREDENTIAL_PENDING = -101,
   NGHTTP2_ERR_IGN_HEADER_BLOCK = -103,
-  NGHTTP2_ERR_IGN_PAYLOAD = -104
+  NGHTTP2_ERR_IGN_PAYLOAD = -104,
+  /*
+   * Invalid HTTP header field was received but it can be treated as
+   * if it was not received because of compatibility reasons.
+   */
+  NGHTTP2_ERR_IGN_HTTP_HEADER = -105
 } nghttp2_internal_error;
 
 #endif /* NGHTTP2_INT_H */

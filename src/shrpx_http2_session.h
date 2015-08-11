@@ -27,36 +27,46 @@
 
 #include "shrpx.h"
 
-#include <set>
+#include <unordered_set>
 #include <memory>
 
 #include <openssl/ssl.h>
 
-#include <event.h>
-#include <event2/bufferevent.h>
+#include <ev.h>
 
 #include <nghttp2/nghttp2.h>
 
 #include "http-parser/http_parser.h"
 
+#include "shrpx_connection.h"
+#include "buffer.h"
+#include "template.h"
+
+using namespace nghttp2;
+
 namespace shrpx {
 
 class Http2DownstreamConnection;
+class Worker;
+class ConnectBlocker;
 
 struct StreamData {
+  StreamData *dlnext, *dlprev;
   Http2DownstreamConnection *dconn;
 };
 
 class Http2Session {
 public:
-  Http2Session(event_base *evbase, SSL_CTX *ssl_ctx);
+  Http2Session(struct ev_loop *loop, SSL_CTX *ssl_ctx,
+               ConnectBlocker *connect_blocker, Worker *worker, size_t group,
+               size_t idx);
   ~Http2Session();
-
-  int init_notification();
 
   int check_cert();
 
-  int disconnect();
+  // If hard is true, all pending requests are abandoned and
+  // associated ClientHandlers will be deleted.
+  int disconnect(bool hard = false);
   int initiate_connection();
 
   void add_downstream_connection(Http2DownstreamConnection *dconn);
@@ -80,33 +90,71 @@ public:
 
   int resume_data(Http2DownstreamConnection *dconn);
 
-  int on_connect();
+  int connection_made();
+
+  int do_read();
+  int do_write();
 
   int on_read();
   int on_write();
-  int send();
 
-  int on_read_proxy();
+  int connected();
+  int read_clear();
+  int write_clear();
+  int tls_handshake();
+  int read_tls();
+  int write_tls();
 
-  void clear_notify();
-  void notify();
+  int downstream_read_proxy();
+  int downstream_connect_proxy();
 
-  bufferevent *get_bev() const;
-  void unwrap_free_bev();
+  int downstream_read();
+  int downstream_write();
+
+  int noop();
+
+  void signal_write();
+
+  struct ev_loop *get_loop() const;
+
+  ev_io *get_wev();
 
   int get_state() const;
   void set_state(int state);
 
-  int start_settings_timer();
+  void start_settings_timer();
   void stop_settings_timer();
-
-  size_t get_outbuf_length() const;
 
   SSL *get_ssl() const;
 
   int consume(int32_t stream_id, size_t len);
 
-  void reset_timeouts();
+  // Returns true if request can be issued on downstream connection.
+  bool can_push_request() const;
+  // Initiates the connection checking if downstream connection has
+  // been established and connection checking is required.
+  void start_checking_connection();
+  // Resets connection check timer to timeout |t|.  After timeout, we
+  // require connection checking.  If connection checking is already
+  // enabled, this timeout is for PING ACK timeout.
+  void reset_connection_check_timer(ev_tstamp t);
+  void reset_connection_check_timer_if_not_checking();
+  // Signals that connection is alive.  Internally
+  // reset_connection_check_timer() is called.
+  void connection_alive();
+  // Change connection check state.
+  void set_connection_check_state(int state);
+  int get_connection_check_state() const;
+
+  bool should_hard_fail() const;
+
+  void submit_pending_requests();
+
+  size_t get_addr_idx() const;
+
+  size_t get_group() const;
+
+  size_t get_index() const;
 
   enum {
     // Disconnected
@@ -120,34 +168,58 @@ public:
     // Connecting to downstream and/or performing SSL/TLS handshake
     CONNECTING,
     // Connected to downstream
-    CONNECTED
+    CONNECTED,
+    // Connection is started to fail
+    CONNECT_FAILING,
   };
 
-  static const size_t OUTBUF_MAX_THRES = 64 * 1024;
+  enum {
+    // Connection checking is not required
+    CONNECTION_CHECK_NONE,
+    // Connection checking is required
+    CONNECTION_CHECK_REQUIRED,
+    // Connection checking has been started
+    CONNECTION_CHECK_STARTED
+  };
+
+  using ReadBuf = Buffer<8_k>;
+  using WriteBuf = Buffer<32768>;
 
 private:
-  std::set<Http2DownstreamConnection *> dconns_;
-  std::set<StreamData *> streams_;
+  Connection conn_;
+  ev_timer settings_timer_;
+  // This timer has 2 purpose: when it first timeout, set
+  // connection_check_state_ = CONNECTION_CHECK_REQUIRED.  After
+  // connection check has started, this timer is started again and
+  // traps PING ACK timeout.
+  ev_timer connchk_timer_;
+  DList<Http2DownstreamConnection> dconns_;
+  DList<StreamData> streams_;
+  std::function<int(Http2Session &)> read_, write_;
+  std::function<int(Http2Session &)> on_read_, on_write_;
   // Used to parse the response from HTTP proxy
   std::unique_ptr<http_parser> proxy_htp_;
-  event_base *evbase_;
+  Worker *worker_;
+  ConnectBlocker *connect_blocker_;
   // NULL if no TLS is configured
   SSL_CTX *ssl_ctx_;
-  SSL *ssl_;
   nghttp2_session *session_;
-  bufferevent *bev_;
-  bufferevent *wrbev_;
-  bufferevent *rdbev_;
-  event *settings_timerev_;
-  // fd_ is used for proxy connection and no TLS connection. For
-  // direct or TLS connection, it may be -1 even after connection is
-  // established. Use bufferevent_getfd(bev_) to get file descriptor
-  // in these cases.
-  int fd_;
+  const uint8_t *data_pending_;
+  size_t data_pendinglen_;
+  // index of get_config()->downstream_addrs this object uses
+  size_t addr_idx_;
+  size_t group_;
+  // index inside group, this is used to pin frontend to certain
+  // HTTP/2 backend for better throughput.
+  size_t index_;
   int state_;
-  bool notified_;
+  int connection_check_state_;
   bool flow_control_;
+  WriteBuf wb_;
+  ReadBuf rb_;
 };
+
+nghttp2_session_callbacks *create_http2_downstream_callbacks();
 
 } // namespace shrpx
 

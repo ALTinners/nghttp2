@@ -31,19 +31,22 @@
 
 #include <nghttp2/nghttp2.h>
 #include "nghttp2_int.h"
+#include "nghttp2_mem.h"
 
 /* Implementation of priority queue */
 
 typedef struct {
   /* The pointer to the pointer to the item stored */
   void **q;
+  /* Memory allocator */
+  nghttp2_mem *mem;
   /* The number of items sotred */
   size_t length;
   /* The maximum number of items this pq can store. This is
      automatically extended when length is reached to this value. */
   size_t capacity;
-  /* The compare function between items */
-  nghttp2_compar compar;
+  /* The less function between items */
+  nghttp2_less less;
 } nghttp2_pq;
 
 /*
@@ -55,7 +58,7 @@ typedef struct {
  * NGHTTP2_ERR_NOMEM
  *     Out of memory.
  */
-int nghttp2_pq_init(nghttp2_pq *pq, nghttp2_compar cmp);
+int nghttp2_pq_init(nghttp2_pq *pq, nghttp2_less less, nghttp2_mem *mem);
 
 /*
  * Deallocates any resources allocated for |pq|.  The stored items are
@@ -105,5 +108,14 @@ typedef int (*nghttp2_pq_item_cb)(void *item, void *arg);
  * |arg| is passed to the 2nd parameter of |fun|.
  */
 void nghttp2_pq_update(nghttp2_pq *pq, nghttp2_pq_item_cb fun, void *arg);
+
+/*
+ * Applys |fun| to each item in |pq|.  The |arg| is passed as arg
+ * parameter to callback function.  This function must not change the
+ * ordering key.  If the return value from callback is nonzero, this
+ * function returns 1 immediately without iterating remaining items.
+ * Otherwise this function returns 0.
+ */
+int nghttp2_pq_each(nghttp2_pq *pq, nghttp2_pq_item_cb fun, void *arg);
 
 #endif /* NGHTTP2_PQ_H */

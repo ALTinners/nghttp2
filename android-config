@@ -39,7 +39,9 @@ PATH=$TOOLCHAIN/bin:$PATH
     --without-libxml2 \
     --disable-python-bindings \
     --disable-examples \
-    --disable-threads \
-    CPPFLAGS="-I$PREFIX/include" \
+    --enable-werror \
+    CC=clang \
+    CXX=clang++ \
+    CPPFLAGS="-fPIE -I$PREFIX/include" \
     PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig" \
-    LDFLAGS="-L$PREFIX/lib"
+    LDFLAGS="-fPIE -pie -L$PREFIX/lib"

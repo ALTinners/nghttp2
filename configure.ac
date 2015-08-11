@@ -1,6 +1,6 @@
 dnl nghttp2 - HTTP/2 C Library
 
-dnl Copyright (c) 2012, 2013 Tatsuhiro Tsujikawa
+dnl Copyright (c) 2012, 2013, 2014, 2015 Tatsuhiro Tsujikawa
 
 dnl Permission is hereby granted, free of charge, to any person obtaining
 dnl a copy of this software and associated documentation files (the
@@ -20,15 +20,36 @@ dnl NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
 dnl LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 dnl OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 dnl WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+dnl Do not change user variables!
+dnl http://www.gnu.org/software/automake/manual/html_node/Flag-Variables-Ordering.html
+
 AC_PREREQ(2.61)
-AC_INIT([nghttp2], [0.6.7], [t-tujikawa@users.sourceforge.net])
+AC_INIT([nghttp2], [1.2.0], [t-tujikawa@users.sourceforge.net])
+AC_CONFIG_AUX_DIR([.])
+AC_CONFIG_MACRO_DIR([m4])
+AC_CONFIG_HEADERS([config.h])
+AC_USE_SYSTEM_EXTENSIONS
+
 LT_PREREQ([2.2.6])
 LT_INIT()
+
+AC_CANONICAL_BUILD
+AC_CANONICAL_HOST
+AC_CANONICAL_TARGET
+
+AM_INIT_AUTOMAKE([subdir-objects])
+# comment out for now since this requires automake 1.13 or higher and
+# travis has older one.
+# AM_EXTRA_RECURSIVE_TARGETS([it])
+
+m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
+
 dnl See versioning rule:
 dnl  http://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
-AC_SUBST(LT_CURRENT, 7)
-AC_SUBST(LT_REVISION, 2)
-AC_SUBST(LT_AGE, 2)
+AC_SUBST(LT_CURRENT, 14)
+AC_SUBST(LT_REVISION, 7)
+AC_SUBST(LT_AGE, 0)
 
 major=`echo $PACKAGE_VERSION |cut -d. -f1 | sed -e "s/[^0-9]//g"`
 minor=`echo $PACKAGE_VERSION |cut -d. -f2 | sed -e "s/[^0-9]//g"`
@@ -37,18 +58,6 @@ patch=`echo $PACKAGE_VERSION |cut -d. -f3 | cut -d- -f1 | sed -e "s/[^0-9]//g"`
 PACKAGE_VERSION_NUM=`printf "0x%02x%02x%02x" "$major" "$minor" "$patch"`
 
 AC_SUBST(PACKAGE_VERSION_NUM)
-
-AC_CANONICAL_BUILD
-AC_CANONICAL_HOST
-AC_CANONICAL_TARGET
-
-AC_CONFIG_MACRO_DIR([m4])
-
-AM_INIT_AUTOMAKE([subdir-objects])
-
-m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
-
-AC_CONFIG_HEADERS([config.h])
 
 dnl Checks for command-line options
 AC_ARG_ENABLE([werror],
@@ -92,9 +101,9 @@ AC_ARG_ENABLE([python-bindings],
     [request_python_bindings=$enableval], [request_python_bindings=check])
 
 AC_ARG_ENABLE([failmalloc],
-    [AS_HELP_STRING([--enable-failmalloc],
-                    [Build failmalloc test program [default=no]])],
-    [request_failmalloc=$enableval], [request_failmalloc=no])
+    [AS_HELP_STRING([--disable-failmalloc],
+                    [Do not build failmalloc test program])],
+    [request_failmalloc=$enableval], [request_failmalloc=yes])
 
 AC_ARG_WITH([libxml2],
     [AS_HELP_STRING([--with-libxml2],
@@ -122,14 +131,17 @@ AC_ARG_VAR([CYTHON], [the Cython executable])
 dnl Checks for programs
 AC_PROG_CC
 AC_PROG_CXX
+AC_PROG_CPP
 AC_PROG_INSTALL
 AC_PROG_LN_S
 AC_PROG_MAKE_SET
-AM_PROG_CC_C_O
+AC_PROG_MKDIR_P
+
 PKG_PROG_PKG_CONFIG([0.20])
 
+AM_PATH_PYTHON([2.7],, [:])
+
 if [test "x$request_python_bindings" != "xno"]; then
-  AM_PATH_PYTHON([2.7],, [:])
   AX_PYTHON_DEVEL([>= '2.7'])
 fi
 
@@ -158,24 +170,6 @@ AX_CXX_COMPILE_STDCXX_11([noext], [optional])
 
 AC_LANG_PUSH(C++)
 
-# Check that std::chrono::steady_clock is available. In particular,
-# gcc 4.6 does not have one, but has monotonic_clock which is the old
-# name existed in the pre-standard draft. If steady_clock is not
-# available, don't define HAVE_STEADY_CLOCK and replace steady_clock
-# with monotonic_clock.
-AC_MSG_CHECKING([whether std::chrono::steady_clock is available])
-AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
-[[
-#include <chrono>
-]],
-[[
-auto tp = std::chrono::steady_clock::now();
-]])],
-    [AC_DEFINE([HAVE_STEADY_CLOCK], [1],
-               [Define to 1 if you have the `std::chrono::steady_clock`.])
-     AC_MSG_RESULT([yes])],
-    [AC_MSG_RESULT([no])])
-
 # Check that std::future is available.
 AC_MSG_CHECKING([whether std::future is available])
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
@@ -193,53 +187,49 @@ std::vector<std::future<int>> v;
     [have_std_future=no
      AC_MSG_RESULT([no])])
 
+# Check that std::map::emplace is available for g++-4.7.
+AC_MSG_CHECKING([whether std::map::emplace is available])
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
+[[
+#include <map>
+]],
+[[
+std::map<int, int>().emplace(1, 2);
+]])],
+    [AC_DEFINE([HAVE_STD_MAP_EMPLACE], [1],
+               [Define to 1 if you have the `std::map::emplace`.])
+     have_std_map_emplace=yes
+     AC_MSG_RESULT([yes])],
+    [have_std_map_emplace=no
+     AC_MSG_RESULT([no])])
+
 AC_LANG_POP()
 
 # Checks for libraries.
 
 # Additional libraries required for tests.
-TESTS_LIBS=
+TESTLDADD=
 
 # Additional libraries required for programs under src directory.
-SRC_LIBS=
-
-LIBS_OLD=$LIBS
-# Search for dlsym function, which is used in tests. Linux needs -ldl,
-# but netbsd does not need it.
-AC_SEARCH_LIBS([dlsym], [dl])
-TESTS_LIBS="$LIBS $TESTS_LIBS"
-LIBS=$LIBS_OLD
-
-LIBS_OLD=$LIBS
-AC_SEARCH_LIBS([clock_gettime], [rt],
-               [AC_DEFINE([HAVE_CLOCK_GETTIME], [1],
-                          [Define to 1 if you have the `clock_gettime`.])])
-SRC_LIBS="$LIBS $SRC_LIBS"
-LIBS=$LIBS_OLD
+APPLDFLAGS=
 
 case "$host" in
   *android*)
     android_build=yes
-    # android does not need -pthread, but needs followng 2 libs for C++
-    SRC_LIBS="$SRC_LIBS -lstdc++ -lsupc++"
+    # android does not need -pthread, but needs followng 3 libs for C++
+    APPLDFLAGS="$APPLDFLAGS -lstdc++ -latomic -lsupc++"
     ;;
   *)
     PTHREAD_LDFLAGS="-pthread"
-    SRC_LIBS="$SRC_LIBS $PTHREAD_LDFLAGS"
+    APPLDFLAGS="$APPLDFLAGS $PTHREAD_LDFLAGS"
     ;;
 esac
 
 # zlib
-if test "x$android_build" = "xyes"; then
-  # Use zlib provided by NDK
-  SRC_LIBS="-lz $SRC_LIBS"
-  have_zlib=yes
-else
-  PKG_CHECK_MODULES([ZLIB], [zlib >= 1.2.3], [have_zlib=yes], [have_zlib=no])
+PKG_CHECK_MODULES([ZLIB], [zlib >= 1.2.3], [have_zlib=yes], [have_zlib=no])
 
-  if test "x${have_zlib}" = "xno"; then
-    AC_MSG_NOTICE($ZLIB_PKG_ERRORS)
-  fi
+if test "x${have_zlib}" = "xno"; then
+  AC_MSG_NOTICE($ZLIB_PKG_ERRORS)
 fi
 
 # cunit
@@ -271,6 +261,22 @@ fi
 
 AM_CONDITIONAL([HAVE_CUNIT], [ test "x${have_cunit}" = "xyes" ])
 
+# libev (for src)
+# libev does not have pkg-config file.  Check it in an old way.
+LIBS_OLD=$LIBS
+# android requires -lm for floor
+AC_CHECK_LIB([ev], [ev_time], [have_libev=yes], [have_libev=no], [-lm])
+if test "x${have_libev}" = "xyes"; then
+  AC_CHECK_HEADER([ev.h], [have_libev=yes], [have_libev=no])
+  if test "x${have_libev}" = "xyes"; then
+    LIBEV_LIBS=-lev
+    LIBEV_CFLAGS=
+    AC_SUBST([LIBEV_LIBS])
+    AC_SUBST([LIBEV_CFLAGS])
+  fi
+fi
+LIBS=$LIBS_OLD
+
 # openssl (for src)
 PKG_CHECK_MODULES([OPENSSL], [openssl >= 1.0.1],
                   [have_openssl=yes], [have_openssl=no])
@@ -278,7 +284,7 @@ if test "x${have_openssl}" = "xno"; then
   AC_MSG_NOTICE($OPENSSL_PKG_ERRORS)
 fi
 
-# libevent_openssl (for src)
+# libevent_openssl (for examples)
 # 2.0.8 is required because we use evconnlistener_set_error_cb()
 PKG_CHECK_MODULES([LIBEVENT_OPENSSL], [libevent_openssl >= 2.0.8],
                   [have_libevent_openssl=yes], [have_libevent_openssl=no])
@@ -289,7 +295,7 @@ fi
 # jansson (for src/nghttp, src/deflatehd and src/inflatehd)
 PKG_CHECK_MODULES([JANSSON], [jansson >= 2.5],
                   [have_jansson=yes], [have_jansson=no])
-if test "x${have_jansson}" == "xyes"; then
+if test "x${have_jansson}" = "xyes"; then
   AC_DEFINE([HAVE_JANSSON], [1],
             [Define to 1 if you have `libjansson` library.])
 else
@@ -319,9 +325,23 @@ if test "x${request_jemalloc}" != "xno"; then
   AC_SEARCH_LIBS([malloc_stats_print], [jemalloc], [have_jemalloc=yes], [],
                  [$PTHREAD_LDFLAGS])
   LIBS=$LIBS_OLD
+
+  if test "x${have_jemalloc}" = "xyes"; then
+    jemalloc_libs=${ac_cv_search_malloc_stats_print}
+  else
+    # On Darwin, malloc_stats_print is je_malloc_stats_print
+    AC_SEARCH_LIBS([je_malloc_stats_print], [jemalloc], [have_jemalloc=yes], [],
+                   [$PTHREAD_LDFLAGS])
+    LIBS=$LIBS_OLD
+
+    if test "x${have_jemalloc}" = "xyes"; then
+      jemalloc_libs=${ac_cv_search_je_malloc_stats_print}
+    fi
+  fi
+
   if test "x${have_jemalloc}" = "xyes" &&
-     test "x${ac_cv_search_malloc_stats_print}" != "xnone required"; then
-    JEMALLOC_LIBS=${ac_cv_search_malloc_stats_print}
+     test "x${jemalloc_libs}" != "xnone required"; then
+    JEMALLOC_LIBS=${jemalloc_libs}
     AC_SUBST([JEMALLOC_LIBS])
   fi
 fi
@@ -334,7 +354,7 @@ fi
 # spdylay (for src/nghttpx and src/h2load)
 have_spdylay=no
 if test "x${request_spdylay}" != "xno"; then
-  PKG_CHECK_MODULES([LIBSPDYLAY], [libspdylay >= 1.3.0],
+  PKG_CHECK_MODULES([LIBSPDYLAY], [libspdylay >= 1.3.2],
                     [have_spdylay=yes], [have_spdylay=no])
   if test "x${have_spdylay}" = "xyes"; then
     AC_DEFINE([HAVE_SPDYLAY], [1], [Define to 1 if you have `spdylay` library.])
@@ -371,12 +391,12 @@ if test "x${request_asio_lib}" = "xyes"; then
 fi
 
 # The nghttp, nghttpd and nghttpx under src depend on zlib, OpenSSL
-# and libevent_openssl
+# and libev
 enable_app=no
 if test "x${request_app}" != "xno" &&
    test "x${have_zlib}" = "xyes" &&
    test "x${have_openssl}" = "xyes" &&
-   test "x${have_libevent_openssl}" = "xyes"; then
+   test "x${have_libev}" = "xyes"; then
   enable_app=yes
 fi
 
@@ -426,6 +446,17 @@ fi
 
 AM_CONDITIONAL([ENABLE_EXAMPLES], [ test "x${enable_examples}" = "xyes" ])
 
+# third-party only be built when needed
+
+enable_third_party=no
+if test "x${enable_examples}" = "xyes" ||
+   test "x${enable_app}" = "xyes" ||
+   test "x${enable_asio_lib}" = "xyes"; then
+  enable_third_party=yes
+fi
+
+AM_CONDITIONAL([ENABLE_THIRD_PARTY], [ test "x${enable_third_party}" = "xyes" ])
+
 # Python bindings
 enable_python_bindings=no
 if test "x${request_python_bindings}" != "xno" &&
@@ -448,28 +479,33 @@ AM_CONDITIONAL([ENABLE_PYTHON_BINDINGS],
 AM_CONDITIONAL([HAVE_CYTHON], [test "x${CYTHON}" != "x"])
 
 # failmalloc tests
+enable_failmalloc=no
+if test "x${request_failmalloc}" = "xyes"; then
+  enable_failmalloc=yes
+fi
+
 AM_CONDITIONAL([ENABLE_FAILMALLOC], [ test "x${enable_failmalloc}" = "xyes" ])
 
 # Checks for header files.
 AC_HEADER_ASSERT
 AC_CHECK_HEADERS([ \
   arpa/inet.h \
+  fcntl.h \
+  inttypes.h \
+  limits.h \
+  netdb.h \
   netinet/in.h \
   pwd.h \
   stddef.h \
   stdint.h \
   stdlib.h \
   string.h \
+  sys/socket.h \
+  sys/time.h \
+  syslog.h \
   time.h \
   unistd.h \
 ])
-
-case "${host}" in
-  *mingw*)
-    # For ntohl, ntohs in Windows
-    AC_CHECK_HEADERS([winsock2.h])
-    ;;
-esac
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_TYPE_SIZE_T
@@ -478,8 +514,16 @@ AC_TYPE_UINT8_T
 AC_TYPE_UINT16_T
 AC_TYPE_UINT32_T
 AC_TYPE_UINT64_T
+AC_TYPE_INT8_T
+AC_TYPE_INT16_T
+AC_TYPE_INT32_T
+AC_TYPE_INT64_T
+AC_TYPE_OFF_T
+AC_TYPE_PID_T
+AC_TYPE_UID_T
 AC_CHECK_TYPES([ptrdiff_t])
 AC_C_BIGENDIAN
+AC_C_INLINE
 AC_SYS_LARGEFILE
 
 AC_CHECK_MEMBER([struct tm.tm_gmtoff], [have_struct_tm_tm_gmtoff=yes],
@@ -490,15 +534,44 @@ if test "x$have_struct_tm_tm_gmtoff" = "xyes"; then
             [Define to 1 if you have `struct tm.tm_gmtoff` member.])
 fi
 
+# Check size of pointer to decide we need 8 bytes alignment
+# adjustment.
+AC_CHECK_SIZEOF([int *])
+
+AC_CHECK_SIZEOF([time_t])
+
 # Checks for library functions.
-if test "x$cross_compiling" != "xyes"; then
-  AC_FUNC_MALLOC
-fi
+
+# Don't check malloc, since it does not play nicely with C++ stdlib
+# AC_FUNC_MALLOC
+
+AC_FUNC_CHOWN
+AC_FUNC_ERROR_AT_LINE
+AC_FUNC_FORK
+# Don't check realloc, since LeakSanitizer detects memory leak during check
+# AC_FUNC_REALLOC
+AC_FUNC_STRERROR_R
+AC_FUNC_STRNLEN
+
 AC_CHECK_FUNCS([ \
   _Exit \
+  accept4 \
+  dup2 \
+  getcwd \
   getpwnam \
+  localtime_r \
+  memchr \
   memmove \
   memset \
+  socket \
+  sqrt \
+  strchr \
+  strdup \
+  strerror \
+  strndup \
+  strstr \
+  strtol \
+  strtoul \
   timegm \
 ])
 
@@ -515,12 +588,8 @@ AM_CONDITIONAL([ENABLE_TINY_NGHTTPD],
                [ test "x${have_epoll}" = "xyes" &&
                  test "x${have_timerfd_create}" = "xyes"])
 
-dnl Windows library for winsock2
-case "${host}" in
-  *mingw*)
-    LIBS="$LIBS -lws2_32"
-    ;;
-esac
+ac_save_CFLAGS=$CFLAGS
+CFLAGS=
 
 if test "x$werror" != "xno"; then
     AX_CHECK_COMPILE_FLAG([-Wall], [CFLAGS="$CFLAGS -Wall"])
@@ -554,18 +623,26 @@ if test "x$werror" != "xno"; then
     AX_CHECK_COMPILE_FLAG([-Wheader-guard], [CFLAGS="$CFLAGS -Wheader-guard"])
 fi
 
+WARNCFLAGS=$CFLAGS
+CFLAGS=$ac_save_CFLAGS
+
+AC_SUBST([WARNCFLAGS])
+
 if test "x$debug" != "xno"; then
     AC_DEFINE([DEBUGBUILD], [1], [Define to 1 to enable debug output.])
 fi
 
+enable_threads=yes
 # Some platform does not have working std::future.  We disable
-# threading for those platforms to exclude std::future use.
-if test "x$threads" != "xyes" || test "x$have_std_future" != "xyes"; then
+# threading for those platforms.
+if test "x$threads" != "xyes" ||
+   test "x$have_std_future" != "xyes"; then
+    enable_threads=no
     AC_DEFINE([NOTHREADS], [1], [Define to 1 if you want to disable threads.])
 fi
 
-AC_SUBST([TESTS_LIBS])
-AC_SUBST([SRC_LIBS])
+AC_SUBST([TESTLDADD])
+AC_SUBST([APPLDFLAGS])
 
 AC_CONFIG_FILES([
   Makefile
@@ -582,6 +659,9 @@ AC_CONFIG_FILES([
   examples/Makefile
   python/Makefile
   python/setup.py
+  integration-tests/Makefile
+  integration-tests/config.go
+  integration-tests/setenv
   doc/Makefile
   doc/conf.py
   doc/index.rst
@@ -597,8 +677,11 @@ AC_CONFIG_FILES([
   doc/nghttp2.h.rst
   doc/nghttp2ver.h.rst
   doc/asio_http2.h.rst
+  doc/asio_http2_server.h.rst
+  doc/asio_http2_client.h.rst
   doc/contribute.rst
   contrib/Makefile
+  script/Makefile
 ])
 AC_OUTPUT
 
@@ -609,6 +692,7 @@ AC_MSG_NOTICE([summary of build options:
     Install prefix: ${prefix}
     C compiler:     ${CC}
     CFLAGS:         ${CFLAGS}
+    WARNCFLAGS:     ${WARNCFLAGS}
     LDFLAGS:        ${LDFLAGS}
     LIBS:           ${LIBS}
     CPPFLAGS:       ${CPPFLAGS}
@@ -617,29 +701,37 @@ AC_MSG_NOTICE([summary of build options:
     CXXFLAGS:       ${CXXFLAGS}
     CXXCPP:         ${CXXCPP}
     Library types:  Shared=${enable_shared}, Static=${enable_static}
-    Python:         ${PYTHON}
-    PYTHON_VERSION: ${PYTHON_VERSION}
-    pyexecdir:      ${pyexecdir}
-    Python-dev:     ${have_python_dev}
-    PYTHON_CPPFLAGS:${PYTHON_CPPFLAGS}
-    PYTHON_LDFLAGS: ${PYTHON_LDFLAGS}
-    Cython:         ${CYTHON}
-    CUnit:          ${have_cunit}
-    OpenSSL:        ${have_openssl}
-    Libxml2:        ${have_libxml2}
-    Libevent(SSL):  ${have_libevent_openssl}
-    Spdylay:        ${have_spdylay}
-    Jansson:        ${have_jansson}
-    Jemalloc:       ${have_jemalloc}
-    Boost CPPFLAGS: ${BOOST_CPPFLAGS}
-    Boost LDFLAGS:  ${BOOST_LDFLAGS}
-    Boost::ASIO:    ${BOOST_ASIO_LIB}
-    Boost::System:  ${BOOST_SYSTEM_LIB}
-    Boost::Thread:  ${BOOST_THREAD_LIB}
-    Applications:   ${enable_app}
-    HPACK tools:    ${enable_hpack_tools}
-    Libnghttp2_asio:${enable_asio_lib}
-    Examples:       ${enable_examples}
-    Python bindings:${enable_python_bindings}
-    Failmalloc:     ${request_failmalloc}
+    Python:
+      Python:         ${PYTHON}
+      PYTHON_VERSION: ${PYTHON_VERSION}
+      pyexecdir:      ${pyexecdir}
+      Python-dev:     ${have_python_dev}
+      PYTHON_CPPFLAGS:${PYTHON_CPPFLAGS}
+      PYTHON_LDFLAGS: ${PYTHON_LDFLAGS}
+      Cython:         ${CYTHON}
+    Test:
+      CUnit:          ${have_cunit}
+      Failmalloc:     ${enable_failmalloc}
+    Libs:
+      OpenSSL:        ${have_openssl}
+      Libxml2:        ${have_libxml2}
+      Libev:          ${have_libev}
+      Libevent(SSL):  ${have_libevent_openssl}
+      Spdylay:        ${have_spdylay}
+      Jansson:        ${have_jansson}
+      Jemalloc:       ${have_jemalloc}
+      Zlib:           ${have_zlib}
+      Boost CPPFLAGS: ${BOOST_CPPFLAGS}
+      Boost LDFLAGS:  ${BOOST_LDFLAGS}
+      Boost::ASIO:    ${BOOST_ASIO_LIB}
+      Boost::System:  ${BOOST_SYSTEM_LIB}
+      Boost::Thread:  ${BOOST_THREAD_LIB}
+    Features:
+      Applications:   ${enable_app}
+      HPACK tools:    ${enable_hpack_tools}
+      Libnghttp2_asio:${enable_asio_lib}
+      Examples:       ${enable_examples}
+      Python bindings:${enable_python_bindings}
+      Threading:      ${enable_threads}
+      Third-party:    ${enable_third_party}
 ])

@@ -45,8 +45,9 @@ int unpack_frame(nghttp2_frame *frame, const uint8_t *in, size_t len) {
   const uint8_t *payload = in + NGHTTP2_FRAME_HDLEN;
   size_t payloadlen = len - NGHTTP2_FRAME_HDLEN;
   size_t payloadoff;
-  uint8_t *gift_payload;
-  size_t gift_payloadlen;
+  nghttp2_mem *mem;
+
+  mem = nghttp2_mem_default();
 
   nghttp2_frame_unpack_frame_hd(&frame->hd, in);
   switch (frame->hd.type) {
@@ -65,7 +66,7 @@ int unpack_frame(nghttp2_frame *frame, const uint8_t *in, size_t len) {
     break;
   case NGHTTP2_SETTINGS:
     rv = nghttp2_frame_unpack_settings_payload2(
-        &frame->settings.iv, &frame->settings.niv, payload, payloadlen);
+        &frame->settings.iv, &frame->settings.niv, payload, payloadlen, mem);
     break;
   case NGHTTP2_PUSH_PROMISE:
     rv = nghttp2_frame_unpack_push_promise_payload(&frame->push_promise,
@@ -75,23 +76,12 @@ int unpack_frame(nghttp2_frame *frame, const uint8_t *in, size_t len) {
     nghttp2_frame_unpack_ping_payload(&frame->ping, payload, payloadlen);
     break;
   case NGHTTP2_GOAWAY:
-    nghttp2_frame_unpack_goaway_payload2(&frame->goaway, payload, payloadlen);
+    nghttp2_frame_unpack_goaway_payload2(&frame->goaway, payload, payloadlen,
+                                         mem);
     break;
   case NGHTTP2_WINDOW_UPDATE:
     nghttp2_frame_unpack_window_update_payload(&frame->window_update, payload,
                                                payloadlen);
-    break;
-  case NGHTTP2_EXT_ALTSVC:
-    gift_payloadlen = payloadlen - NGHTTP2_ALTSVC_FIXED_PARTLEN;
-    gift_payload = malloc(gift_payloadlen);
-
-    memcpy(gift_payload, payload + NGHTTP2_ALTSVC_FIXED_PARTLEN,
-           gift_payloadlen);
-
-    payloadlen -= NGHTTP2_ALTSVC_FIXED_PARTLEN;
-
-    rv = nghttp2_frame_unpack_altsvc_payload(&frame->ext, payload, payloadlen,
-                                             gift_payload, gift_payloadlen);
     break;
   default:
     /* Must not be reachable */
@@ -124,26 +114,26 @@ void nva_out_init(nva_out *out) {
   out->nvlen = 0;
 }
 
-void nva_out_reset(nva_out *out) {
+void nva_out_reset(nva_out *out, nghttp2_mem *mem) {
   size_t i;
   for (i = 0; i < out->nvlen; ++i) {
-    free(out->nva[i].name);
-    free(out->nva[i].value);
+    mem->free(out->nva[i].name, NULL);
+    mem->free(out->nva[i].value, NULL);
   }
   memset(out->nva, 0, sizeof(out->nva));
   out->nvlen = 0;
 }
 
-void add_out(nva_out *out, nghttp2_nv *nv) {
+void add_out(nva_out *out, nghttp2_nv *nv, nghttp2_mem *mem) {
   nghttp2_nv *onv = &out->nva[out->nvlen];
   if (nv->namelen) {
-    onv->name = malloc(nv->namelen);
+    onv->name = mem->malloc(nv->namelen, NULL);
     memcpy(onv->name, nv->name, nv->namelen);
   } else {
     onv->name = NULL;
   }
   if (nv->valuelen) {
-    onv->value = malloc(nv->valuelen);
+    onv->value = mem->malloc(nv->valuelen, NULL);
     memcpy(onv->value, nv->value, nv->valuelen);
   } else {
     onv->value = NULL;
@@ -157,7 +147,7 @@ void add_out(nva_out *out, nghttp2_nv *nv) {
 }
 
 ssize_t inflate_hd(nghttp2_hd_inflater *inflater, nva_out *out,
-                   nghttp2_bufs *bufs, size_t offset) {
+                   nghttp2_bufs *bufs, size_t offset, nghttp2_mem *mem) {
   ssize_t rv;
   nghttp2_nv nv;
   int inflate_flags;
@@ -196,10 +186,14 @@ ssize_t inflate_hd(nghttp2_hd_inflater *inflater, nva_out *out,
 
       if (inflate_flags & NGHTTP2_HD_INFLATE_EMIT) {
         if (out) {
-          add_out(out, &nv);
+          add_out(out, &nv, mem);
         }
       }
       if (inflate_flags & NGHTTP2_HD_INFLATE_FINAL) {
+        break;
+      }
+      if ((inflate_flags & NGHTTP2_HD_INFLATE_EMIT) == 0 &&
+          nghttp2_buf_len(&bp) == 0) {
         break;
       }
     }
@@ -210,14 +204,52 @@ ssize_t inflate_hd(nghttp2_hd_inflater *inflater, nva_out *out,
   return processed;
 }
 
+int pack_headers(nghttp2_bufs *bufs, nghttp2_hd_deflater *deflater,
+                 int32_t stream_id, int flags, const nghttp2_nv *nva,
+                 size_t nvlen, nghttp2_mem *mem) {
+  nghttp2_nv *dnva;
+  nghttp2_frame frame;
+  int rv;
+
+  nghttp2_nv_array_copy(&dnva, nva, nvlen, mem);
+
+  nghttp2_frame_headers_init(&frame.headers, flags, stream_id,
+                             NGHTTP2_HCAT_HEADERS, NULL, dnva, nvlen);
+  rv = nghttp2_frame_pack_headers(bufs, &frame.headers, deflater);
+
+  nghttp2_frame_headers_free(&frame.headers, mem);
+
+  return rv;
+}
+
+int pack_push_promise(nghttp2_bufs *bufs, nghttp2_hd_deflater *deflater,
+                      int32_t stream_id, int flags, int32_t promised_stream_id,
+                      const nghttp2_nv *nva, size_t nvlen, nghttp2_mem *mem) {
+  nghttp2_nv *dnva;
+  nghttp2_frame frame;
+  int rv;
+
+  nghttp2_nv_array_copy(&dnva, nva, nvlen, mem);
+
+  nghttp2_frame_push_promise_init(&frame.push_promise, flags, stream_id,
+                                  promised_stream_id, dnva, nvlen);
+  rv = nghttp2_frame_pack_push_promise(bufs, &frame.push_promise, deflater);
+
+  nghttp2_frame_push_promise_free(&frame.push_promise, mem);
+
+  return rv;
+}
+
 int frame_pack_bufs_init(nghttp2_bufs *bufs) {
   /* 1 for Pad Length */
-  return nghttp2_bufs_init2(bufs, 4096, 16, NGHTTP2_FRAME_HDLEN + 1);
+  return nghttp2_bufs_init2(bufs, 4096, 16, NGHTTP2_FRAME_HDLEN + 1,
+                            nghttp2_mem_default());
 }
 
 void bufs_large_init(nghttp2_bufs *bufs, size_t chunk_size) {
   /* 1 for Pad Length */
-  nghttp2_bufs_init2(bufs, chunk_size, 16, NGHTTP2_FRAME_HDLEN + 1);
+  nghttp2_bufs_init2(bufs, chunk_size, 16, NGHTTP2_FRAME_HDLEN + 1,
+                     nghttp2_mem_default());
 }
 
 static nghttp2_stream *open_stream_with_all(nghttp2_session *session,
@@ -265,10 +297,10 @@ nghttp2_stream *open_stream_with_dep_excl(nghttp2_session *session,
                               dep_stream);
 }
 
-nghttp2_outbound_item *create_data_ob_item(void) {
+nghttp2_outbound_item *create_data_ob_item(nghttp2_mem *mem) {
   nghttp2_outbound_item *item;
 
-  item = malloc(sizeof(nghttp2_outbound_item));
+  item = mem->malloc(sizeof(nghttp2_outbound_item), NULL);
   memset(item, 0, sizeof(nghttp2_outbound_item));
 
   return item;

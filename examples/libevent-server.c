@@ -22,21 +22,43 @@
  * OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
+#ifdef __sgi
+#define errx(exitcode, format, args...)                                        \
+  {                                                                            \
+    warnx(format, ##args);                                                     \
+    exit(exitcode);                                                            \
+  }
+#define warn(format, args...) warnx(format ": %s", ##args, strerror(errno))
+#define warnx(format, args...) fprintf(stderr, format "\n", ##args)
+#endif
+
 #ifdef HAVE_CONFIG_H
 #include <config.h>
-#endif /* !HAVE_CONFIG_H */
+#endif /* HAVE_CONFIG_H */
 
 #include <sys/types.h>
+#ifdef HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
+#endif /* HAVE_SYS_SOCKET_H */
+#ifdef HAVE_NETDB_H
 #include <netdb.h>
+#endif /* HAVE_NETDB_H */
 #include <signal.h>
+#ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#endif /* HAVE_UNISTD_H */
 #include <sys/stat.h>
+#ifdef HAVE_FCNTL_H
 #include <fcntl.h>
+#endif /* HAVE_FCNTL_H */
 #include <ctype.h>
+#ifdef HAVE_NETINET_IN_H
 #include <netinet/in.h>
+#endif /* HAVE_NETINET_IN_H */
 #include <netinet/tcp.h>
+#ifndef __sgi
 #include <err.h>
+#endif
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
@@ -537,14 +559,7 @@ static int on_stream_close_callback(nghttp2_session *session, int32_t stream_id,
 }
 
 static void initialize_nghttp2_session(http2_session_data *session_data) {
-  nghttp2_option *option;
   nghttp2_session_callbacks *callbacks;
-
-  nghttp2_option_new(&option);
-
-  /* Tells nghttp2_session object that it handles client connection
-     preface */
-  nghttp2_option_set_recv_client_preface(option, 1);
 
   nghttp2_session_callbacks_new(&callbacks);
 
@@ -562,11 +577,9 @@ static void initialize_nghttp2_session(http2_session_data *session_data) {
   nghttp2_session_callbacks_set_on_begin_headers_callback(
       callbacks, on_begin_headers_callback);
 
-  nghttp2_session_server_new2(&session_data->session, callbacks, session_data,
-                              option);
+  nghttp2_session_server_new(&session_data->session, callbacks, session_data);
 
   nghttp2_session_callbacks_del(callbacks);
-  nghttp2_option_del(option);
 }
 
 /* Send HTTP/2 client connection header, which includes 24 bytes
@@ -671,7 +684,7 @@ static void start_listen(struct event_base *evbase, const char *service,
 
   rv = getaddrinfo(NULL, service, &hints, &res);
   if (rv != 0) {
-    errx(1, NULL);
+    errx(1, "Could not resolve server address");
   }
   for (rp = res; rp; rp = rp->ai_next) {
     struct evconnlistener *listener;
@@ -723,10 +736,10 @@ int main(int argc, char **argv) {
   act.sa_handler = SIG_IGN;
   sigaction(SIGPIPE, &act, NULL);
 
-  OPENSSL_config(NULL);
-  OpenSSL_add_all_algorithms();
   SSL_load_error_strings();
   SSL_library_init();
+  OpenSSL_add_all_algorithms();
+  OPENSSL_config(NULL);
 
   run(argv[1], argv[2], argv[3]);
   return 0;

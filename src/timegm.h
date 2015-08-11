@@ -33,13 +33,16 @@
 extern "C" {
 #endif /* __cplusplus */
 
+#ifdef HAVE_TIME_H
 #include <time.h>
+#endif // HAVE_TIME_H
 
-#ifndef HAVE_TIMEGM
+time_t nghttp2_timegm(struct tm *tm);
 
-time_t timegm(struct tm *tm);
-
-#endif /* HAVE_TIMEGM */
+/* Just like nghttp2_timegm, but without using tm->tm_yday.  This is
+   useful if we use tm from strptime, since some platforms do not
+   calculate tm_yday with that call. */
+time_t nghttp2_timegm_without_yday(struct tm *tm);
 
 #ifdef __cplusplus
 }

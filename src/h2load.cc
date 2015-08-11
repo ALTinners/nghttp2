@@ -26,13 +26,20 @@
 
 #include <getopt.h>
 #include <signal.h>
+#ifdef HAVE_NETINET_IN_H
 #include <netinet/in.h>
+#endif // HAVE_NETINET_IN_H
 #include <netinet/tcp.h>
+#include <sys/stat.h>
+#ifdef HAVE_FCNTL_H
+#include <fcntl.h>
+#endif // HAVE_FCNTL_H
 
 #include <cstdio>
 #include <cassert>
 #include <cstdlib>
 #include <iostream>
+#include <iomanip>
 #include <fstream>
 #include <chrono>
 #include <thread>
@@ -41,8 +48,6 @@
 #ifdef HAVE_SPDYLAY
 #include <spdylay/spdylay.h>
 #endif // HAVE_SPDYLAY
-
-#include <event2/bufferevent_ssl.h>
 
 #include <openssl/err.h>
 #include <openssl/conf.h>
@@ -56,31 +61,33 @@
 #include "ssl.h"
 #include "http2.h"
 #include "util.h"
+#include "template.h"
+
+#ifndef O_BINARY
+#define O_BINARY (0)
+#endif // O_BINARY
 
 using namespace nghttp2;
 
 namespace h2load {
 
 Config::Config()
-    : addrs(nullptr), nreqs(1), nclients(1), nthreads(1),
-      max_concurrent_streams(-1), window_bits(16), connection_window_bits(16),
-      no_tls_proto(PROTO_HTTP2), port(0), default_port(0), verbose(false) {}
+    : data_length(-1), addrs(nullptr), nreqs(1), nclients(1), nthreads(1),
+      max_concurrent_streams(-1), window_bits(30), connection_window_bits(30),
+      rate(0), nconns(0), no_tls_proto(PROTO_HTTP2), data_fd(-1), port(0),
+      default_port(0), verbose(false) {}
 
-Config::~Config() { freeaddrinfo(addrs); }
+Config::~Config() {
+  freeaddrinfo(addrs);
+
+  if (data_fd != -1) {
+    close(data_fd);
+  }
+}
+
+bool Config::is_rate_mode() const { return (this->rate != 0); }
 
 Config config;
-
-namespace {
-void eventcb(bufferevent *bev, short events, void *ptr);
-} // namespace
-
-namespace {
-void readcb(bufferevent *bev, void *ptr);
-} // namespace
-
-namespace {
-void writecb(bufferevent *bev, void *ptr);
-} // namespace
 
 namespace {
 void debug(const char *format, ...) {
@@ -94,46 +101,146 @@ void debug(const char *format, ...) {
 }
 } // namespace
 
+namespace {
+void debug_nextproto_error() {
+#ifdef HAVE_SPDYLAY
+  debug("no supported protocol was negotiated, expected: %s, "
+        "spdy/2, spdy/3, spdy/3.1\n",
+        NGHTTP2_PROTO_VERSION_ID);
+#else  // !HAVE_SPDYLAY
+  debug("no supported protocol was negotiated, expected: %s\n",
+        NGHTTP2_PROTO_VERSION_ID);
+#endif // !HAVE_SPDYLAY
+}
+} // namespace
+
+RequestStat::RequestStat() : data_offset(0), completed(false) {}
+
+Stats::Stats(size_t req_todo)
+    : req_todo(0), req_started(0), req_done(0), req_success(0),
+      req_status_success(0), req_failed(0), req_error(0), bytes_total(0),
+      bytes_head(0), bytes_body(0), status(), req_stats(req_todo) {}
+
 Stream::Stream() : status_success(-1) {}
 
+namespace {
+void writecb(struct ev_loop *loop, ev_io *w, int revents) {
+  auto client = static_cast<Client *>(w->data);
+  auto rv = client->do_write();
+  if (rv == Client::ERR_CONNECT_FAIL) {
+    client->disconnect();
+    rv = client->connect();
+    if (rv != 0) {
+      client->fail();
+      return;
+    }
+    return;
+  }
+  if (rv != 0) {
+    client->fail();
+  }
+}
+} // namespace
+
+namespace {
+void readcb(struct ev_loop *loop, ev_io *w, int revents) {
+  auto client = static_cast<Client *>(w->data);
+  if (client->do_read() != 0) {
+    client->fail();
+    return;
+  }
+  writecb(loop, &client->wev, revents);
+  // client->disconnect() and client->fail() may be called
+}
+} // namespace
+
+namespace {
+// Called every second when rate mode is being used
+void second_timeout_w_cb(struct ev_loop *loop, ev_timer *w, int revents) {
+  auto worker = static_cast<Worker *>(w->data);
+  auto nclients_per_second = worker->rate;
+  auto conns_remaining = worker->nclients - worker->nconns_made;
+  auto nclients = std::min(nclients_per_second, conns_remaining);
+
+  for (size_t i = 0; i < nclients; ++i) {
+    auto req_todo = worker->config->max_concurrent_streams;
+    worker->clients.push_back(make_unique<Client>(worker, req_todo));
+    auto &client = worker->clients.back();
+    if (client->connect() != 0) {
+      std::cerr << "client could not connect to host" << std::endl;
+      client->fail();
+    }
+    ++worker->nconns_made;
+  }
+  if (worker->nconns_made >= worker->nclients) {
+    ev_timer_stop(worker->loop, w);
+  }
+}
+} // namespace
+
 Client::Client(Worker *worker, size_t req_todo)
-    : worker(worker), ssl(nullptr), bev(nullptr), next_addr(config.addrs),
-      reqidx(0), state(CLIENT_IDLE), req_todo(req_todo), req_started(0),
-      req_done(0) {}
+    : worker(worker), ssl(nullptr), next_addr(config.addrs), reqidx(0),
+      state(CLIENT_IDLE), first_byte_received(false), req_todo(req_todo),
+      req_started(0), req_done(0), fd(-1) {
+  ev_io_init(&wev, writecb, 0, EV_WRITE);
+  ev_io_init(&rev, readcb, 0, EV_READ);
+
+  wev.data = this;
+  rev.data = this;
+}
 
 Client::~Client() { disconnect(); }
 
+int Client::do_read() { return readfn(*this); }
+int Client::do_write() { return writefn(*this); }
+
 int Client::connect() {
-  if (config.scheme == "https") {
-    ssl = SSL_new(worker->ssl_ctx);
+  record_start_time(&worker->stats);
 
-    auto config = worker->config;
-
-    if (!util::numeric_host(config->host.c_str())) {
-      SSL_set_tlsext_host_name(ssl, config->host.c_str());
-    }
-
-    bev = bufferevent_openssl_socket_new(worker->evbase, -1, ssl,
-                                         BUFFEREVENT_SSL_CONNECTING,
-                                         BEV_OPT_DEFER_CALLBACKS);
-  } else {
-    bev = bufferevent_socket_new(worker->evbase, -1, BEV_OPT_DEFER_CALLBACKS);
-  }
-
-  int rv = -1;
   while (next_addr) {
-    rv = bufferevent_socket_connect(bev, next_addr->ai_addr,
-                                    next_addr->ai_addrlen);
+    auto addr = next_addr;
     next_addr = next_addr->ai_next;
-    if (rv == 0) {
-      break;
+    fd = util::create_nonblock_socket(addr->ai_family);
+    if (fd == -1) {
+      continue;
     }
+    if (config.scheme == "https") {
+      ssl = SSL_new(worker->ssl_ctx);
+
+      auto config = worker->config;
+
+      if (!util::numeric_host(config->host.c_str())) {
+        SSL_set_tlsext_host_name(ssl, config->host.c_str());
+      }
+
+      SSL_set_fd(ssl, fd);
+      SSL_set_connect_state(ssl);
+    }
+
+    auto rv = ::connect(fd, addr->ai_addr, addr->ai_addrlen);
+    if (rv != 0 && errno != EINPROGRESS) {
+      if (ssl) {
+        SSL_free(ssl);
+        ssl = nullptr;
+      }
+      close(fd);
+      fd = -1;
+      continue;
+    }
+    break;
   }
-  if (rv != 0) {
+
+  if (fd == -1) {
     return -1;
   }
-  bufferevent_enable(bev, EV_READ);
-  bufferevent_setcb(bev, readcb, writecb, eventcb, this);
+
+  writefn = &Client::connected;
+
+  ev_io_set(&rev, fd, EV_READ);
+  ev_io_set(&wev, fd, EV_WRITE);
+
+  ev_io_start(worker->loop, &wev);
+
   return 0;
 }
 
@@ -144,33 +251,28 @@ void Client::fail() {
 }
 
 void Client::disconnect() {
-  int fd = -1;
   streams.clear();
   session.reset();
   state = CLIENT_IDLE;
+  ev_io_stop(worker->loop, &wev);
+  ev_io_stop(worker->loop, &rev);
   if (ssl) {
-    fd = SSL_get_fd(ssl);
     SSL_set_shutdown(ssl, SSL_RECEIVED_SHUTDOWN);
+    ERR_clear_error();
     SSL_shutdown(ssl);
-  }
-  if (bev) {
-    bufferevent_disable(bev, EV_READ | EV_WRITE);
-    bufferevent_free(bev);
-    bev = nullptr;
-  }
-  if (ssl) {
     SSL_free(ssl);
     ssl = nullptr;
   }
   if (fd != -1) {
     shutdown(fd, SHUT_WR);
     close(fd);
+    fd = -1;
   }
 }
 
 void Client::submit_request() {
-  session->submit_request();
-  ++worker->stats.req_started;
+  auto req_stat = &worker->stats.req_stats[worker->stats.req_started++];
+  session->submit_request(req_stat);
   ++req_started;
 }
 
@@ -185,7 +287,7 @@ void Client::process_abandoned_streams() {
 }
 
 void Client::report_progress() {
-  if (worker->id == 0 &&
+  if (!worker->config->is_rate_mode() && worker->id == 0 &&
       worker->stats.req_done % worker->progress_interval == 0) {
     std::cout << "progress: "
               << worker->stats.req_done * 100 / worker->stats.req_todo
@@ -194,36 +296,16 @@ void Client::report_progress() {
 }
 
 namespace {
-const char *get_tls_protocol(SSL *ssl) {
-  auto session = SSL_get_session(ssl);
-
-  switch (session->ssl_version) {
-  case SSL2_VERSION:
-    return "SSLv2";
-  case SSL3_VERSION:
-    return "SSLv3";
-  case TLS1_2_VERSION:
-    return "TLSv1.2";
-  case TLS1_1_VERSION:
-    return "TLSv1.1";
-  case TLS1_VERSION:
-    return "TLSv1";
-  default:
-    return "unknown";
-  }
-}
-} // namespace
-
-namespace {
 void print_server_tmp_key(SSL *ssl) {
-#if OPENSSL_VERSION_NUMBER >= 0x10002000L
+// libressl does not have SSL_get_server_tmp_key
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L && defined(SSL_get_server_tmp_key)
   EVP_PKEY *key;
 
   if (!SSL_get_server_tmp_key(ssl, &key)) {
     return;
   }
 
-  auto key_del = util::defer(key, EVP_PKEY_free);
+  auto key_del = defer(EVP_PKEY_free, key);
 
   std::cout << "Server Temp Key: ";
 
@@ -236,7 +318,7 @@ void print_server_tmp_key(SSL *ssl) {
     break;
   case EVP_PKEY_EC: {
     auto ec = EVP_PKEY_get1_EC_KEY(key);
-    auto ec_del = util::defer(ec, EC_KEY_free);
+    auto ec_del = defer(EC_KEY_free, ec);
     auto nid = EC_GROUP_get_curve_name(EC_KEY_get0_group(ec));
     auto cname = EC_curve_nid2nist(nid);
     if (!cname) {
@@ -256,7 +338,7 @@ void Client::report_tls_info() {
   if (worker->id == 0 && !worker->tls_info_report_done) {
     worker->tls_info_report_done = true;
     auto cipher = SSL_get_current_cipher(ssl);
-    std::cout << "Protocol: " << get_tls_protocol(ssl) << "\n"
+    std::cout << "Protocol: " << ssl::get_tls_protocol(ssl) << "\n"
               << "Cipher: " << SSL_CIPHER_get_name(cipher) << std::endl;
     print_server_tmp_key(ssl);
   }
@@ -274,7 +356,7 @@ void Client::on_header(int32_t stream_id, const uint8_t *name, size_t namelen,
   }
   auto &stream = (*itr).second;
   if (stream.status_success == -1 && namelen == 7 &&
-      util::streq(":status", 7, name, namelen)) {
+      util::streq_l(":status", name, namelen)) {
     int status = 0;
     for (size_t i = 0; i < valuelen; ++i) {
       if ('0' <= value[i] && value[i] <= '9') {
@@ -304,11 +386,17 @@ void Client::on_header(int32_t stream_id, const uint8_t *name, size_t namelen,
   }
 }
 
-void Client::on_stream_close(int32_t stream_id, bool success) {
+void Client::on_stream_close(int32_t stream_id, bool success,
+                             RequestStat *req_stat) {
+  req_stat->stream_close_time = std::chrono::steady_clock::now();
+  if (success) {
+    req_stat->completed = true;
+    ++worker->stats.req_success;
+  }
   ++worker->stats.req_done;
   ++req_done;
   if (success && streams[stream_id].status_success == 1) {
-    ++worker->stats.req_success;
+    ++worker->stats.req_status_success;
   } else {
     ++worker->stats.req_failed;
   }
@@ -325,8 +413,73 @@ void Client::on_stream_close(int32_t stream_id, bool success) {
   }
 }
 
-int Client::on_connect() {
+int Client::connection_made() {
+  if (ssl) {
+    report_tls_info();
+
+    const unsigned char *next_proto = nullptr;
+    unsigned int next_proto_len;
+    SSL_get0_next_proto_negotiated(ssl, &next_proto, &next_proto_len);
+    for (int i = 0; i < 2; ++i) {
+      if (next_proto) {
+        if (util::check_h2_is_selected(next_proto, next_proto_len)) {
+          session = make_unique<Http2Session>(this);
+          break;
+        }
+#ifdef HAVE_SPDYLAY
+        else {
+          auto spdy_version =
+              spdylay_npn_get_version(next_proto, next_proto_len);
+          if (spdy_version) {
+            session = make_unique<SpdySession>(this, spdy_version);
+            break;
+          }
+        }
+#endif // HAVE_SPDYLAY
+
+        next_proto = nullptr;
+        break;
+      }
+
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L
+      SSL_get0_alpn_selected(ssl, &next_proto, &next_proto_len);
+#else  // OPENSSL_VERSION_NUMBER < 0x10002000L
+      break;
+#endif // OPENSSL_VERSION_NUMBER < 0x10002000L
+    }
+
+    if (!next_proto) {
+      debug_nextproto_error();
+      fail();
+      return -1;
+    }
+  } else {
+    switch (config.no_tls_proto) {
+    case Config::PROTO_HTTP2:
+      session = make_unique<Http2Session>(this);
+      break;
+#ifdef HAVE_SPDYLAY
+    case Config::PROTO_SPDY2:
+      session = make_unique<SpdySession>(this, SPDYLAY_PROTO_SPDY2);
+      break;
+    case Config::PROTO_SPDY3:
+      session = make_unique<SpdySession>(this, SPDYLAY_PROTO_SPDY3);
+      break;
+    case Config::PROTO_SPDY3_1:
+      session = make_unique<SpdySession>(this, SPDYLAY_PROTO_SPDY3_1);
+      break;
+#endif // HAVE_SPDYLAY
+    default:
+      // unreachable
+      assert(0);
+    }
+  }
+
+  state = CLIENT_CONNECTED;
+
   session->on_connect();
+
+  record_connect_time(&worker->stats);
 
   auto nreq =
       std::min(req_todo - req_started, (size_t)config.max_concurrent_streams);
@@ -334,195 +487,399 @@ int Client::on_connect() {
   for (; nreq > 0; --nreq) {
     submit_request();
   }
-  return session->on_write();
+
+  signal_write();
+
+  return 0;
 }
 
-int Client::on_read() {
-  ssize_t rv = session->on_read();
-  if (rv < 0) {
+int Client::on_read(const uint8_t *data, size_t len) {
+  auto rv = session->on_read(data, len);
+  if (rv != 0) {
     return -1;
   }
-  worker->stats.bytes_total += rv;
-
-  return on_write();
+  worker->stats.bytes_total += len;
+  signal_write();
+  return 0;
 }
 
-int Client::on_write() { return session->on_write(); }
+int Client::on_write() {
+  if (session->on_write() != 0) {
+    return -1;
+  }
+  return 0;
+}
+
+int Client::read_clear() {
+  uint8_t buf[8_k];
+
+  for (;;) {
+    ssize_t nread;
+    while ((nread = read(fd, buf, sizeof(buf))) == -1 && errno == EINTR)
+      ;
+    if (nread == -1) {
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        return 0;
+      }
+      return -1;
+    }
+
+    if (nread == 0) {
+      return -1;
+    }
+
+    if (on_read(buf, nread) != 0) {
+      return -1;
+    }
+
+    if (!first_byte_received) {
+      first_byte_received = true;
+      record_ttfb(&worker->stats);
+    }
+  }
+
+  return 0;
+}
+
+int Client::write_clear() {
+  for (;;) {
+    if (wb.rleft() > 0) {
+      ssize_t nwrite;
+      while ((nwrite = write(fd, wb.pos, wb.rleft())) == -1 && errno == EINTR)
+        ;
+      if (nwrite == -1) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+          ev_io_start(worker->loop, &wev);
+          return 0;
+        }
+        return -1;
+      }
+      wb.drain(nwrite);
+      continue;
+    }
+    wb.reset();
+    if (on_write() != 0) {
+      return -1;
+    }
+    if (wb.rleft() == 0) {
+      break;
+    }
+  }
+
+  ev_io_stop(worker->loop, &wev);
+
+  return 0;
+}
+
+int Client::connected() {
+  if (!util::check_socket_connected(fd)) {
+    return ERR_CONNECT_FAIL;
+  }
+  ev_io_start(worker->loop, &rev);
+  ev_io_stop(worker->loop, &wev);
+
+  if (ssl) {
+    readfn = &Client::tls_handshake;
+    writefn = &Client::tls_handshake;
+
+    return do_write();
+  }
+
+  readfn = &Client::read_clear;
+  writefn = &Client::write_clear;
+
+  if (connection_made() != 0) {
+    return -1;
+  }
+
+  return 0;
+}
+
+int Client::tls_handshake() {
+  ERR_clear_error();
+
+  auto rv = SSL_do_handshake(ssl);
+
+  if (rv == 0) {
+    return -1;
+  }
+
+  if (rv < 0) {
+    auto err = SSL_get_error(ssl, rv);
+    switch (err) {
+    case SSL_ERROR_WANT_READ:
+      ev_io_stop(worker->loop, &wev);
+      return 0;
+    case SSL_ERROR_WANT_WRITE:
+      ev_io_start(worker->loop, &wev);
+      return 0;
+    default:
+      return -1;
+    }
+  }
+
+  ev_io_stop(worker->loop, &wev);
+
+  readfn = &Client::read_tls;
+  writefn = &Client::write_tls;
+
+  if (connection_made() != 0) {
+    return -1;
+  }
+
+  return 0;
+}
+
+int Client::read_tls() {
+  uint8_t buf[8_k];
+
+  ERR_clear_error();
+
+  for (;;) {
+    auto rv = SSL_read(ssl, buf, sizeof(buf));
+
+    if (rv == 0) {
+      return -1;
+    }
+
+    if (rv < 0) {
+      auto err = SSL_get_error(ssl, rv);
+      switch (err) {
+      case SSL_ERROR_WANT_READ:
+        return 0;
+      case SSL_ERROR_WANT_WRITE:
+        // renegotiation started
+        return -1;
+      default:
+        return -1;
+      }
+    }
+
+    if (on_read(buf, rv) != 0) {
+      return -1;
+    }
+
+    if (!first_byte_received) {
+      first_byte_received = true;
+      record_ttfb(&worker->stats);
+    }
+  }
+}
+
+int Client::write_tls() {
+  ERR_clear_error();
+
+  for (;;) {
+    if (wb.rleft() > 0) {
+      auto rv = SSL_write(ssl, wb.pos, wb.rleft());
+
+      if (rv == 0) {
+        return -1;
+      }
+
+      if (rv < 0) {
+        auto err = SSL_get_error(ssl, rv);
+        switch (err) {
+        case SSL_ERROR_WANT_READ:
+          // renegotiation started
+          return -1;
+        case SSL_ERROR_WANT_WRITE:
+          ev_io_start(worker->loop, &wev);
+          return 0;
+        default:
+          return -1;
+        }
+      }
+
+      wb.drain(rv);
+
+      continue;
+    }
+    wb.reset();
+    if (on_write() != 0) {
+      return -1;
+    }
+    if (wb.rleft() == 0) {
+      break;
+    }
+  }
+
+  ev_io_stop(worker->loop, &wev);
+
+  return 0;
+}
+
+void Client::record_request_time(RequestStat *req_stat) {
+  req_stat->request_time = std::chrono::steady_clock::now();
+}
+
+void Client::record_start_time(Stats *stat) {
+  stat->start_times.push_back(std::chrono::steady_clock::now());
+}
+
+void Client::record_connect_time(Stats *stat) {
+  stat->connect_times.push_back(std::chrono::steady_clock::now());
+}
+
+void Client::record_ttfb(Stats *stat) {
+  stat->ttfbs.push_back(std::chrono::steady_clock::now());
+}
+
+void Client::signal_write() { ev_io_start(worker->loop, &wev); }
 
 Worker::Worker(uint32_t id, SSL_CTX *ssl_ctx, size_t req_todo, size_t nclients,
-               Config *config)
-    : stats{0}, evbase(event_base_new()), ssl_ctx(ssl_ctx), config(config),
-      id(id), tls_info_report_done(false) {
+               size_t rate, Config *config)
+    : stats(req_todo), loop(ev_loop_new(0)), ssl_ctx(ssl_ctx), config(config),
+      id(id), tls_info_report_done(false), nconns_made(0), nclients(nclients),
+      rate(rate) {
   stats.req_todo = req_todo;
-  progress_interval = std::max((size_t)1, req_todo / 10);
-
+  progress_interval = std::max(static_cast<size_t>(1), req_todo / 10);
   auto nreqs_per_client = req_todo / nclients;
   auto nreqs_rem = req_todo % nclients;
 
-  for (size_t i = 0; i < nclients; ++i) {
-    auto req_todo = nreqs_per_client;
-    if (nreqs_rem > 0) {
-      ++req_todo;
-      --nreqs_rem;
+  if (config->is_rate_mode()) {
+    // create timer that will go off every second
+    ev_timer_init(&timeout_watcher, second_timeout_w_cb, 0., 1.);
+    timeout_watcher.data = this;
+  } else {
+    for (size_t i = 0; i < nclients; ++i) {
+      auto req_todo = nreqs_per_client;
+      if (nreqs_rem > 0) {
+        ++req_todo;
+        --nreqs_rem;
+      }
+      clients.push_back(make_unique<Client>(this, req_todo));
     }
-    clients.push_back(util::make_unique<Client>(this, req_todo));
   }
 }
 
-Worker::~Worker() { event_base_free(evbase); }
+Worker::~Worker() {
+  // first clear clients so that io watchers are stopped before
+  // destructing ev_loop.
+  clients.clear();
+  ev_loop_destroy(loop);
+}
 
 void Worker::run() {
-  for (auto &client : clients) {
-    if (client->connect() != 0) {
-      std::cerr << "client could not connect to host" << std::endl;
-      client->fail();
-    }
-  }
-  event_base_loop(evbase, 0);
-}
-
-namespace {
-void debug_nextproto_error() {
-#ifdef HAVE_SPDYLAY
-  debug("no supported protocol was negotiated, expected: %s, "
-        "spdy/2, spdy/3, spdy/3.1\n",
-        NGHTTP2_PROTO_VERSION_ID);
-#else  // !HAVE_SPDYLAY
-  debug("no supported protocol was negotiated, expected: %s\n",
-        NGHTTP2_PROTO_VERSION_ID);
-#endif // !HAVE_SPDYLAY
-}
-} // namespace
-
-namespace {
-void eventcb(bufferevent *bev, short events, void *ptr) {
-  int rv;
-  auto client = static_cast<Client *>(ptr);
-  if (events & BEV_EVENT_CONNECTED) {
-    if (client->ssl) {
-      client->report_tls_info();
-
-      const unsigned char *next_proto = nullptr;
-      unsigned int next_proto_len;
-      SSL_get0_next_proto_negotiated(client->ssl, &next_proto, &next_proto_len);
-      for (int i = 0; i < 2; ++i) {
-        if (next_proto) {
-          if (util::check_h2_is_selected(next_proto, next_proto_len)) {
-            client->session = util::make_unique<Http2Session>(client);
-          } else {
-#ifdef HAVE_SPDYLAY
-            auto spdy_version =
-                spdylay_npn_get_version(next_proto, next_proto_len);
-            if (spdy_version) {
-              client->session =
-                  util::make_unique<SpdySession>(client, spdy_version);
-            } else {
-              debug_nextproto_error();
-              client->fail();
-              return;
-            }
-#else  // !HAVE_SPDYLAY
-            debug_nextproto_error();
-            client->fail();
-            return;
-#endif // !HAVE_SPDYLAY
-          }
-        }
-
-#if OPENSSL_VERSION_NUMBER >= 0x10002000L
-        SSL_get0_alpn_selected(client->ssl, &next_proto, &next_proto_len);
-#else  // OPENSSL_VERSION_NUMBER < 0x10002000L
-        break;
-#endif // OPENSSL_VERSION_NUMBER < 0x10002000L
-      }
-
-      if (!next_proto) {
-        debug_nextproto_error();
+  if (!config->is_rate_mode()) {
+    for (auto &client : clients) {
+      if (client->connect() != 0) {
+        std::cerr << "client could not connect to host" << std::endl;
         client->fail();
-        return;
-      }
-    } else {
-      switch (config.no_tls_proto) {
-      case Config::PROTO_HTTP2:
-        client->session = util::make_unique<Http2Session>(client);
-        break;
-#ifdef HAVE_SPDYLAY
-      case Config::PROTO_SPDY2:
-        client->session =
-            util::make_unique<SpdySession>(client, SPDYLAY_PROTO_SPDY2);
-        break;
-      case Config::PROTO_SPDY3:
-        client->session =
-            util::make_unique<SpdySession>(client, SPDYLAY_PROTO_SPDY3);
-        break;
-      case Config::PROTO_SPDY3_1:
-        client->session =
-            util::make_unique<SpdySession>(client, SPDYLAY_PROTO_SPDY3_1);
-        break;
-#endif // HAVE_SPDYLAY
-      default:
-        // unreachable
-        assert(0);
       }
     }
-    int fd = bufferevent_getfd(bev);
-    int val = 1;
-    (void)setsockopt(fd, IPPROTO_TCP, TCP_NODELAY,
-                     reinterpret_cast<char *>(&val), sizeof(val));
-    client->state = CLIENT_CONNECTED;
-    client->on_connect();
-    return;
+  } else {
+    ev_timer_again(loop, &timeout_watcher);
+
+    // call callback so that we don't waste the first second
+    second_timeout_w_cb(loop, &timeout_watcher, 0);
   }
-  if (events & BEV_EVENT_EOF) {
-    client->fail();
-    return;
+  ev_run(loop, 0);
+}
+
+namespace {
+// Returns percentage of number of samples within mean +/- sd.
+template <typename Duration>
+double within_sd(const std::vector<Duration> &samples, const Duration &mean,
+                 const Duration &sd) {
+  if (samples.size() == 0) {
+    return 0.0;
   }
-  if (events & (BEV_EVENT_ERROR | BEV_EVENT_TIMEOUT)) {
-    if (client->state == CLIENT_IDLE) {
-      client->disconnect();
-      rv = client->connect();
-      if (rv == 0) {
-        return;
-      }
-    }
-    debug("error/eof\n");
-    client->fail();
-    return;
-  }
+  auto lower = mean - sd;
+  auto upper = mean + sd;
+  auto m = std::count_if(
+      std::begin(samples), std::end(samples),
+      [&lower, &upper](const Duration &t) { return lower <= t && t <= upper; });
+  return (m / static_cast<double>(samples.size())) * 100;
 }
 } // namespace
 
 namespace {
-void readcb(bufferevent *bev, void *ptr) {
-  int rv;
-  auto client = static_cast<Client *>(ptr);
-  rv = client->on_read();
-  if (rv != 0) {
-    client->fail();
+// Computes statistics using |samples|. The min, max, mean, sd, and
+// percentage of number of samples within mean +/- sd are computed.
+template <typename Duration>
+TimeStat<Duration> compute_time_stat(const std::vector<Duration> &samples) {
+  if (samples.empty()) {
+    return {Duration::zero(), Duration::zero(), Duration::zero(),
+            Duration::zero(), 0.0};
   }
+  // standard deviation calculated using Rapid calculation method:
+  // http://en.wikipedia.org/wiki/Standard_deviation#Rapid_calculation_methods
+  double a = 0, q = 0;
+  size_t n = 0;
+  int64_t sum = 0;
+  auto res = TimeStat<Duration>{Duration::max(), Duration::min()};
+  for (const auto &t : samples) {
+    ++n;
+    res.min = std::min(res.min, t);
+    res.max = std::max(res.max, t);
+    sum += t.count();
+
+    auto na = a + (t.count() - a) / n;
+    q += (t.count() - a) * (t.count() - na);
+    a = na;
+  }
+
+  assert(n > 0);
+  res.mean = Duration(sum / n);
+  res.sd = Duration(static_cast<typename Duration::rep>(sqrt(q / n)));
+  res.within_sd = within_sd(samples, res.mean, res.sd);
+
+  return res;
 }
 } // namespace
 
 namespace {
-void writecb(bufferevent *bev, void *ptr) {
-  if (evbuffer_get_length(bufferevent_get_output(bev)) > 0) {
-    return;
+TimeStats
+process_time_stats(const std::vector<std::unique_ptr<Worker>> &workers) {
+  size_t nrequest_times = 0, nttfb_times = 0;
+  for (const auto &w : workers) {
+    nrequest_times += w->stats.req_stats.size();
+    nttfb_times += w->stats.ttfbs.size();
   }
-  int rv;
-  auto client = static_cast<Client *>(ptr);
-  rv = client->on_write();
-  if (rv != 0) {
-    client->fail();
+
+  std::vector<std::chrono::microseconds> request_times;
+  request_times.reserve(nrequest_times);
+  std::vector<std::chrono::microseconds> connect_times, ttfb_times;
+  connect_times.reserve(nttfb_times);
+  ttfb_times.reserve(nttfb_times);
+
+  for (const auto &w : workers) {
+    for (const auto &req_stat : w->stats.req_stats) {
+      if (!req_stat.completed) {
+        continue;
+      }
+      request_times.push_back(
+          std::chrono::duration_cast<std::chrono::microseconds>(
+              req_stat.stream_close_time - req_stat.request_time));
+    }
+
+    const auto &stat = w->stats;
+    // rule out cases where we started but didn't connect or get the
+    // first byte (errors).  We will get connect event before FFTB.
+    assert(stat.start_times.size() >= stat.ttfbs.size());
+    assert(stat.connect_times.size() >= stat.ttfbs.size());
+    for (size_t i = 0; i < stat.ttfbs.size(); ++i) {
+      connect_times.push_back(
+          std::chrono::duration_cast<std::chrono::microseconds>(
+              stat.connect_times[i] - stat.start_times[i]));
+
+      ttfb_times.push_back(
+          std::chrono::duration_cast<std::chrono::microseconds>(
+              stat.ttfbs[i] - stat.start_times[i]));
+    }
   }
+
+  return {compute_time_stat(request_times), compute_time_stat(connect_times),
+          compute_time_stat(ttfb_times)};
 }
 } // namespace
 
 namespace {
 void resolve_host() {
   int rv;
-  addrinfo hints, *res;
+  addrinfo hints{}, *res;
 
-  memset(&hints, 0, sizeof(hints));
   hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_protocol = 0;
@@ -565,11 +922,12 @@ namespace {
 int client_select_next_proto_cb(SSL *ssl, unsigned char **out,
                                 unsigned char *outlen, const unsigned char *in,
                                 unsigned int inlen, void *arg) {
-  if (nghttp2_select_next_protocol(out, outlen, in, inlen) > 0) {
+  if (util::select_h2(const_cast<const unsigned char **>(out), outlen, in,
+                      inlen)) {
     return SSL_TLSEXT_ERR_OK;
   }
 #ifdef HAVE_SPDYLAY
-  else if (spdylay_select_next_protocol(out, outlen, in, inlen) > 0) {
+  if (spdylay_select_next_protocol(out, outlen, in, inlen) > 0) {
     return SSL_TLSEXT_ERR_OK;
   }
 #endif
@@ -578,14 +936,11 @@ int client_select_next_proto_cb(SSL *ssl, unsigned char **out,
 } // namespace
 
 namespace {
-template <typename Iterator>
-std::vector<std::string> parse_uris(Iterator first, Iterator last) {
+// Use std::vector<std::string>::iterator explicitly, without that,
+// http_parser_url u{} fails with clang-3.4.
+std::vector<std::string> parse_uris(std::vector<std::string>::iterator first,
+                                    std::vector<std::string>::iterator last) {
   std::vector<std::string> reqlines;
-
-  // First URI is treated specially.  We use scheme, host and port of
-  // this URI and ignore those in the remaining URIs if present.
-  http_parser_url u;
-  memset(&u, 0, sizeof(u));
 
   if (first == last) {
     std::cerr << "no URI available" << std::endl;
@@ -593,13 +948,17 @@ std::vector<std::string> parse_uris(Iterator first, Iterator last) {
   }
 
   auto uri = (*first).c_str();
-  ++first;
 
-  if (http_parser_parse_url(uri, strlen(uri), 0, &u) != 0 ||
+  // First URI is treated specially.  We use scheme, host and port of
+  // this URI and ignore those in the remaining URIs if present.
+  http_parser_url u{};
+  if (http_parser_parse_url(uri, (*first).size(), 0, &u) != 0 ||
       !util::has_uri_field(u, UF_SCHEMA) || !util::has_uri_field(u, UF_HOST)) {
     std::cerr << "invalid URI: " << uri << std::endl;
     exit(EXIT_FAILURE);
   }
+
+  ++first;
 
   config.scheme = util::get_uri_field(uri, u, UF_SCHEMA);
   config.host = util::get_uri_field(uri, u, UF_HOST);
@@ -613,12 +972,11 @@ std::vector<std::string> parse_uris(Iterator first, Iterator last) {
   reqlines.push_back(get_reqline(uri, u));
 
   for (; first != last; ++first) {
-    http_parser_url u;
-    memset(&u, 0, sizeof(u));
+    http_parser_url u{};
 
     auto uri = (*first).c_str();
 
-    if (http_parser_parse_url(uri, strlen(uri), 0, &u) != 0) {
+    if (http_parser_parse_url(uri, (*first).size(), 0, &u) != 0) {
       std::cerr << "invalid URI: " << uri << std::endl;
       exit(EXIT_FAILURE);
     }
@@ -650,8 +1008,7 @@ void print_version(std::ostream &out) {
 
 namespace {
 void print_usage(std::ostream &out) {
-  out << R"(
-Usage: h2load [OPTIONS]... [URI]...
+  out << R"(Usage: h2load [OPTIONS]... [URI]...
 benchmarking tool for HTTP/2 and SPDY server)" << std::endl;
 }
 } // namespace
@@ -661,68 +1018,107 @@ void print_help(std::ostream &out) {
   print_usage(out);
 
   out << R"(
-  <URI>              Specify  URI to  access.   Multiple  URIs can  be
-                     specified.  URIs are used  in this order for each
-                     client.   All URIs  are used,  then first  URI is
-                     used and  then 2nd URI,  and so on.   The scheme,
-                     host and port in the subsequent URIs, if present,
-                     are  ignored.  Those  in the  first URI  are used
-                     solely.
+  <URI>       Specify URI to access.   Multiple URIs can be specified.
+              URIs are used  in this order for each  client.  All URIs
+              are used, then  first URI is used and then  2nd URI, and
+              so  on.  The  scheme, host  and port  in the  subsequent
+              URIs, if present,  are ignored.  Those in  the first URI
+              are used solely.
 Options:
-  -n, --requests=<N> Number of requests. Default: )" << config.nreqs << R"(
-  -c, --clients=<N>  Number of concurrent clients. Default: )"
-      << config.nclients << R"(
-  -t, --threads=<N>  Number of native threads. Default: )" << config.nthreads
-      << R"(
-  -i, --input-file=<FILE>
-                     Path of  a file with multiple  URIs are seperated
-                     by EOLs.   This option will disable  URIs getting
-                     from command-line.   If '-'  is given  as <FILE>,
-                     URIs will be  read from stdin.  URIs  are used in
-                     this order  for each client.  All  URIs are used,
-                     then first URI  is used and then 2nd  URI, and so
-                     on.  The scheme, host  and port in the subsequent
-                     URIs,  if present,  are  ignored.   Those in  the
-                     first URI are used solely.
+  -n, --requests=<N>
+              Number of requests.
+              Default: )" << config.nreqs << R"(
+  -c, --clients=<N>
+              Number of concurrent clients.
+              Default: )" << config.nclients << R"(
+  -t, --threads=<N>
+              Number of native threads.
+              Default: )" << config.nthreads << R"(
+  -i, --input-file=<PATH>
+              Path of a file with multiple URIs are separated by EOLs.
+              This option will disable URIs getting from command-line.
+              If '-' is given as <PATH>, URIs will be read from stdin.
+              URIs are used  in this order for each  client.  All URIs
+              are used, then  first URI is used and then  2nd URI, and
+              so  on.  The  scheme, host  and port  in the  subsequent
+              URIs, if present,  are ignored.  Those in  the first URI
+              are used solely.
   -m, --max-concurrent-streams=(auto|<N>)
-                     Max concurrent streams to  issue per session.  If
-                     "auto"  is given,  the  number of  given URIs  is
-                     used.  Default: auto
+              Max concurrent streams to  issue per session.  If "auto"
+              is given, the number of given URIs is used.
+              Default: auto
   -w, --window-bits=<N>
-                     Sets  the stream  level  initial  window size  to
-                     (2**<N>)-1.  For SPDY, 2**<N> is used instead.
+              Sets the stream level initial window size to (2**<N>)-1.
+              For SPDY, 2**<N> is used instead.
+              Default: )" << config.window_bits << R"(
   -W, --connection-window-bits=<N>
-                     Sets the connection level  initial window size to
-                     (2**<N>)-1.  For  SPDY, if  <N> is  strictly less
-                     than  16,  this  option  is  ignored.   Otherwise
-                     2**<N> is used for SPDY.
+              Sets  the  connection  level   initial  window  size  to
+              (2**<N>)-1.  For SPDY, if <N>  is strictly less than 16,
+              this option  is ignored.   Otherwise 2**<N> is  used for
+              SPDY.
+              Default: )" << config.connection_window_bits << R"(
   -H, --header=<HEADER>
-                     Add/Override a header to the requests.
+              Add/Override a header to the requests.
+  --ciphers=<SUITE>
+              Set allowed  cipher list.  The  format of the  string is
+              described in OpenSSL ciphers(1).
   -p, --no-tls-proto=<PROTOID>
-                     Specify  ALPN identifier  of the  protocol to  be
-                     used  when accessing  http  URI without  SSL/TLS.)";
+              Specify ALPN identifier of the  protocol to be used when
+              accessing http URI without SSL/TLS.)";
+
 #ifdef HAVE_SPDYLAY
   out << R"(
-                     Available protocols: spdy/2, spdy/3, spdy/3.1 and
-                     )";
-#else // !HAVE_SPDYLAY
+              Available protocols: spdy/2, spdy/3, spdy/3.1 and )";
+#else  // !HAVE_SPDYLAY
   out << R"(
-                     Available protocol: )";
+              Available protocol: )";
 #endif // !HAVE_SPDYLAY
   out << NGHTTP2_CLEARTEXT_PROTO_VERSION_ID << R"(
-                     Default: )" << NGHTTP2_CLEARTEXT_PROTO_VERSION_ID << R"(
-  -v, --verbose      Output debug information.
-  --version          Display version information and exit.
-  -h, --help         Display this help and exit.)" << std::endl;
+              Default: )" << NGHTTP2_CLEARTEXT_PROTO_VERSION_ID << R"(
+  -d, --data=<PATH>
+              Post FILE to  server.  The request method  is changed to
+              POST.
+  -r, --rate=<N>
+              Specifies  the  fixed  rate  at  which  connections  are
+              created.   The   rate  must   be  a   positive  integer,
+              representing the  number of  connections to be  made per
+              second.  When the rate is 0,  the program will run as it
+              normally does, creating connections at whatever variable
+              rate it wants.  The default value for this option is 0.
+  -C, --num-conns=<N>
+              Specifies  the total  number of  connections to  create.
+              The  total  number of  connections  must  be a  positive
+              integer.  On each connection, -m requests are made.  The
+              test  stops once  as soon  as the  <N> connections  have
+              either  completed   or  failed.   When  the   number  of
+              connections is  0, the program  will run as  it normally
+              does, creating as many connections  as it needs in order
+              to make  the -n  requests specified.  The  default value
+              for this option is 0.  The  -n option is not required if
+              the -C option is being used.
+  -v, --verbose
+              Output debug information.
+  --version   Display version information and exit.
+  -h, --help  Display this help and exit.)" << std::endl;
 }
 } // namespace
 
 int main(int argc, char **argv) {
+#ifndef NOTHREADS
+  ssl::LibsslGlobalLock lock;
+#endif // NOTHREADS
+  SSL_load_error_strings();
+  SSL_library_init();
+  OpenSSL_add_all_algorithms();
+  OPENSSL_config(nullptr);
+
+  std::string datafile;
   while (1) {
     static int flag = 0;
     static option long_options[] = {
         {"requests", required_argument, nullptr, 'n'},
         {"clients", required_argument, nullptr, 'c'},
+        {"data", required_argument, nullptr, 'd'},
         {"threads", required_argument, nullptr, 't'},
         {"max-concurrent-streams", required_argument, nullptr, 'm'},
         {"window-bits", required_argument, nullptr, 'w'},
@@ -733,9 +1129,12 @@ int main(int argc, char **argv) {
         {"verbose", no_argument, nullptr, 'v'},
         {"help", no_argument, nullptr, 'h'},
         {"version", no_argument, &flag, 1},
+        {"ciphers", required_argument, &flag, 2},
+        {"rate", required_argument, nullptr, 'r'},
+        {"num-conns", required_argument, nullptr, 'C'},
         {nullptr, 0, nullptr, 0}};
     int option_index = 0;
-    auto c = getopt_long(argc, argv, "hvW:c:m:n:p:t:w:H:i:", long_options,
+    auto c = getopt_long(argc, argv, "hvW:c:d:m:n:p:t:w:H:i:r:C:", long_options,
                          &option_index);
     if (c == -1) {
       break;
@@ -746,6 +1145,9 @@ int main(int argc, char **argv) {
       break;
     case 'c':
       config.nclients = strtoul(optarg, nullptr, 10);
+      break;
+    case 'd':
+      datafile = optarg;
       break;
     case 't':
 #ifdef NOTHREADS
@@ -827,6 +1229,22 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
       }
       break;
+    case 'r':
+      config.rate = strtoul(optarg, nullptr, 10);
+      if (config.rate == 0) {
+        std::cerr << "-r: the rate at which connections are made "
+                  << "must be positive." << std::endl;
+        exit(EXIT_FAILURE);
+      }
+      break;
+    case 'C':
+      config.nconns = strtoul(optarg, nullptr, 10);
+      if (config.nconns == 0) {
+        std::cerr << "-C: the total number of connections made "
+                  << "must be positive." << std::endl;
+        exit(EXIT_FAILURE);
+      }
+      break;
     case 'v':
       config.verbose = true;
       break;
@@ -842,6 +1260,10 @@ int main(int argc, char **argv) {
         // version option
         print_version(std::cout);
         exit(EXIT_SUCCESS);
+      case 2:
+        // ciphers option
+        config.ciphers = optarg;
+        break;
       }
       break;
     default:
@@ -874,29 +1296,56 @@ int main(int argc, char **argv) {
     exit(EXIT_FAILURE);
   }
 
-  if (config.nreqs < config.nclients) {
-    std::cerr << "-n, -c: the number of requests must be greater than or "
-              << "equal to the concurrent clients." << std::endl;
-    exit(EXIT_FAILURE);
-  }
-
   if (config.nthreads > std::thread::hardware_concurrency()) {
     std::cerr << "-t: warning: the number of threads is greater than hardware "
               << "cores." << std::endl;
   }
 
-  struct sigaction act;
-  memset(&act, 0, sizeof(struct sigaction));
+  if (!config.is_rate_mode()) {
+    if (config.nreqs < config.nclients) {
+      std::cerr << "-n, -c: the number of requests must be greater than or "
+                << "equal to the concurrent clients." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+
+    if (config.nclients < config.nthreads) {
+      std::cerr << "-c, -t: the number of client must be greater than or equal "
+                   "to the number of threads." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+  } else {
+    if (config.rate < config.nthreads) {
+      std::cerr << "-r, -t: the connection rate must be greater than or equal "
+                << "to the number of threads." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+
+    if (config.nconns != 0 && config.nconns < config.nthreads) {
+      std::cerr
+          << "-C, -t: the total number of connections must be greater than "
+             "or equal "
+          << "to the number of threads." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+  }
+
+  if (!datafile.empty()) {
+    config.data_fd = open(datafile.c_str(), O_RDONLY | O_BINARY);
+    if (config.data_fd == -1) {
+      std::cerr << "-d: Could not open file " << datafile << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    struct stat data_stat;
+    if (fstat(config.data_fd, &data_stat) == -1) {
+      std::cerr << "-d: Could not stat file " << datafile << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    config.data_length = data_stat.st_size;
+  }
+
+  struct sigaction act {};
   act.sa_handler = SIG_IGN;
   sigaction(SIGPIPE, &act, nullptr);
-  OPENSSL_config(nullptr);
-  OpenSSL_add_all_algorithms();
-  SSL_load_error_strings();
-  SSL_library_init();
-
-#ifndef NOTHREADS
-  ssl::LibsslGlobalLock lock;
-#endif // NOTHREADS
 
   auto ssl_ctx = SSL_CTX_new(SSLv23_client_method());
   if (!ssl_ctx) {
@@ -904,6 +1353,29 @@ int main(int argc, char **argv) {
               << ERR_error_string(ERR_get_error(), nullptr) << std::endl;
     exit(EXIT_FAILURE);
   }
+
+  auto ssl_opts = (SSL_OP_ALL & ~SSL_OP_DONT_INSERT_EMPTY_FRAGMENTS) |
+                  SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_COMPRESSION |
+                  SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION;
+
+  SSL_CTX_set_options(ssl_ctx, ssl_opts);
+  SSL_CTX_set_mode(ssl_ctx, SSL_MODE_AUTO_RETRY);
+  SSL_CTX_set_mode(ssl_ctx, SSL_MODE_RELEASE_BUFFERS);
+
+  const char *ciphers;
+  if (config.ciphers.empty()) {
+    ciphers = ssl::DEFAULT_CIPHER_LIST;
+  } else {
+    ciphers = config.ciphers.c_str();
+  }
+
+  if (SSL_CTX_set_cipher_list(ssl_ctx, ciphers) == 0) {
+    std::cerr << "SSL_CTX_set_cipher_list with " << ciphers
+              << " failed: " << ERR_error_string(ERR_get_error(), nullptr)
+              << std::endl;
+    exit(EXIT_FAILURE);
+  }
+
   SSL_CTX_set_next_proto_select_cb(ssl_ctx, client_select_next_proto_cb,
                                    nullptr);
 
@@ -911,8 +1383,8 @@ int main(int argc, char **argv) {
   auto proto_list = util::get_default_alpn();
 #ifdef HAVE_SPDYLAY
   static const char spdy_proto_list[] = "\x8spdy/3.1\x6spdy/3\x6spdy/2";
-  std::copy(spdy_proto_list, spdy_proto_list + sizeof(spdy_proto_list) - 1,
-            std::back_inserter(proto_list));
+  std::copy_n(spdy_proto_list, sizeof(spdy_proto_list) - 1,
+              std::back_inserter(proto_list));
 #endif // HAVE_SPDYLAY
   SSL_CTX_set_alpn_protos(ssl_ctx, proto_list.data(), proto_list.size());
 #endif // OPENSSL_VERSION_NUMBER >= 0x10002000L
@@ -940,8 +1412,59 @@ int main(int argc, char **argv) {
     reqlines = parse_uris(std::begin(uris), std::end(uris));
   }
 
+  if (reqlines.empty()) {
+    std::cerr << "No URI given" << std::endl;
+    exit(EXIT_FAILURE);
+  }
+
   if (config.max_concurrent_streams == -1) {
     config.max_concurrent_streams = reqlines.size();
+  }
+
+  assert(config.max_concurrent_streams > 0);
+
+  // if not in rate mode and -C is set, warn that we are ignoring it
+  if (!config.is_rate_mode() && config.nconns != 0) {
+    std::cerr << "-C: warning: This option can only be used with -r, and"
+              << " will be ignored otherwise." << std::endl;
+  }
+
+  size_t n_time = 0;
+  size_t c_time = 0;
+  size_t actual_nreqs = config.nreqs;
+  // only care about n_time and c_time in rate mode
+  if (config.is_rate_mode()) {
+    n_time = config.nreqs / (config.rate * config.max_concurrent_streams);
+    c_time = config.nconns / config.rate;
+
+    // check to see if the two ways of determining test time conflict
+    if (n_time != c_time && config.nconns != 0) {
+      if (config.nreqs != 1) {
+        if (config.nreqs < config.nconns) {
+          std::cerr << "-C, -n: warning: number of requests conflict. "
+                    << std::endl;
+          std::cerr << "The test will create "
+                    << (config.max_concurrent_streams * config.nconns)
+                    << " total requests." << std::endl;
+          actual_nreqs = config.max_concurrent_streams * config.nconns;
+        } else {
+          std::cout << "-C, -n: warning: number of requests conflict. "
+                    << std::endl;
+          std::cout
+              << "The smaller of the two will be chosen and the test will "
+              << "create "
+              << std::min(config.nreqs,
+                          static_cast<size_t>(config.max_concurrent_streams *
+                                              config.nconns))
+              << " total requests." << std::endl;
+          actual_nreqs = std::min(
+              config.nreqs, static_cast<size_t>(config.max_concurrent_streams *
+                                                config.nreqs));
+        }
+      } else {
+        actual_nreqs = config.max_concurrent_streams * config.nconns;
+      }
+    }
   }
 
   Headers shared_nva;
@@ -952,11 +1475,11 @@ int main(int argc, char **argv) {
   } else {
     shared_nva.emplace_back(":authority", config.host);
   }
-  shared_nva.emplace_back(":method", "GET");
+  shared_nva.emplace_back(":method", config.data_fd == -1 ? "GET" : "POST");
 
   // list overridalbe headers
   auto override_hdrs =
-      std::vector<std::string>{":authority", ":host", ":method", ":scheme"};
+      make_array<std::string>(":authority", ":host", ":method", ":scheme");
 
   for (auto &kv : config.custom_headers) {
     if (std::find(std::begin(override_hdrs), std::end(override_hdrs),
@@ -1009,8 +1532,22 @@ int main(int argc, char **argv) {
 
   resolve_host();
 
-  if (config.nclients == 1) {
+  if (!config.is_rate_mode() && config.nclients == 1) {
     config.nthreads = 1;
+  }
+  ssize_t seconds = 0;
+
+  if (config.is_rate_mode()) {
+
+    // set various config values
+    if (config.nreqs < config.nconns) {
+      seconds = c_time;
+    } else if (config.nconns == 0) {
+      seconds = n_time;
+    } else {
+      seconds = std::min(n_time, c_time);
+    }
+    config.nreqs = actual_nreqs;
   }
 
   size_t nreqs_per_thread = config.nreqs / config.nthreads;
@@ -1019,102 +1556,150 @@ int main(int argc, char **argv) {
   size_t nclients_per_thread = config.nclients / config.nthreads;
   ssize_t nclients_rem = config.nclients % config.nthreads;
 
+  size_t rate_per_thread = config.rate / config.nthreads;
+  ssize_t rate_per_thread_rem = config.rate % config.nthreads;
+
+  size_t nclients_extra_per_thread = 0;
+  ssize_t nclients_extra_per_thread_rem = 0;
+  // In rate mode, we want each Worker to create a total of
+  // C/t connections.
+  if (config.is_rate_mode() && config.nconns > seconds * config.rate) {
+    auto nclients_extra = config.nconns - (seconds * config.rate);
+    nclients_extra_per_thread = nclients_extra / config.nthreads;
+    nclients_extra_per_thread_rem = nclients_extra % config.nthreads;
+  }
+
   std::cout << "starting benchmark..." << std::endl;
 
   auto start = std::chrono::steady_clock::now();
 
+  std::vector<std::unique_ptr<Worker>> workers;
+
+  workers.reserve(config.nthreads);
 #ifndef NOTHREADS
-  std::vector<std::future<Stats>> futures;
+  std::vector<std::future<void>> futures;
   for (size_t i = 0; i < config.nthreads - 1; ++i) {
-    auto nreqs = nreqs_per_thread + (nreqs_rem-- > 0);
-    auto nclients = nclients_per_thread + (nclients_rem-- > 0);
+    auto rate = rate_per_thread + (rate_per_thread_rem-- > 0);
+    size_t nreqs;
+    size_t nclients;
+    if (!config.is_rate_mode()) {
+      nclients = nclients_per_thread + (nclients_rem-- > 0);
+      nreqs = nreqs_per_thread + (nreqs_rem-- > 0);
+    } else {
+      nclients = rate * seconds + nclients_extra_per_thread +
+                 (nclients_extra_per_thread_rem-- > 0);
+      nreqs = nclients * config.max_concurrent_streams;
+    }
     std::cout << "spawning thread #" << i << ": " << nclients
               << " concurrent clients, " << nreqs << " total requests"
               << std::endl;
-    auto worker =
-        util::make_unique<Worker>(i, ssl_ctx, nreqs, nclients, &config);
-    futures.push_back(std::async(std::launch::async,
-                                 [](std::unique_ptr<Worker> worker) {
-                                   worker->run();
-
-                                   return worker->stats;
-                                 },
-                                 std::move(worker)));
+    workers.push_back(
+        make_unique<Worker>(i, ssl_ctx, nreqs, nclients, rate, &config));
+    auto &worker = workers.back();
+    futures.push_back(
+        std::async(std::launch::async, [&worker]() { worker->run(); }));
   }
 #endif // NOTHREADS
 
-  auto nreqs_last = nreqs_per_thread + (nreqs_rem-- > 0);
-  auto nclients_last = nclients_per_thread + (nclients_rem-- > 0);
+  auto rate_last = rate_per_thread + (rate_per_thread_rem-- > 0);
+  size_t nclients_last;
+  size_t nreqs_last;
+  if (!config.is_rate_mode()) {
+    nclients_last = nclients_per_thread + (nclients_rem-- > 0);
+    nreqs_last = nreqs_per_thread + (nreqs_rem-- > 0);
+  } else {
+    nclients_last = rate_last * seconds + nclients_extra_per_thread +
+                    (nclients_extra_per_thread_rem-- > 0);
+    nreqs_last = nclients_last * config.max_concurrent_streams;
+  }
   std::cout << "spawning thread #" << (config.nthreads - 1) << ": "
             << nclients_last << " concurrent clients, " << nreqs_last
             << " total requests" << std::endl;
-  Worker worker(config.nthreads - 1, ssl_ctx, nreqs_last, nclients_last,
-                &config);
-  worker.run();
+  workers.push_back(make_unique<Worker>(config.nthreads - 1, ssl_ctx,
+                                        nreqs_last, nclients_last, rate_last,
+                                        &config));
+  workers.back()->run();
 
 #ifndef NOTHREADS
   for (auto &fut : futures) {
-    auto stats = fut.get();
-
-    worker.stats.req_todo += stats.req_todo;
-    worker.stats.req_started += stats.req_started;
-    worker.stats.req_done += stats.req_done;
-    worker.stats.req_success += stats.req_success;
-    worker.stats.req_failed += stats.req_failed;
-    worker.stats.req_error += stats.req_error;
-    worker.stats.bytes_total += stats.bytes_total;
-    worker.stats.bytes_head += stats.bytes_head;
-    worker.stats.bytes_body += stats.bytes_body;
-
-    for (size_t i = 0; i < util::array_size(stats.status); ++i) {
-      worker.stats.status[i] += stats.status[i];
-    }
+    fut.get();
   }
 #endif // NOTHREADS
 
   auto end = std::chrono::steady_clock::now();
-  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-                      end - start).count();
+  auto duration =
+      std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+
+  Stats stats(0);
+  for (const auto &w : workers) {
+    const auto &s = w->stats;
+
+    stats.req_todo += s.req_todo;
+    stats.req_started += s.req_started;
+    stats.req_done += s.req_done;
+    stats.req_success += s.req_success;
+    stats.req_status_success += s.req_status_success;
+    stats.req_failed += s.req_failed;
+    stats.req_error += s.req_error;
+    stats.bytes_total += s.bytes_total;
+    stats.bytes_head += s.bytes_head;
+    stats.bytes_body += s.bytes_body;
+
+    for (size_t i = 0; i < stats.status.size(); ++i) {
+      stats.status[i] += s.status[i];
+    }
+  }
+
+  auto ts = process_time_stats(workers);
 
   // Requests which have not been issued due to connection errors, are
   // counted towards req_failed and req_error.
-  auto req_not_issued = worker.stats.req_todo - worker.stats.req_success -
-                        worker.stats.req_failed;
-  worker.stats.req_failed += req_not_issued;
-  worker.stats.req_error += req_not_issued;
+  auto req_not_issued =
+      stats.req_todo - stats.req_status_success - stats.req_failed;
+  stats.req_failed += req_not_issued;
+  stats.req_error += req_not_issued;
 
-  // UI is heavily inspired by weighttp
-  // https://github.com/lighttpd/weighttp
-  size_t rps;
-  int64_t kbps;
-  if (duration > 0) {
-    auto secd = static_cast<double>(duration) / (1000 * 1000);
-    rps = worker.stats.req_todo / secd;
-    kbps = worker.stats.bytes_total / secd / 1024;
-  } else {
-    rps = 0;
-    kbps = 0;
+  // UI is heavily inspired by weighttp[1] and wrk[2]
+  //
+  // [1] https://github.com/lighttpd/weighttp
+  // [2] https://github.com/wg/wrk
+  double rps = 0;
+  int64_t bps = 0;
+  if (duration.count() > 0) {
+    auto secd = static_cast<double>(duration.count()) / (1000 * 1000);
+    rps = stats.req_success / secd;
+    bps = stats.bytes_total / secd;
   }
 
-  auto sec = duration / (1000 * 1000);
-  auto millisec = (duration / 1000) % 1000;
-  auto microsec = duration % 1000;
-
-  std::cout << "\n"
-            << "finished in " << sec << " sec, " << millisec << " millisec and "
-            << microsec << " microsec, " << rps << " req/s, " << kbps
-            << " kbytes/s\n"
-            << "requests: " << worker.stats.req_todo << " total, "
-            << worker.stats.req_started << " started, " << worker.stats.req_done
-            << " done, " << worker.stats.req_success << " succeeded, "
-            << worker.stats.req_failed << " failed, " << worker.stats.req_error
-            << " errored\n"
-            << "status codes: " << worker.stats.status[2] << " 2xx, "
-            << worker.stats.status[3] << " 3xx, " << worker.stats.status[4]
-            << " 4xx, " << worker.stats.status[5] << " 5xx\n"
-            << "traffic: " << worker.stats.bytes_total << " bytes total, "
-            << worker.stats.bytes_head << " bytes headers, "
-            << worker.stats.bytes_body << " bytes data" << std::endl;
+  std::cout << R"(
+finished in )" << util::format_duration(duration) << ", " << rps << " req/s, "
+            << util::utos_with_funit(bps) << R"(B/s
+requests: )" << stats.req_todo << " total, " << stats.req_started
+            << " started, " << stats.req_done << " done, "
+            << stats.req_status_success << " succeeded, " << stats.req_failed
+            << " failed, " << stats.req_error << R"( errored
+status codes: )" << stats.status[2] << " 2xx, " << stats.status[3] << " 3xx, "
+            << stats.status[4] << " 4xx, " << stats.status[5] << R"( 5xx
+traffic: )" << stats.bytes_total << " bytes total, " << stats.bytes_head
+            << " bytes headers, " << stats.bytes_body << R"( bytes data
+                     min         max         mean         sd        +/- sd
+time for request: )" << std::setw(10) << util::format_duration(ts.request.min)
+            << "  " << std::setw(10) << util::format_duration(ts.request.max)
+            << "  " << std::setw(10) << util::format_duration(ts.request.mean)
+            << "  " << std::setw(10) << util::format_duration(ts.request.sd)
+            << std::setw(9) << util::dtos(ts.request.within_sd) << "%"
+            << "\ntime for connect: " << std::setw(10)
+            << util::format_duration(ts.connect.min) << "  " << std::setw(10)
+            << util::format_duration(ts.connect.max) << "  " << std::setw(10)
+            << util::format_duration(ts.connect.mean) << "  " << std::setw(10)
+            << util::format_duration(ts.connect.sd) << std::setw(9)
+            << util::dtos(ts.connect.within_sd) << "%"
+            << "\ntime to 1st byte: " << std::setw(10)
+            << util::format_duration(ts.ttfb.min) << "  " << std::setw(10)
+            << util::format_duration(ts.ttfb.max) << "  " << std::setw(10)
+            << util::format_duration(ts.ttfb.mean) << "  " << std::setw(10)
+            << util::format_duration(ts.ttfb.sd) << std::setw(9)
+            << util::dtos(ts.ttfb.within_sd) << "%" << std::endl;
 
   SSL_CTX_free(ssl_ctx);
 

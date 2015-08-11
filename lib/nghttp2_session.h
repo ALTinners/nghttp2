@@ -39,18 +39,22 @@
 #include "nghttp2_int.h"
 #include "nghttp2_buf.h"
 #include "nghttp2_callbacks.h"
+#include "nghttp2_mem.h"
 
 /*
  * Option flags.
  */
 typedef enum {
   NGHTTP2_OPTMASK_NO_AUTO_WINDOW_UPDATE = 1 << 0,
-  NGHTTP2_OPTMASK_RECV_CLIENT_PREFACE = 1 << 1,
+  NGHTTP2_OPTMASK_NO_RECV_CLIENT_MAGIC = 1 << 1,
+  NGHTTP2_OPTMASK_NO_HTTP_MESSAGING = 1 << 2
 } nghttp2_optmask;
 
 typedef enum {
   NGHTTP2_OB_POP_ITEM,
-  NGHTTP2_OB_SEND_DATA
+  NGHTTP2_OB_SEND_DATA,
+  NGHTTP2_OB_SEND_NO_COPY,
+  NGHTTP2_OB_SEND_CLIENT_MAGIC
 } nghttp2_outbound_state;
 
 typedef struct {
@@ -66,7 +70,7 @@ typedef struct {
 /* Internal state when receiving incoming frame */
 typedef enum {
   /* Receiving frame header */
-  NGHTTP2_IB_READ_CLIENT_PREFACE,
+  NGHTTP2_IB_READ_CLIENT_MAGIC,
   NGHTTP2_IB_READ_FIRST_SETTINGS,
   NGHTTP2_IB_READ_HEAD,
   NGHTTP2_IB_READ_NBYTE,
@@ -76,12 +80,12 @@ typedef enum {
   NGHTTP2_IB_FRAME_SIZE_ERROR,
   NGHTTP2_IB_READ_SETTINGS,
   NGHTTP2_IB_READ_GOAWAY_DEBUG,
-  NGHTTP2_IB_READ_ALTSVC,
   NGHTTP2_IB_EXPECT_CONTINUATION,
   NGHTTP2_IB_IGN_CONTINUATION,
   NGHTTP2_IB_READ_PAD_DATA,
   NGHTTP2_IB_READ_DATA,
-  NGHTTP2_IB_IGN_DATA
+  NGHTTP2_IB_IGN_DATA,
+  NGHTTP2_IB_IGN_ALL
 } nghttp2_inbound_state;
 
 #define NGHTTP2_INBOUND_NUM_IV 7
@@ -130,39 +134,45 @@ typedef enum {
   NGHTTP2_GOAWAY_TERM_ON_SEND = 0x1,
   /* Flag means GOAWAY to terminate session has been sent */
   NGHTTP2_GOAWAY_TERM_SENT = 0x2,
+  /* Flag means GOAWAY was sent */
+  NGHTTP2_GOAWAY_SENT = 0x4,
+  /* Flag means GOAWAY was received */
+  NGHTTP2_GOAWAY_RECV = 0x8
 } nghttp2_goaway_flag;
+
+/* nghttp2_inflight_settings stores the SETTINGS entries which local
+   endpoint has sent to the remote endpoint, and has not received ACK
+   yet. */
+struct nghttp2_inflight_settings {
+  struct nghttp2_inflight_settings *next;
+  nghttp2_settings_entry *iv;
+  size_t niv;
+};
+
+typedef struct nghttp2_inflight_settings nghttp2_inflight_settings;
 
 struct nghttp2_session {
   nghttp2_map /* <nghttp2_stream*> */ streams;
   nghttp2_stream_roots roots;
-  /* Queue for outbound frames other than stream-creating HEADERS and
-     DATA */
-  nghttp2_pq /* <nghttp2_outbound_item*> */ ob_pq;
-  /* Queue for outbound stream-creating HEADERS frame */
-  nghttp2_pq /* <nghttp2_outbound_item*> */ ob_ss_pq;
-  /* QUeue for DATA frame */
+  /* Queue for outbound urgent frames (PING and SETTINGS) */
+  nghttp2_outbound_queue ob_urgent;
+  /* Queue for non-DATA frames */
+  nghttp2_outbound_queue ob_reg;
+  /* Queue for outbound stream-creating HEADERS (request or push
+     response) frame, which are subject to
+     SETTINGS_MAX_CONCURRENT_STREAMS limit. */
+  nghttp2_outbound_queue ob_syn;
+  /* Queue for DATA frame */
   nghttp2_pq /* <nghttp2_outbound_item*> */ ob_da_pq;
   nghttp2_active_outbound_item aob;
   nghttp2_inbound_frame iframe;
   nghttp2_hd_deflater hd_deflater;
   nghttp2_hd_inflater hd_inflater;
   nghttp2_session_callbacks callbacks;
-  /* Sequence number of outbound frame to maintain the order of
-     enqueue if priority is equal. */
-  int64_t next_seq;
-  /* Reset count of nghttp2_outbound_item's weight.  We decrements
-     weight each time DATA is sent to simulate resource sharing.  We
-     use priority queue and larger weight has the precedence.  If
-     weight is reached to lowest weight, it resets to its initial
-     weight.  If this happens, other items which have the lower weight
-     currently but same initial weight cannot send DATA until item
-     having large weight is decreased.  To avoid this, we use this
-     cycle variable.  Initally, this is set to 1.  If weight gets
-     lowest weight, and if item's cycle == last_cycle, we increments
-     last_cycle and assigns it to item's cycle.  Otherwise, just
-     assign last_cycle.  In priority queue comparator, we first
-     compare items' cycle value.  Lower cycle value has the
-     precedence. */
+  /* Memory allocator */
+  nghttp2_mem mem;
+  /* Base value when we schedule next DATA frame write.  This is
+     updated when one frame was written. */
   uint64_t last_cycle;
   void *user_data;
   /* Points to the latest closed stream.  NULL if there is no closed
@@ -171,12 +181,15 @@ struct nghttp2_session {
   /* Points to the oldest closed stream.  NULL if there is no closed
      stream.  Only used when session is initialized as server. */
   nghttp2_stream *closed_stream_tail;
-  /* In-flight SETTINGS values. NULL does not necessarily mean there
-     is no in-flight SETTINGS. */
-  nghttp2_settings_entry *inflight_iv;
-  /* The number of entries in |inflight_iv|. -1 if there is no
-     in-flight SETTINGS. */
-  ssize_t inflight_niv;
+  /* Points to the latest idle stream.  NULL if there is no idle
+     stream.  Only used when session is initialized as server .*/
+  nghttp2_stream *idle_stream_head;
+  /* Points to the oldest idle stream.  NULL if there is no idle
+     stream.  Only used when session is initialized as erver. */
+  nghttp2_stream *idle_stream_tail;
+  /* Queue of In-flight SETTINGS values.  SETTINGS bearing ACK is not
+     considered as in-flight. */
+  nghttp2_inflight_settings *inflight_settings_head;
   /* The number of outgoing streams. This will be capped by
      remote_settings.max_concurrent_streams. */
   size_t num_outgoing_streams;
@@ -188,6 +201,11 @@ struct nghttp2_session {
      |closed_stream_head|.  The current implementation only keeps
      incoming streams and session is initialized as server. */
   size_t num_closed_streams;
+  /* The number of idle streams kept in |streams| hash.  The idle
+     streams can be accessed through doubly linked list
+     |idle_stream_head|.  The current implementation only keeps idle
+     streams if session is initialized as server. */
+  size_t num_idle_streams;
   /* The number of bytes allocated for nvbuf */
   size_t nvbuflen;
   /* Next Stream ID. Made unsigned int to detect >= (1 << 31). */
@@ -234,6 +252,9 @@ struct nghttp2_session {
   /* Unacked local SETTINGS_MAX_CONCURRENT_STREAMS value. We use this
      to refuse the incoming stream if it exceeds this value. */
   uint32_t pending_local_max_concurrent_stream;
+  /* Unacked local ENABLE_PUSH value.  We use this to refuse
+     PUSH_PROMISE before SETTINGS ACK is received. */
+  uint8_t pending_enable_push;
   /* Nonzero if the session is server side. */
   uint8_t server;
   /* Flags indicating GOAWAY is sent and/or recieved. The flags are
@@ -267,14 +288,6 @@ typedef struct {
  */
 int nghttp2_session_is_my_stream_id(nghttp2_session *session,
                                     int32_t stream_id);
-
-/*
- * Initializes |item|.  No memory allocation is done in this function.
- * Don't call nghttp2_outbound_item_free() until frame member is
- * initialized.
- */
-void nghttp2_session_outbound_item_init(nghttp2_session *session,
-                                        nghttp2_outbound_item *item);
 
 /*
  * Adds |item| to the outbound queue in |session|.  When this function
@@ -330,7 +343,9 @@ int nghttp2_session_add_ping(nghttp2_session *session, uint8_t flags,
 /*
  * Adds GOAWAY frame with the last-stream-ID |last_stream_id| and the
  * error code |error_code|. This is a convenient function built on top
- * of nghttp2_session_add_frame() to add GOAWAY easily.
+ * of nghttp2_session_add_frame() to add GOAWAY easily.  The
+ * |aux_flags| are bitwise-OR of one or more of
+ * nghttp2_goaway_aux_flag.
  *
  * This function returns 0 if it succeeds, or one of the following
  * negative error codes:
@@ -342,7 +357,7 @@ int nghttp2_session_add_ping(nghttp2_session *session, uint8_t flags,
  */
 int nghttp2_session_add_goaway(nghttp2_session *session, int32_t last_stream_id,
                                uint32_t error_code, const uint8_t *opaque_data,
-                               size_t opaque_data_len, int terminate_on_send);
+                               size_t opaque_data_len, uint8_t aux_flags);
 
 /*
  * Adds WINDOW_UPDATE frame with stream ID |stream_id| and
@@ -380,6 +395,9 @@ int nghttp2_session_add_settings(nghttp2_session *session, uint8_t flags,
  * state of stream is set to |initial_state|. The |stream_user_data|
  * is a pointer to the arbitrary user supplied data to be associated
  * to this stream.
+ *
+ * If |initial_state| is NGHTTP2_STREAM_RESERVED, this function sets
+ * NGHTTP2_STREAM_FLAG_PUSH flag set.
  *
  * This function returns a pointer to created new stream object, or
  * NULL.
@@ -431,17 +449,18 @@ void nghttp2_session_keep_closed_stream(nghttp2_session *session,
                                         nghttp2_stream *stream);
 
 /*
- * Detaches |stream| from closed streams linked list.
+ * Appends |stream| to linked list |session->idle_stream_head|.  We
+ * apply fixed limit for list size.  To fit into that limit, one or
+ * more oldest streams are removed from list as necessary.
  */
-void nghttp2_session_detach_closed_stream(nghttp2_session *session,
-                                          nghttp2_stream *stream);
+void nghttp2_session_keep_idle_stream(nghttp2_session *session,
+                                      nghttp2_stream *stream);
 
 /*
- * Returns nonzero if |offset| closed stream(s) can be added to closed
- * linked list now.
+ * Detaches |stream| from idle streams linked list.
  */
-int nghttp2_session_can_add_closed_stream(nghttp2_session *session,
-                                          ssize_t offset);
+void nghttp2_session_detach_idle_stream(nghttp2_session *session,
+                                        nghttp2_stream *stream);
 
 /*
  * Deletes closed stream to ensure that number of incoming streams
@@ -452,6 +471,12 @@ int nghttp2_session_can_add_closed_stream(nghttp2_session *session,
  */
 void nghttp2_session_adjust_closed_stream(nghttp2_session *session,
                                           ssize_t offset);
+
+/*
+ * Deletes idle stream to ensure that number of idle streams is in
+ * certain limit.
+ */
+void nghttp2_session_adjust_idle_stream(nghttp2_session *session);
 
 /*
  * If further receptions and transmissions over the stream |stream_id|
@@ -620,21 +645,6 @@ int nghttp2_session_on_window_update_received(nghttp2_session *session,
                                               nghttp2_frame *frame);
 
 /*
- * Called when ALTSVC is received, assuming |frame| is properly
- * initialized.
- *
- * This function returns 0 if it succeeds, or one of the following
- * negative error codes:
- *
- * NGHTTP2_ERR_NOMEM
- *     Out of memory.
- * NGHTTP2_ERR_CALLBACK_FAILURE
- *   The callback function failed.
- */
-int nghttp2_session_on_altsvc_received(nghttp2_session *session,
-                                       nghttp2_frame *frame);
-
-/*
  * Called when DATA is received, assuming |frame| is properly
  * initialized.
  *
@@ -684,13 +694,8 @@ nghttp2_stream *nghttp2_session_get_stream_raw(nghttp2_session *session,
  */
 int nghttp2_session_pack_data(nghttp2_session *session, nghttp2_bufs *bufs,
                               size_t datamax, nghttp2_frame *frame,
-                              nghttp2_data_aux_data *aux_data);
-
-/*
- * Returns top of outbound frame queue. This function returns NULL if
- * queue is empty.
- */
-nghttp2_outbound_item *nghttp2_session_get_ob_pq_top(nghttp2_session *session);
+                              nghttp2_data_aux_data *aux_data,
+                              nghttp2_stream *stream);
 
 /*
  * Pops and returns next item to send. If there is no such item,
@@ -734,7 +739,8 @@ int nghttp2_session_update_local_settings(nghttp2_session *session,
 
 /*
  * Re-prioritize |stream|. The new priority specification is
- * |pri_spec|.
+ * |pri_spec|.  Caller must ensure that stream->hd.stream_id !=
+ * pri_spec->stream_id.
  *
  * This function returns 0 if it succeeds, or one of the following
  * negative error codes:

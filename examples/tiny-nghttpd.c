@@ -30,18 +30,30 @@
 
 #ifdef HAVE_CONFIG_H
 #include <config.h>
-#endif /* !HAVE_CONFIG_H */
+#endif /* HAVE_CONFIG_H */
 
 #include <sys/types.h>
+#ifdef HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
+#endif /* HAVE_SYS_SOCKET_H */
 #include <sys/stat.h>
+#ifdef HAVE_FCNTL_H
 #include <fcntl.h>
+#endif /* HAVE_FCNTL_H */
+#ifdef HAVE_NETDB_H
 #include <netdb.h>
+#endif /* HAVE_NETDB_H */
+#ifdef HAVE_NETINET_IN_H
 #include <netinet/in.h>
+#endif /* HAVE_NETINET_IN_H */
 #include <netinet/tcp.h>
+#ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#endif /* HAVE_UNISTD_H */
 #include <stdlib.h>
+#ifdef HAVE_TIME_H
 #include <time.h>
+#endif /* HAVE_TIME_H */
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
@@ -153,7 +165,6 @@ const char *docroot;
 size_t docrootlen;
 
 nghttp2_session_callbacks *shared_callbacks;
-nghttp2_option *shared_option;
 
 static int handle_accept(io_loop *loop, uint32_t events, void *ptr);
 static int handle_connection(io_loop *loop, uint32_t events, void *ptr);
@@ -179,13 +190,57 @@ static char *io_buf_add_str(io_buf *buf, const void *src, size_t len) {
   return (char *)start;
 }
 
-static int memseq(const uint8_t *a, size_t alen, const char *b) {
-  const uint8_t *last = a + alen;
+static int memeq(const void *a, const void *b, size_t n) {
+  return memcmp(a, b, n) == 0;
+}
 
-  for (; a != last && *b && *a == *b; ++a, ++b)
-    ;
+#define streq(A, B, N) ((sizeof((A)) - 1) == (N) && memeq((A), (B), (N)))
 
-  return a == last && *b == 0;
+typedef enum {
+  NGHTTP2_TOKEN__AUTHORITY,
+  NGHTTP2_TOKEN__METHOD,
+  NGHTTP2_TOKEN__PATH,
+  NGHTTP2_TOKEN__SCHEME,
+  NGHTTP2_TOKEN_HOST
+} nghttp2_token;
+
+/* Inspired by h2o header lookup.  https://github.com/h2o/h2o */
+static int lookup_token(const uint8_t *name, size_t namelen) {
+  switch (namelen) {
+  case 5:
+    switch (name[namelen - 1]) {
+    case 'h':
+      if (streq(":pat", name, 4)) {
+        return NGHTTP2_TOKEN__PATH;
+      }
+      break;
+    }
+    break;
+  case 7:
+    switch (name[namelen - 1]) {
+    case 'd':
+      if (streq(":metho", name, 6)) {
+        return NGHTTP2_TOKEN__METHOD;
+      }
+      break;
+    case 'e':
+      if (streq(":schem", name, 6)) {
+        return NGHTTP2_TOKEN__SCHEME;
+      }
+      break;
+    }
+    break;
+  case 10:
+    switch (name[namelen - 1]) {
+    case 'y':
+      if (streq(":authorit", name, 9)) {
+        return NGHTTP2_TOKEN__AUTHORITY;
+      }
+      break;
+    }
+    break;
+  }
+  return -1;
 }
 
 static char *cpydig(char *buf, int n, size_t len) {
@@ -344,8 +399,7 @@ static connection *connection_new(int fd) {
 
   conn = malloc(sizeof(connection));
 
-  rv = nghttp2_session_server_new2(&conn->session, shared_callbacks, conn,
-                                   shared_option);
+  rv = nghttp2_session_server_new(&conn->session, shared_callbacks, conn);
 
   if (rv != 0) {
     goto cleanup;
@@ -614,19 +668,52 @@ static void stream_error(connection *conn, int32_t stream_id,
                             error_code);
 }
 
+static int send_data_callback(nghttp2_session *session _U_,
+                              nghttp2_frame *frame, const uint8_t *framehd,
+                              size_t length, nghttp2_data_source *source,
+                              void *user_data) {
+  connection *conn = user_data;
+  uint8_t *p = conn->buf.last;
+  stream *strm = source->ptr;
+
+  /* We never use padding in this program */
+  assert(frame->data.padlen == 0);
+
+  if ((size_t)io_buf_left(&conn->buf) < 9 + frame->hd.length) {
+    return NGHTTP2_ERR_WOULDBLOCK;
+  }
+
+  memcpy(p, framehd, 9);
+  p += 9;
+
+  while (length) {
+    ssize_t nread;
+    while ((nread = read(strm->filefd, p, length)) == -1 && errno == EINTR)
+      ;
+    if (nread == -1) {
+      return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
+    }
+
+    length -= nread;
+    p += nread;
+  }
+
+  conn->buf.last = p;
+
+  return 0;
+}
+
 static ssize_t fd_read_callback(nghttp2_session *session _U_,
-                                int32_t stream_id _U_, uint8_t *buf,
+                                int32_t stream_id _U_, uint8_t *buf _U_,
                                 size_t length, uint32_t *data_flags,
                                 nghttp2_data_source *source,
                                 void *user_data _U_) {
   stream *strm = source->ptr;
-  ssize_t nread;
+  ssize_t nread =
+      (int64_t)length < strm->fileleft ? (int64_t)length : strm->fileleft;
 
-  while ((nread = read(strm->filefd, buf, length)) == -1 && errno == EINTR)
-    ;
-  if (nread == -1) {
-    return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
-  }
+  *data_flags |= NGHTTP2_DATA_FLAG_NO_COPY;
+
   strm->fileleft -= nread;
   if (nread == 0 || strm->fileleft == 0) {
     if (strm->fileleft != 0) {
@@ -925,8 +1012,7 @@ static int on_header_callback(nghttp2_session *session,
                               const nghttp2_frame *frame, const uint8_t *name,
                               size_t namelen, const uint8_t *value,
                               size_t valuelen, uint8_t flags _U_,
-                              void *user_data) {
-  connection *conn = user_data;
+                              void *user_data _U_) {
   stream *strm;
 
   if (frame->hd.type != NGHTTP2_HEADERS ||
@@ -940,74 +1026,42 @@ static int on_header_callback(nghttp2_session *session,
     return 0;
   }
 
-  if (!nghttp2_check_header_name(name, namelen) ||
-      !nghttp2_check_header_value(value, valuelen)) {
-    return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
-  }
-
-  if (memseq(name, namelen, ":method")) {
-    if (strm->method) {
-      stream_error(conn, strm->stream_id, NGHTTP2_PROTOCOL_ERROR);
-      return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
-    }
+  switch (lookup_token(name, namelen)) {
+  case NGHTTP2_TOKEN__METHOD:
     strm->method = io_buf_add_str(&strm->scrbuf, value, valuelen);
     if (!strm->method) {
       return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
     }
     strm->methodlen = valuelen;
-    return 0;
-  }
-
-  if (memseq(name, namelen, ":scheme")) {
-    if (strm->scheme) {
-      stream_error(conn, strm->stream_id, NGHTTP2_PROTOCOL_ERROR);
-      return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
-    }
+    break;
+  case NGHTTP2_TOKEN__SCHEME:
     strm->scheme = io_buf_add_str(&strm->scrbuf, value, valuelen);
     if (!strm->scheme) {
       return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
     }
     strm->schemelen = valuelen;
-    return 0;
-  }
-
-  if (memseq(name, namelen, ":authority")) {
-    if (strm->authority) {
-      stream_error(conn, strm->stream_id, NGHTTP2_PROTOCOL_ERROR);
-      return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
-    }
+    break;
+  case NGHTTP2_TOKEN__AUTHORITY:
     strm->authority = io_buf_add_str(&strm->scrbuf, value, valuelen);
     if (!strm->authority) {
       return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
     }
     strm->authoritylen = valuelen;
-    return 0;
-  }
-
-  if (memseq(name, namelen, ":path")) {
-    if (strm->path) {
-      stream_error(conn, strm->stream_id, NGHTTP2_PROTOCOL_ERROR);
-      return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
-    }
+    break;
+  case NGHTTP2_TOKEN__PATH:
     strm->path = io_buf_add_str(&strm->scrbuf, value, valuelen);
     if (!strm->path) {
       return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
     }
     strm->pathlen = valuelen;
-    return 0;
-  }
-
-  if (name[0] == ':') {
-    stream_error(conn, strm->stream_id, NGHTTP2_PROTOCOL_ERROR);
-    return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
-  }
-
-  if (memseq(name, namelen, "host") && !strm->host) {
+    break;
+  case NGHTTP2_TOKEN_HOST:
     strm->host = io_buf_add_str(&strm->scrbuf, value, valuelen);
     if (!strm->host) {
       return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
     }
     strm->hostlen = valuelen;
+    break;
   }
 
   return 0;
@@ -1026,12 +1080,6 @@ static int on_frame_recv_callback(nghttp2_session *session,
   strm = nghttp2_session_get_stream_user_data(session, frame->hd.stream_id);
 
   if (!strm) {
-    return 0;
-  }
-
-  if (!strm->method || !strm->scheme || !strm->path ||
-      (!strm->authority && !strm->host)) {
-    stream_error(conn, strm->stream_id, NGHTTP2_PROTOCOL_ERROR);
     return 0;
   }
 
@@ -1269,14 +1317,8 @@ int main(int argc, char **argv) {
       shared_callbacks, on_stream_close_callback);
   nghttp2_session_callbacks_set_on_frame_not_send_callback(
       shared_callbacks, on_frame_not_send_callback);
-
-  rv = nghttp2_option_new(&shared_option);
-  if (rv != 0) {
-    fprintf(stderr, "nghttp2_option_new: %s", nghttp2_strerror(rv));
-    exit(EXIT_FAILURE);
-  }
-
-  nghttp2_option_set_recv_client_preface(shared_option, 1);
+  nghttp2_session_callbacks_set_send_data_callback(shared_callbacks,
+                                                   send_data_callback);
 
   rv = io_loop_add(&loop, serv.fd, EPOLLIN, &serv);
 
@@ -1294,7 +1336,6 @@ int main(int argc, char **argv) {
 
   io_loop_run(&loop, &serv);
 
-  nghttp2_option_del(shared_option);
   nghttp2_session_callbacks_del(shared_callbacks);
 
   return 0;

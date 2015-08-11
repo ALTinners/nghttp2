@@ -1,827 +1,971 @@
-commit ed1ea91a6f80382c963e4202d6aa3a55a1cb39c5
+commit b78662e506aa14e78d835ef0d2b100e3f1312042 (HEAD, tag: v1.2.0, origin/master, origin/HEAD, master)
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-30
+AuthorDate: 2015-08-09
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-30
+CommitDate: 2015-08-09
+
+    integration: Fix errors related to host-rewrite
+
+commit 8a7bc6f7bc6a896c075e632079439d101f0b174a
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-08-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-08-09
+
+    Update bash_completion
+
+commit 66f20976271d55f3646c9507af1c460ed545eaff
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-08-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-08-09
 
     Update man pages
 
-commit 209d1b09466759b124e44bbed2e7aacb567f8e50
+commit a67d15be589f39003f10857e4bb163d6d89baeac
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-30
+AuthorDate: 2015-08-09
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-30
+CommitDate: 2015-08-09
 
-    Bump up version number to 0.6.7, LT revision to 7:2:2
+    Bump up version number to 1.2.0, LT revision to 14:7:0
 
-commit 761cb97090dd8d1da852ddee4670a500951ce1b6
+commit 2e7cee0faa1beda02772f6cf38a9436b51e442e5
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-30
+AuthorDate: 2015-08-09
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-30
+CommitDate: 2015-08-09
 
-    Update README.rst
+    h2load: Code cleanup
 
-commit dcc7b239807e8797568da8b534109379c0ab0b9f
+commit 50eac7bdf0cd03e9258a89dfd78ac7a8594ae41e
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-30
+AuthorDate: 2015-08-09
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-30
+CommitDate: 2015-08-09
 
-    nghttpx: Remove cipher suite requirement
+    h2load: Fix -r does not work without -C option
+
+commit 846da5fb3f3aa5c582df14c7ea9bc3686333dd02
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-08-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-08-08
+
+    h2load: Update doc
+
+commit 3e53cd189c61e4e2ee09ac9d25678fd3fdc75ff7
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-08-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-08-08
+
+    clang-format-3.5
+
+commit 9331dc755e6f874c460868814b4fa0858b13bde3
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-08-07
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-08-07
+
+    Add python-setuptools to apt-get line
+
+commit bf8220fd5e80f062c7758e5411425e594960428c
+Merge: 3882856 6a70f34
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-08-04
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-08-04
+
+    Merge branch 'skip2-reword-client-tutorial'
+
+commit 6a70f34c7339dace01ed4c28f0318fb18182f5a8
+Merge: 3882856 c50ea91
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-08-04
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-08-04
+
+    Merge branch 'reword-client-tutorial' of https://github.com/skip2/nghttp2 into skip2-reword-client-tutorial
+
+commit c50ea91a3f4b2b35eafffa0807bd0c72ca7f98f4
+Author:     Tom Harwood <tfh@skip.org>
+AuthorDate: 2015-08-03
+Commit:     Tom Harwood <tfh@skip.org>
+CommitDate: 2015-08-04
+
+    doc: Reword some of the client tutorial.
     
-    This makes the library h2-16 compatible now.
-
-commit b9667fd209f9fa75aad7fced02a5f5630830f169
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-30
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-30
-
-    asio: Listen to all resolved addresses
-
-commit d23105ccb76a32b20a4a08b5c9b6347a0714c27b
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-30
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-30
-
-    Add note about pseudo header ordering validation in on_header_callback
-
-commit 30499005f8a1a44006ca5812a6ad09f86bf7ca68
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-30
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-30
-
-    Reformat source code in libnghttp2_asio.rst
-
-commit f2cd057e899a0aefa5177e976937564d850c44ee
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-30
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-30
-
-    Update tutorial
-
-commit 2b465ee65fb99f8ba5028cdbd552a734dfe7c22a
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-30
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-30
-
-    libevent-client: Disable SSLv3
-
-commit 7e092a76580d819d357486823ae54a66d99a5a2f
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-30
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-30
-
-    Make sure that head_stream is not NULL
-
-commit d39b56adaa6d8adf8131b697050728910c6c802b
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-30
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-30
-
-    Remove unused nghttp2_stream.blocked_sent
-
-commit 152a20a4161d6ab3517b4b2a93582e160b1712f8
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-29
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-29
-
-    Influence last_stream_id to nghttp2_session_want_{read,write}
-
-commit 7ff0797535c813d5ca6d197ab638c1caa42499d8
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-29
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-29
-
-    Rewrite session_is_new_peer_stream_id()
-
-commit ca57c2f6b633ed5ad1568a86e173fc45d51d8c73
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-29
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-29
-
-    Rename NGHTTP2_GOAWAY_FAIL_ON_SEND with NGHTTP2_GOAWAY_TERM_ON_FAIL
-
-commit d75ba74bbd450e30f953c3e56efdfe0bad198d38
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-29
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-29
-
-    Return error if invalid stream_id is given to nghttp2_submit_push_promise
-
-commit 9ff192553853d8085726c38e5e968e5446bdb00a
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-28
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-29
-
-    Robust GOAWAY handling
+    The overall meaning of the tutorial is the same. I added text describing frame types where it helps explain the callbacks better, e.g. introducing the HEADERS frame before on_header_callback().
     
-    This change will utilize last_stream_id in GOAWAY extensively.  When
-    GOAWAY is received with a last_stream_id, library closes all outgoing
-    streams whose stream_id > received last_stream_id.
-    nghttp2_on_stream_callback is called for each stream to be closed.
+    Also fixed a couple of typos:
+    - Fixed ``reacb`` typo to ``readcb``
+    - Added parens to some functions, e.g. ``on_frame_recv_callback`` => ``on_frame_recv_callback()``
+
+commit 388285675b491908cb9ea3866b68f5b0e86f269b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-08-03
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-08-03
+
+    python: Check protocol is None
+
+commit 0481d44c69493dfce1a691a97eeb3465311a0b07
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-08-01
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-08-01
+
+    Fix typo
+
+commit 3d0905a90f8a73bd6f8f484ef14225aa80063019
+Merge: c941bff 091055e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-08-01
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-08-01
+
+    Merge branch 'skip2-master'
+
+commit 091055edecc49e1522b4143680dacb79a003d320
+Merge: c941bff 4f0ff5b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-08-01
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-08-01
+
+    Merge branch 'master' of https://github.com/skip2/nghttp2 into skip2-master
+
+commit 4f0ff5bfb133cfe4f22644d745fb34b6b1f27ecb
+Author:     Tom Harwood <tfh@skip.org>
+AuthorDate: 2015-08-01
+Commit:     Tom Harwood <tfh@skip.org>
+CommitDate: 2015-08-01
+
+    doc: fix a couple of links
+
+commit c941bff929115ec8aa355f79a900c8248786703d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-31
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-31
+
+    Fix compile error with gcc
+
+commit 0bbff5b73848f3f0b21df87b908620e85ee80784
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-31
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-31
+
+    nghttpx: Continue if push was failed
+
+commit e66bd490a467cb4b23b8e4b411ff5acd0b0fc489
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-31
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-31
+
+    Fix crash if response or data is submitted to closing stream
+
+commit e9e9626c2ce5980320cfff1a25c55b6f5cc75733
+Author:     Tom Harwood <tfh@skip.org>
+AuthorDate: 2015-07-30
+Commit:     Tom Harwood <tfh@skip.org>
+CommitDate: 2015-07-30
+
+    doc: Reword some of the server tutorial.
     
-    When GOAWAY is sent with a last_stream_id, library closes all incoming
-    streams whose stream_id > sent last_stream_id.
-    nghttp2_on_stream_callback is called for each stream to be closed.
+    The overall meaning of the tutorial is the same, except for a couple of changes:
+    - app_context struct was called "app_content", fixed the typo
+    - nghttp2_session_server_new2() is mentioned, but the example uses nghttp2_session_server_new() instead, changed the text to match
 
-commit 1915408096ca3182c1d877e26b39164918543aee
+commit a152c6346d2322fe426bd9ad847ec8649b61e0ed
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-28
+AuthorDate: 2015-07-30
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-28
+CommitDate: 2015-07-30
 
-    doc: Add language attribute in asio_http2.h.rst.in
+    Fix build error with Android NDK
 
-commit 45801883ba9e75b373e9f215b1e39c1a6b267e77
+commit 96a6dcb1526ac299698ea5c3166da9ff4bd80976
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-28
+AuthorDate: 2015-07-30
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-28
+CommitDate: 2015-07-30
 
-    Cleanup previous commit
+    python: Remove draft from hpack checker
 
-commit 382a328eada677ab7ee9623c9641eedcb8f980e1
+commit 8c701bb139c43a9eb450a2d659294462a41f1b53
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-28
+AuthorDate: 2015-07-30
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-28
+CommitDate: 2015-07-30
 
-    Issue connection error if client receives HEADERS with idle stream ID
-    
-    If stream ID is not idle, it might be valid HEADERS.  If stream ID is
-    idle, it is invalid regardless stream ID is even or odd, since client
-    is not expected to recieve request from server.  nghttp2 library
-    historically allows this, but now we forbids this.
+    Header table size UINT32_MAX must be accepted
 
-commit babfa414244217e7a124c529ba658e8fb4a02163
+commit ebf27e652334fb6413de65a0d8a606c07100cbed
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-28
+AuthorDate: 2015-07-30
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-28
+CommitDate: 2015-07-30
 
-    Just ignore HEADERS with non-idle stream ID and not found in stream map
+    Fix configure warning that 'missing' is missing or too old
 
-commit 204ff787fa7a45abb604b6c9c0d91ed85385284f
+commit c379b46a26f3ec320f70b8d08264e298f0ba5581
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-28
+AuthorDate: 2015-07-29
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-28
+CommitDate: 2015-07-29
 
-    nghttpx: Submit RST_STREAM if HEADERS appears in the middle of a stream
+    Remove monotonic_clock replacement macro for gcc-4.6
 
-commit 2a68cc7076926a56cb0cec63422d1845e67e3a6d
-Merge: c67ccad b1f807a
+commit 762bafa47b308e44adc1926067370566dc9cfb5e
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-27
+AuthorDate: 2015-07-29
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-27
+CommitDate: 2015-07-29
 
-    Merge branch 'clang-format'
+    Add tlsticketupdate.go to EXTRA_DIST
 
-commit b1f807abd1b632826d003dc0730cf8bda0f338cf
+commit 0ed8ed3f8df67200ad6979ddcd39a24579ef2eb2
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-27
+AuthorDate: 2015-07-29
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-27
+CommitDate: 2015-07-29
 
-    Reformat lines with clang-format-3.5
+    tlsticketupdate.go: Add expiry time, some refactoring
 
-commit 2c830a4698fce7e40d6ad9018cc838427061ec9c
+commit 64466601133d092518130b9d3167153ff7fe3a88
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-27
+AuthorDate: 2015-07-29
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-27
+CommitDate: 2015-07-29
 
-    Add make clang-format
+    nghttpx: Make record size timeout more durable to high load situation
 
-commit 87ce5068bbe17ebc9af774a5a621a47472b3cde4
+commit d0a37d59a50f2bad519090857cb3cc2df82a4f2a
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-26
+AuthorDate: 2015-07-29
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-27
+CommitDate: 2015-07-29
 
-    Add pre-commit script
+    nghttpx: Disable TLS session ticket if ticket key is not available
 
-commit 7c794b8d934f92fac4407e21ccbb60efa006e7c7
+commit 58dd924343b541488c6f9e5ac74f3a220f368345
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-26
+AuthorDate: 2015-07-29
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-27
-
-    Add .clang-format config file and git-clang-format from clang project
-
-commit 0a406eab94186ef6bd96c3f7e74fe7d86771fb30
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-26
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-27
-
-    Add contribution guidelines
-
-commit c67ccad74dd4d3b4d8bfd1f1e65e00fa8e508252
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-27
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-27
-
-    nghttpx: Use cached get_config()->pid in save_pid()
-
-commit 5d59adc52b5777172d344d8e9ed73e651e9384ca
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-27
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-27
-
-    libevent-server: Disable SSLv3
-
-commit 770cfcaae9540b5685e3d10aa18b823d4ed9f19e
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-27
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-27
-
-    libevent-server: Enable ECDHE ciphers
-
-commit 04dae325092896597293dedb04a89e7d0c4175b4
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-27
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-27
-
-    nghttpx: Store PID to Config again after daemon()
-
-commit 3e0813d40742d46ea481976642b41d33f89c0c1a
-Merge: dfbc6e6 c8b83d7
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-27
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-27
-
-    Merge branch 'alagoutte-scan-build'
-
-commit c8b83d70240b0f88dd8e0ccf8cd79981675a7835
-Merge: dfbc6e6 d128525
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-27
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-27
-
-    Merge branch 'scan-build' of https://github.com/alagoutte/nghttp2 into alagoutte-scan-build
-
-commit d1285255ebe97ef89e7e0242f4431ea8dbfc4ddb
-Author:     Alexis La Goutte <alexis.lagoutte@gmail.com>
-AuthorDate: 2014-11-26
-Commit:     Alexis La Goutte <alexis.lagoutte@gmail.com>
-CommitDate: 2014-11-26
-
-    Fix last warning found by Clang Analyzer
-    
-    nghttp2_session.c:636:3: warning: Branch condition evaluates to a garbage value
-
-commit dfbc6e6a57d6da724dda4e0918dac76481330190
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-27
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-27
-
-    examples: Guard include config.h with HAVE_CONFIG_H
-
-commit 2eab5d03fd09a036cf33f475c908c5834fc159a9
-Merge: 2d10e31 fe634e5
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-26
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-26
-
-    Merge branch 'alagoutte-Wunused-parameter'
-
-commit fe634e5326cdb8b72af5958b4ca311baefcec025
-Merge: 2d10e31 bac44d7
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-26
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-26
-
-    Merge branch 'Wunused-parameter' of https://github.com/alagoutte/nghttp2 into alagoutte-Wunused-parameter
-
-commit bac44d7ffbd4b3a936146ffdb0431adaa087a9ea
-Author:     Alexis La Goutte <alexis.lagoutte@gmail.com>
-AuthorDate: 2014-10-19
-Commit:     Alexis La Goutte <alexis.lagoutte@gmail.com>
-CommitDate: 2014-11-25
-
-    Fix -Werror=unused-parameter using _U_ macro
-
-commit 51b59bc8f00e72150b8c17b8d1fa41fcdd7c1c02
-Author:     Alexis La Goutte <alexis.lagoutte@gmail.com>
-AuthorDate: 2014-10-19
-Commit:     Alexis La Goutte <alexis.lagoutte@gmail.com>
-CommitDate: 2014-11-25
-
-    Remove -Wno-unused-parameter (and add _U_ macro)
-
-commit 2d10e31931673eb364b0b2b6ddbf1c28ff9ff8a9
-Merge: e11834d 4cf7b3c
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-26
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-26
-
-    Merge branch 'andydavies-master'
-
-commit 4cf7b3cebdc27af05b3730965b448ab6dc6dfc2a
-Author:     Andy Davies <ad@andydavies.net>
-AuthorDate: 2014-11-25
-Commit:     Andy Davies <ad@andydavies.net>
-CommitDate: 2014-11-25
-
-    Fixed minor typo
-    
-    turotial -> tutorial
-
-commit e11834d1c9e8e48a82ba8c9cba6cf64ad3679bd1
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-24
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-24
-
-    src: Add code in case struct tm.tm_gmtoff is not available
-
-commit 8f22ff3032465a725cd3662194e44fae8b78ca87
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-24
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-24
+CommitDate: 2015-07-29
 
     Update man pages
 
-commit 8e9455188162f378bd4b8fa4dbbf999acc911566
+commit a73cfd5f7b409ea2a8b443e93ae938679b18ae0a
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-13
+AuthorDate: 2015-07-29
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-24
+CommitDate: 2015-07-29
 
-    Handle idle stream in priority field
+    nghttpx: Add reference to manual section for session resumption
 
-commit 6e1470c9d30c6e129c0ab34e865dbaafb93fd9de
+commit a1288a582698742c36f6376c4355bb1dc9645974
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-12
+AuthorDate: 2015-07-28
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-24
+CommitDate: 2015-07-28
 
-    Remove duplicated code
+    nghttpx: Rename --tls-ticket-cipher as --tls-ticket-key-cipher
 
-commit 9416bf90794149e977af1051facfee397e3fb30a
+commit 80d96590c580d4c21ec9af658aa575ff50db234a
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-12
+AuthorDate: 2015-07-28
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-24
+CommitDate: 2015-07-28
 
-    Update doc
+    nghttpx: Update doc
 
-commit 24f83eef7c9aeab977898c5686b6df21c0a4aa9a
+commit e8c83798da08d4aff9f3c6ab05a8bd5c46d83f0e
+Merge: 7152e0f 6ad332b
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-12
+AuthorDate: 2015-07-28
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-24
+CommitDate: 2015-07-28
 
-    Reduce nghttp2_session_get_stream() call before sending frame
+    Merge branch 'memcached'
 
-commit b7c0576eb5fa6c290323d621068eb3d00d8d08cf
+commit 6ad332b80148aa143806eb763044db9d3e8112aa
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-12
+AuthorDate: 2015-07-28
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-24
+CommitDate: 2015-07-28
 
-    Make certain type of HEADERS subject to priority
+    nghttpx: Call disconnect() when memcached connection cannot be made
+
+commit f1b163a32c5bd7c150373ebe4303c2f0c2a79d2b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-28
+
+    nghttpx: Log notice level when TLS ticket key was retrieved from memcached
+
+commit 7a3dff5a65c493d95033266f0a9c5b0a1db831a6
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-28
+
+    Add sample TLS ticket key generator program
+
+commit 4d7be0858530e6fd5d2c28a87fcafa6c3a0a8f60
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-28
+
+    nghttpx: Do some macro dance for IOV_MAX
+
+commit a6fdca730d9b85782cdf50a8468062009c39c3aa
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-28
+
+    nghttpx: Add options to set maximum retry and failure when getting ticket keys
+
+commit 4949dd4888e69621e4c64d50737cd8a9e2e62cd5
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-28
+
+    nghttpx: Add --tls-ticket-key-memcached-interval option
+
+commit 2f2a300e8315f94990b4e888c67ad8fedb3e114f
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-28
+
+    nghttpx: Add TLS ticket key sharing among nghttpx instances using memcached
+
+commit a4a9cfd65093f906f2f1bd4460a8c6f56d4e4f90
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-27
+
+    nghttpx: Change session cache key prefix
+
+commit bb228c27de6932550bc23d00db041725fa6a07e7
+Merge: 72cfdbc 7152e0f
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-27
+
+    Merge branch 'master' into memcached
     
-    We make following HEADERS under priority control:
-    * push response HEADERS
-    * HEADERS submitted by nghttp2_submit_response
+    Conflicts:
+    	src/shrpx_ssl.cc
+
+commit 7152e0f6b88895115ace8a6da9caad457ec515af
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-27
+
+    nghttpx: Fix bug that decrypt only key is not considered
+
+commit 72cfdbc0fa5360e7c2ff959d123e17c7582ac7d8
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-27
+
+    nghttpx: Fix compile error on travis (again)
+
+commit f472e6ff484d03d9cd7f569a22918975af3f2736
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-27
+
+    nghttpx: Fix compile error on travis
+
+commit 1708d2e69e358c4903569091c064af257a779cc1
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-27
+
+    nghttpx: Add doc
+
+commit e3cdfd12eab3a97aba51762fa671a0f70737ce26
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-27
+
+    nghttpx: Use std::array for TicketKey
+
+commit cd25c6846e585ca348f772cd7df68dcb3ef03cea
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-27
+
+    nghttpx: Create struct Address which holds struct sockaddr_union and length
+
+commit efcd43a367c549a8e0bcae06c2dbae83f66a7159
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-27
+
+    nghttpx: Don't enable read timer while connecting to HTTP/1 server
+
+commit 90b4b48c7ee4cb59cfb5a10ba414291be3b259bb
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-26
+
+    nghttpx: Add shared session cache using memcached
+
+commit 9eb234d321cb5014d6e51d79c61662cc69f82adb
+Merge: 3e333f4 fea70ec
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-25
+
+    Merge branch 'nshoemaker-mt'
+
+commit fea70ec832958387c07a2477d6e0df67041b44de
+Merge: 3e333f4 1201350
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-25
+
+    Merge branch 'mt' of https://github.com/nshoemaker/nghttp2 into nshoemaker-mt
+
+commit 3e333f49fed16e8e3628ce8056375fde1bc54bb0
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-25
+
+    Update http-parser
+
+commit 12013508bf784ad89e99b3b1626f3cbf4ba61686
+Author:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+AuthorDate: 2015-07-24
+Commit:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+CommitDate: 2015-07-24
+
+    Running clang-format
+
+commit 871a93e4aa69b074af8270ad3a56691e1c3ebeb0
+Merge: 278247f 85e4151
+Author:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+AuthorDate: 2015-07-24
+Commit:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+CommitDate: 2015-07-24
+
+    Merge branch 'mt_master' into mt
+
+commit 85e4151bcaa32316a0496939dddbc58eaee72986
+Merge: 278247f e2808dc
+Author:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+AuthorDate: 2015-07-24
+Commit:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+CommitDate: 2015-07-24
+
+    manual merge
+
+commit 278247faa9a18353e177f7e1a8512510e7b192a8
+Author:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+AuthorDate: 2015-07-24
+Commit:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+CommitDate: 2015-07-24
+
+    Starting a second earlier
+
+commit e2808dcd96e079ef57d2bb97dc5e2e0d5aa39cc5
+Merge: 6cf772d adec2c0
+Author:     Nora Shoemaker <nora@mindcrafted.com>
+AuthorDate: 2015-07-24
+Commit:     Nora Shoemaker <nora@mindcrafted.com>
+CommitDate: 2015-07-24
+
+    Merge pull request #4 from tatsuhiro-t/master
     
-    Currently, HEADERS submitted by nghttp2_submit_headers is not attached
-    to stream.  This is because it may be used as non-final response
-    header and application may submit final response using
-    nghttp2_submit_response without checking non-final response header
-    transmission.
+    Merging tatsuhiro-t:master -> nshoemaker:master
 
-commit 5a48750e16219fe232c9e36ccc7ba9322eeb540d
+commit adec2c06bf72f44da109219102374bf25a6919e0
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-09
+AuthorDate: 2015-07-24
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-24
+CommitDate: 2015-07-24
 
-    Assign default weight if NGHTTP2_MAX_DEP_TREE_LENGTH is exceeded
+    nghttpx: Set SSL/TLS session timeout to 12 hours
 
-commit ae93f6345c15b52275a510ccc0cb7155fffaed78
+commit 6c8243f6d2e1766a80df6fe72c378dd8a461aa9d
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-08
+AuthorDate: 2015-07-24
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-24
+CommitDate: 2015-07-24
 
-    Allow PRIORITY frame at anytime.
+    nghttpd: Add verbose output when SSL/TLS session is reused
+
+commit afbb99ecf7804413a0ec0347714a04d23de40c0f
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-24
+
+    nghttpx: Enable session resumption on HTTP/2 backend
+
+commit abce7c7210306dae8cfebab17c572b2e8882e6c4
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-24
+
+    nghttpd: Fix the bug that 304 response has non-empty body
+
+commit ec617ae6e5dd34d88fb82eec96a3d08990a3c3f9
+Author:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+AuthorDate: 2015-07-23
+Commit:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+CommitDate: 2015-07-23
+
+    Getting rid of unused fields in config
+
+commit d6786f75cb1d03c0f46039906c4f8178f705cea4
+Author:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+AuthorDate: 2015-07-23
+Commit:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+CommitDate: 2015-07-23
+
+    Getting rid of unused fields in Worker
+
+commit 584f5f37343d6566795d60fe14125e45444e6513
+Author:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+AuthorDate: 2015-07-23
+Commit:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+CommitDate: 2015-07-23
+
+    Do not allow -r > -t
+
+commit a04c67bcd68d5b30e558c9cb35ce634e9a3c130d
+Author:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+AuthorDate: 2015-07-23
+Commit:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+CommitDate: 2015-07-23
+
+    Getting rid of print statements
+
+commit 8325c6ccdf931dfac67ab6cd06793fb00accfb2e
+Author:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+AuthorDate: 2015-07-23
+Commit:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+CommitDate: 2015-07-23
+
+    setting request number correctly:
+
+commit 30235f88090d08bc48a7c5e65b59061f113d69be
+Author:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+AuthorDate: 2015-07-23
+Commit:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+CommitDate: 2015-07-23
+
+    Assigning clients to workers proportional to rate
+
+commit 9b63fc011ea648ab85d832b6cc49c43b02d297e1
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-24
+
+    nghttpx: Open log files by default configuration
+
+commit cab6c7871cbc73be7f31710e3537e812eab1a902
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-23
+
+    nghttpx: Don't rewrite host header field by default
     
-    Allowing PRIORITY frame at anytime so that PRIORITY frame to idle
-    stream can create anchor node in dependency tree.  In this change, we
-    open stream with new NGHTTP2_STREAM_IDLE state, which is linked in
-    session->closed_stream_head and is treated as if it is closed stream.
-    One difference is that if the stream is opened, we remove it from
-    linked list and change the state to the appropriate one.  To O(1)
-    removal from linked list, we change session->closed_stream_head to
-    doubly linked list.
+    In reverse proxy usage, backend server most likely wants to see the
+    original header field.  So this commit turns off host header rewrite
+    by default.  --no-host-rewrite option is deprecated, and if it is
+    used, warning message is displayed.  --host-rewrite option is added to
+    enable host rewrite.
 
-commit 9bba61642644e60d99b8ebe4caafec4d2cd72997
+commit 04bd25d468aee33c03555146cf456505a0cfa9d2
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-24
+AuthorDate: 2015-07-23
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-24
+CommitDate: 2015-07-23
 
-    nghttpx: Add $alpn variable to accesslog formatting
+    nghttpx: Simplify ticket handling between workers just using mutex
+
+commit cd2c751f827bc0a3f76a6cfbb8b65e14bcdbabf1
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-23
+
+    nghttpx: Generate new ticket key every 1hr and its life time is now 12hrs
+
+commit 65df3c63bf6c884ceffa5886ac4605997cded6c3
+Author:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+AuthorDate: 2015-07-22
+Commit:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+CommitDate: 2015-07-22
+
+    Adding new rate and connection allocation to threads
+
+commit aa012f7a58ae535c38ad6de8e359513df3501e93
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-23
+
+    Use PROTOCOL_ERROR against DATA sent to idle stream
+
+commit f6a8c8d0786b112bab8a4200eb54f2923ac6a80c
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-23
+
+    Remove unused variable
+
+commit 7f71fed963e73c88770e29f4aa6419eb91d9148d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-23
+
+    Allow multiple in-flight SETTINGS
+
+commit 44cbc785fcd116c924dd086c7e78dceb6ad86513
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-22
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-22
+
+    nghttpx: Don't reuse backend connection if it is not clean
+
+commit 916e27489f7ea9f4f7fa5d6fe478b276b8575e92
+Author:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+AuthorDate: 2015-07-21
+Commit:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+CommitDate: 2015-07-21
+
+    rate now working
+
+commit 650e463a4971aa591b8844fbd23189ab6a5913df
+Author:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+AuthorDate: 2015-07-21
+Commit:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+CommitDate: 2015-07-21
+
+    First try with something working, still need to clean and test
+
+commit 52152ad96d73c8ec839f8b56010c26e20f6b7ed1
+Author:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+AuthorDate: 2015-07-21
+Commit:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+CommitDate: 2015-07-21
+
+    Can make h2load, but running into recursive loop problem
+
+commit f3288092e8d74204f98c05a672b5dbbcfd4f52d7
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-22
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-22
+
+    Strictly check occurrence of dynamic table size update
     
-    $alpn is a variable which represents ALPN identifier of the protocol
-    which generates the response.
+    RFC 7541 requires that dynamic table size update must occur at the
+    beginning of the first header block, and is signaled as SETTINGS
+    acknowledgement.  This commit checks these conditions.  If dynamic
+    table size update appears other than the beginning of the first header
+    block, it is treated as error.  If SETTINGS ACK is received, and next
+    HEADERS header block does not have dynamic table size update, it is
+    treated as error.
 
-commit 1fe50f272b9f4d5e2aa49d78042e0eb86b677d6e
+commit 18234b8741f568e223d82f871b645772fd32017f
+Merge: 921e393 26b7bee
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-24
+AuthorDate: 2015-07-21
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-24
+CommitDate: 2015-07-21
 
-    nghttpx: Add $pid to --accesslog-format variable
-    
-    $pid refers to the PID of the running process.
+    Merge branch 'alagoutte-misc'
 
-commit 93023acc6c2bae8e7eeaf83989f7efd07508cc8c
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-24
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-24
-
-    nghttpx: Make --accesslog-format usage doc help2man friendly
-    
-    This is unfortunate but help2man behaves badly when there is indented
-    lines in help messages in commnad-line args.  We removed indentations
-    to make help2man happy.
-
-commit daf659c64e787ca9a260843b3f378e5d64e56a93
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-24
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-24
-
-    nghttpx: Note the conversion made in <VAR>
-
-commit de2a855572870552a73025be431a27f400e8ae66
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-23
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-24
-
-    Implement faster formatting for format_iso8601 and format_common_log
-
-commit df401f57a29f2aac0726ac09217180098c1abc9e
-Merge: ebdbe88 6e17865
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-24
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-24
-
-    Merge branch 'LPardue-accesslog_port'
-
-commit 6e178653a5ce3c71bba4133dd1902cba77807f18
-Merge: 9cf1a0c ebdbe88
-Author:     Lucas Pardue <lucas.pardue@bbc.co.uk>
-AuthorDate: 2014-11-23
-Commit:     Lucas Pardue <lucas.pardue@bbc.co.uk>
-CommitDate: 2014-11-23
-
-    fixed conflict
-
-commit 9cf1a0c77c992ae0548a7f12045a2c969d5d6fda
-Author:     Lucas Pardue <lucas.pardue@bbc.co.uk>
-AuthorDate: 2014-11-19
-Commit:     Lucas Pardue <lucas.pardue@bbc.co.uk>
-CommitDate: 2014-11-23
-
-    Add features to logging, client and server port,
-    time_iso8601 and request_time.
-
-commit ebdbe88bc09d0e0713ae1142ba295821c92cdc78
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-23
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-23
-
-    Add contrib/.gitignore
-
-commit 74ec1d33771128396e5f27062d2c3c94fe9cf311
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-23
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-23
-
-    nghttpx: Write accesslog when upstream connection is lost for HTTP/2 and SPDY
-
-commit 1e4f288a7cf08e9d5e6eed294a2e6e2663525e29
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-23
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-23
-
-    nghttpx: Remove misleading logging
-
-commit 6a21a6f14883ded4a5ce3d599a8d3f32003a2dcd
-Merge: ecd143f 661b99e
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-22
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-22
-
-    Merge branch 'alagoutte-http_parser'
-
-commit 661b99ec17f0b7b6edf47b0367686fcd69cc0005
-Merge: ecd143f aa3a6d5
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-22
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-22
-
-    Merge branch 'http_parser' of https://github.com/alagoutte/nghttp2 into alagoutte-http_parser
-
-commit ecd143fcc2f029e30e5bdb65ac3848647ea93e93
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-22
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-22
-
-    nghttpx: Send RST_STREAM with NO_ERROR when closing upgraded connection
-
-commit bd9389b956f1904c2d8b5de15f98d940b31993f4
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-22
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-22
-
-    nghttpx: Refactor http2_data_read_callback
-
-commit 1a09cef0efc3c9ff7e0d9bee57ad120c2710ee45
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-22
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-22
-
-    nghttpx: Avoid 0-length DATA in HTTP/2 upstream
-
-commit aa3a6d5916f5cab35482849cd0d26170ba76d3ef
+commit 26b7bee16fbf50b2466431b20fe282c8a3f30243
 Author:     Alexis La Goutte <alexis.lagoutte@gmail.com>
-AuthorDate: 2014-08-08
+AuthorDate: 2015-07-20
 Commit:     Alexis La Goutte <alexis.lagoutte@gmail.com>
-CommitDate: 2014-11-21
+CommitDate: 2015-07-21
 
-    Update Third Party lib (http-parser)
-
-commit bded1d1115a9a9f29605b1bd9272d6d4775407df
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-22
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-22
-
-    h2load: Support ALPN
-
-commit fa4f03525e78a64308c3963586b6d3b56148ca2a
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-22
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-22
-
-    nghttp: Fix compile error and warning with libc++
-
-commit 4ee89e62fc78a6aff64130a19dca841adeded738
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-21
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-21
-
-    nghttp2_hd: Refactor a bit
-
-commit ee65dea8af3da0e263ab75e7b7574eb6008501da
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-19
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-19
-
-    nghttp: Fix compile error without libjansson
-
-commit 27609327eecffa1541183221cde8c398e2ce316c
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-19
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-19
-
-    nghttpx: Fix heap-after-free crash in https upstream
+    Fix rm: cannot remove ‘*.rst’: No such file or directory when "make clean"
     
-    Add Upstream::on_handler_delete() hook to safely write log for
-    HttpsUpstream.
+    When you don't generated documentation via make html
 
-commit 958cd0de64e9144878d6b76e0630b9e532749916
+commit 921e393dcd2f171a69fbd7e19005021bef078aba
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-19
+AuthorDate: 2015-07-20
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-19
+CommitDate: 2015-07-20
 
-    nghttpx: Add configurable access logging format
+    src: Use <PATH> instead of <FILE> in usage text
+
+commit 0ec1b98f27ccf777182180a3131ab139145fbc90
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-20
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-20
+
+    nghttpx: Reorder config fields
+
+commit a8574fdef232df1ee654688593a6013d734af7b0
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-20
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-20
+
+    nghttpx: Use Use std::string instead of std::unique_ptr<char[]> for tls config
+
+commit dd8ce1e9d2522aa17593666ca4e2dad064cfc71a
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-20
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-20
+
+    nghttpx: Use std::unique_ptr<char[]> instead of raw char pointer
+
+commit ca3444c34cfce8ec16ddc50754058336ada6c503
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-19
+
+    Fix compile error/warnings with gcc-4.7
+
+commit 5c96ecd77d18ae302d62a2d59841c76381b2a536
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-19
+
+    Dump APIDOC removal failure errors to /dev/null
+
+commit fa7a74cfa8c616425244d3aba4d061be9956715f
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-19
+
+    h2load: Use std::string::size instead of strlen
+
+commit b37716ab6af4dc69d483ebd4c81860ac8259481d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-19
+
+    h2load: Workaround with clang-3.4
+
+commit 5dc060c1a2f04cc9c6f183b5822c5da2411909e4
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-19
+
+    src: Use C++11 value-initialization, instead of memset-ing 0
+
+commit 05d5c404e2ce58df4b6be51436a64f7efe39bb90
+Merge: cce64e6 e8167ce
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-19
+
+    Merge branch 'tls-session-ticket-aes256'
+
+commit cce64e67288ee46a12ef45b31063d4dd141130c3
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-19
+
+    h2load: Call second_timeout_cb manually so that we don't waste first 1 second
+
+commit 006ac7b1b0415016d6634a207a6c5b2ea731f67b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-19
+
+    h2load: Fix HTML formatting
+
+commit 5465cdf4a40099f6abfba6ae2b2f379f6f9730cc
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-19
+
+    src: Don't use struct tm.tm_yday from strptime
+
+commit f2a1c8ee60ffd1e67e4287ea0d12a72cc7cd92f2
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-07-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-07-19
+
+    Partially revert a23ab00686108eff07579bb3602bdb66452fe82c
     
-    This commit adds functionality to customize access logging format in
-    nghttpx.  The format variables are inspired by nginx.  The default
-    format is combined format.
+    The workaround introduced in a23ab00686108eff07579bb3602bdb66452fe82c
+    may cause a problem in certain platform (e.g., MacPorts, see GH-303)
 
-commit 1d7601edfb41f04f211399d510497435362de860
+commit a78fcdb7bf3a6cd5018a74776bc32ee013045644
+Merge: ac30153 ad87266
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-18
+AuthorDate: 2015-07-19
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-18
+CommitDate: 2015-07-19
 
-    nghttpx: Better handling EOF from downstream connection to tunnel stream
+    Merge branch 'nshoemaker-h2load_r_C'
 
-commit 8a0fdcfea9ce10be4f4a861ec60caf7d8ceeb766
+commit ad87266a5875ef7af34676d7590492a3c24afc6c
+Merge: ac30153 d326e28
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-17
+AuthorDate: 2015-07-19
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-17
+CommitDate: 2015-07-19
 
-    nghttpd: Fix crash
+    Merge branch 'h2load_r_C' of https://github.com/nshoemaker/nghttp2 into nshoemaker-h2load_r_C
 
-commit 75a1ad8bdb46e3e889da2116ccba5f9af70b44e7
+commit d326e28c9233eed625d903d2e295e0898b179ab1
+Author:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+AuthorDate: 2015-07-17
+Commit:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+CommitDate: 2015-07-17
+
+    running clang-format
+
+commit c1c177addc2226e74744c5dfafae3094bc6e5a40
+Author:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+AuthorDate: 2015-07-17
+Commit:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+CommitDate: 2015-07-17
+
+    Changing warning to mention #reqs rather than test time
+
+commit e8167ceea71595a66a871e4091aeb505c415e0f8
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-16
+AuthorDate: 2015-07-18
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-16
+CommitDate: 2015-07-18
 
-    src: format_iso8601: Fix invalid millisecond formatting
+    nghttpx: Add AES-256-CBC encryption for TLS session ticket
 
-commit 5bac7f0ca6017837d119e0fcec9ffbaa6484ef9d
+commit ac301537ef3784d1f0246b6ddfaedb5f8ce59dca
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-16
+AuthorDate: 2015-07-18
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-16
+CommitDate: 2015-07-18
 
-    python: Fix request is not sent without TLS
+    Bump up version number to 1.1.3-DEV
 
-commit 08fea5705a1f2b4d1f945858a640ceea61765161
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-16
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-16
+commit eeba12144cc7378d0de9647fa6dcd1f6c2ca5d66
+Author:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+AuthorDate: 2015-07-16
+Commit:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+CommitDate: 2015-07-16
 
-    python: Fix bug that settings timer is started when SETTINGS with ACK is sent
+    Refactored seconds setting and worker space reservation
 
-commit 8e5b5d00e1e587dc4e7abbc1c4510ecf307601d8
-Merge: 54232c6 97e8482
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-16
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-16
+commit ce00c50720166054bf21f81396a8c95a034e55f2
+Author:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+AuthorDate: 2015-07-16
+Commit:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+CommitDate: 2015-07-16
 
-    Merge branch 'scoky-master'
+    Changing comparison from double to ssize_t
 
-commit 97e8482348f2d4675b97c40876bf7f27fa7719a8
-Merge: 54232c6 0cc73e2
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-16
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-16
+commit 7d2ea42c38ae6f2b3fe9ac99204dfe9960ad13c4
+Author:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+AuthorDate: 2015-07-16
+Commit:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+CommitDate: 2015-07-16
 
-    Merge branch 'master' of https://github.com/scoky/nghttp2 into scoky-master
+    Fixing spelling mistake in num-conns description
 
-commit 0cc73e279e6fe0842411d176ef7112c775d1c782
-Author:     Kyle Schomp <kgs7@case.edu>
-AuthorDate: 2014-11-12
-Commit:     Kyle Schomp <kgs7@case.edu>
-CommitDate: 2014-11-15
+commit e0d7ce439de76c65847346ddb2c1f49ec65fc87e
+Author:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+AuthorDate: 2015-07-16
+Commit:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+CommitDate: 2015-07-16
 
-    Pull of the client Python bindings
+    Fixing style for Config field initializer list
 
-commit 54232c654292ae0ee7f1759527b4249ac3fa4749
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-15
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-15
+commit ccfe7f8548e4201181e37b92773fa4886ef4bd15
+Author:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+AuthorDate: 2015-07-16
+Commit:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+CommitDate: 2015-07-16
 
-    nghttp: Add --no-dep option to disable sending priority hints to server
+    Reordering Config field initializer list
 
-commit ee2856f9bc9b512c7ebee871ddedf946742b3c1f
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-15
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-15
+commit 6cf772da6a63450d0a9f811bbd48b93fd01776db
+Merge: 1940413 1ce3a00
+Author:     Nora Shoemaker <nora@mindcrafted.com>
+AuthorDate: 2015-07-15
+Commit:     Nora Shoemaker <nora@mindcrafted.com>
+CommitDate: 2015-07-15
 
-    nghttp: Update doc
+    Merge pull request #2 from tatsuhiro-t/master
+    
+    pulling changes from master
 
-commit 737cea0b386b47df6aeee9296ce58618e4ac9300
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-15
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-15
+commit 5892385e5c222f24911e0e4e32f07de534f5ab22
+Author:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+AuthorDate: 2015-07-15
+Commit:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+CommitDate: 2015-07-15
 
-    nghttp: Add -r, --har option to output HTTP transactions in HAR format
+    [EDGE-879] run clang-format and make sure style is good
 
-commit a8eeea0b182824802a05113c7a8506db5e80ba44
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-15
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-15
+commit d6551de8d44f788972a73bdca0a776d9b0f46f3c
+Author:     Nora Shoemaker <noras@greatestlatest.corp.gq1.yahoo.com>
+AuthorDate: 2015-07-14
+Commit:     Nora Shoemaker <noras@greatestlatest.corp.gq1.yahoo.com>
+CommitDate: 2015-07-14
 
-    Initialize frame header for upgrade SETTINGS frame
+    [EDGE-877] [h2load] apply changes to new version of h2load
 
-commit a2bc88f6dba506f1d3ae5eff5326c0f23176a8c5
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-14
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-14
+commit 6b53f7ee197f748843b594d4e5abeaab89a5ad86
+Author:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+AuthorDate: 2015-07-14
+Commit:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+CommitDate: 2015-07-14
 
-    nghttpx: Check max length of ALPN field
+    [EDGE-879] run clang-format and make sure style is good
 
-commit 5ce8ae79f0ea615da220e04f90b9c0f1d3d1a71d
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-14
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-14
+commit 2482dd7f774bd6bce4e34a4ffbb1715dbfa46a52
+Author:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+AuthorDate: 2015-07-13
+Commit:     Nora Shoemaker <noras@bottleopen-lm.corp.yahoo.com>
+CommitDate: 2015-07-13
 
-    nghttpx: Disable spdy/3 and spdy/2 by default
-
-commit d98e9a63d02db2592991a942656b232235488b6a
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-14
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-14
-
-    src: Refactor code around ALPN setup
-
-commit 8e30adbca07588d2a1c96d857ab383640fe6b62f
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-10
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-10
-
-    asio: Add http2::backlog API function
-
-commit 9adfd08848df396e3349d0322498e06944229824
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-10
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-10
-
-    asio_http2_handler: Use util::utos instead of std::to_string
-
-commit 2e3419ccbbbb22927b8a622a8156651aae4e6d70
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-10
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-10
-
-    nghttpd: Cache formatted date string
-
-commit 5b6b6dc1b7fafd4843b1d1a4d4349443b04a26f0
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-10
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-10
-
-    src: Rewrite http_date
-
-commit d0271a90b54a8580e288de02d5fd4934e31ae2a7
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-10
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-10
-
-    nghttpd: Use util::utos instead of slow util::to_str
-
-commit 20ffe2b2a085d5b36bd61c4836b939ba911b7ed9
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-10
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-10
-
-    tiny-nghttpd: Fix memory leak
-
-commit 94c80e2507eaa813dd08a2cf0bb33e1a37b0b28f
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-11-08
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-11-08
-
-    Bump up version number to 0.6.7-DEV
+    Adding -r and -C options to h2load

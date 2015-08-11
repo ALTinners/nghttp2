@@ -258,19 +258,35 @@ try:
 except ImportError:
     asyncio = None
 
+# body generator flags
+DATA_OK = 0
+DATA_EOF = 1
+DATA_DEFERRED = 2
+
+class _ByteIOWrapper:
+
+    def __init__(self, b):
+        self.b = b
+
+    def generate(self, n):
+        data = self.b.read1(n)
+        if not data:
+            return None, DATA_EOF
+        return data, DATA_OK
+
 def wrap_body(body):
     if body is None:
         return body
     elif isinstance(body, str):
-        return io.BytesIO(body.encode('utf-8'))
+        return _ByteIOWrapper(io.BytesIO(body.encode('utf-8'))).generate
     elif isinstance(body, bytes):
-        return io.BytesIO(body)
+        return _ByteIOWrapper(io.BytesIO(body)).generate
     elif isinstance(body, io.IOBase):
-        return body
+        return _ByteIOWrapper(body).generate
     else:
-        raise Exception(('body must be None or instance of str or '
-                            'bytes or io.IOBase'))
-
+        # assume that callable in the form f(n) returning tuple byte
+        # string and flag.
+        return body
 
 cdef _get_stream_user_data(cnghttp2.nghttp2_session *session,
                            int32_t stream_id):
@@ -322,8 +338,6 @@ cdef int client_on_header(cnghttp2.nghttp2_session *session,
     logging.debug('client_on_header, type:%s, stream_id:%s', frame.hd.type, frame.hd.stream_id)
 
     if frame.hd.type == cnghttp2.NGHTTP2_HEADERS:
-        if frame.headers.cat == cnghttp2.NGHTTP2_HCAT_REQUEST:
-            return 0
         handler = _get_stream_user_data(session, frame.hd.stream_id)
     elif frame.hd.type == cnghttp2.NGHTTP2_PUSH_PROMISE:
         handler = _get_stream_user_data(session, frame.push_promise.promised_stream_id)
@@ -400,12 +414,6 @@ cdef int server_on_frame_recv(cnghttp2.nghttp2_session *session,
             handler = _get_stream_user_data(session, frame.hd.stream_id)
             if not handler:
                 return 0
-            # Check required header fields. We expect that :authority
-            # or host header field.
-            if handler.scheme is None or handler.method is None or\
-               handler.host is None or handler.path is None:
-                return http2._rst_stream(frame.hd.stream_id,
-                                         cnghttp2.NGHTTP2_PROTOCOL_ERROR)
             if handler.cookies:
                 handler.headers.append((b'cookie',
                                         b'; '.join(handler.cookies)))
@@ -496,29 +504,39 @@ cdef int on_stream_close(cnghttp2.nghttp2_session *session,
 
     return 0
 
-cdef ssize_t server_data_source_read(cnghttp2.nghttp2_session *session,
-                                     int32_t stream_id,
-                                     uint8_t *buf, size_t length,
-                                     uint32_t *data_flags,
-                                     cnghttp2.nghttp2_data_source *source,
-                                     void *user_data):
-    cdef http2 = <_HTTP2SessionCore>user_data
-    handler = <object>source.ptr
+cdef ssize_t data_source_read(cnghttp2.nghttp2_session *session,
+                              int32_t stream_id,
+                              uint8_t *buf, size_t length,
+                              uint32_t *data_flags,
+                              cnghttp2.nghttp2_data_source *source,
+                              void *user_data):
+    cdef http2 = <_HTTP2SessionCoreBase>user_data
+    generator = <object>source.ptr
 
+    http2.enter_callback()
     try:
-        data = handler.response_body.read(length)
+        data, flag = generator(length)
     except:
         sys.stderr.write(traceback.format_exc())
         return cnghttp2.NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
+    finally:
+        http2.leave_callback()
+
+    if flag == DATA_DEFERRED:
+        return cnghttp2.NGHTTP2_ERR_DEFERRED
 
     if data:
         nread = len(data)
         memcpy(buf, <uint8_t*>data, nread)
-        return nread
+    else:
+        nread = 0
 
-    data_flags[0] = cnghttp2.NGHTTP2_DATA_FLAG_EOF
+    if flag == DATA_EOF:
+        data_flags[0] = cnghttp2.NGHTTP2_DATA_FLAG_EOF
+    elif flag != DATA_OK:
+        return cnghttp2.NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE
 
-    return 0
+    return nread
 
 cdef int client_on_begin_headers(cnghttp2.nghttp2_session *session,
                                  const cnghttp2.nghttp2_frame *frame,
@@ -551,15 +569,12 @@ cdef int client_on_frame_recv(cnghttp2.nghttp2_session *session,
                 sys.stderr.write(traceback.format_exc())
                 return http2._rst_stream(frame.hd.stream_id)
     elif frame.hd.type == cnghttp2.NGHTTP2_HEADERS:
-        if frame.headers.cat == cnghttp2.NGHTTP2_HCAT_RESPONSE:
+        if frame.headers.cat == cnghttp2.NGHTTP2_HCAT_RESPONSE or frame.headers.cat == cnghttp2.NGHTTP2_HCAT_PUSH_RESPONSE:
             handler = _get_stream_user_data(session, frame.hd.stream_id)
 
             if not handler:
                 return 0
-            # Check required header fields. We expect a status.
-            if handler.status is None:
-                return http2._rst_stream(frame.hd.stream_id,
-                                         cnghttp2.NGHTTP2_PROTOCOL_ERROR)
+            # TODO handle 1xx non-final response
             if handler.cookies:
                 handler.headers.append((b'cookie',
                                         b'; '.join(handler.cookies)))
@@ -587,10 +602,6 @@ cdef int client_on_frame_recv(cnghttp2.nghttp2_session *session,
         cnghttp2.nghttp2_session_set_stream_user_data(session, frame.push_promise.promised_stream_id,
                                                       <void*>NULL)
 
-        if push_handler.scheme is None or push_handler.method is None or\
-           push_handler.host is None or push_handler.path is None:
-            return http2._rst_stream(frame.push_promise.promised_stream_id,
-                                     cnghttp2.NGHTTP2_PROTOCOL_ERROR)
         try:
             handler.on_push_promise(push_handler)
         except:
@@ -610,36 +621,13 @@ cdef int client_on_frame_send(cnghttp2.nghttp2_session *session,
             return 0
         http2._start_settings_timer()
 
-cdef ssize_t client_data_source_read(cnghttp2.nghttp2_session *session,
-                                     int32_t stream_id,
-                                     uint8_t *buf, size_t length,
-                                     uint32_t *data_flags,
-                                     cnghttp2.nghttp2_data_source *source,
-                                     void *user_data):
-    cdef http2 = <_HTTP2ClientSessionCore>user_data
-    body = <object>source.ptr
-
-    try:
-        data = body.read(length)
-    except:
-        sys.stderr.write(traceback.format_exc())
-        return cnghttp2.NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
-
-    if data:
-        nread = len(data)
-        memcpy(buf, <uint8_t*>data, nread)
-        return nread
-
-    data_flags[0] = cnghttp2.NGHTTP2_DATA_FLAG_EOF
-
-    return 0
-
 cdef class _HTTP2SessionCoreBase:
     cdef cnghttp2.nghttp2_session *session
     cdef transport
     cdef handler_class
     cdef handlers
     cdef settings_timer
+    cdef inside_callback
 
     def __cinit__(self, transport, handler_class=None):
         self.session = NULL
@@ -647,6 +635,7 @@ cdef class _HTTP2SessionCoreBase:
         self.handler_class = handler_class
         self.handlers = set()
         self.settings_timer = None
+        self.inside_callback = False
 
     def __dealloc__(self):
         cnghttp2.nghttp2_session_del(self.session)
@@ -683,6 +672,17 @@ cdef class _HTTP2SessionCoreBase:
            cnghttp2.nghttp2_session_want_write(self.session) == 0:
             self.transport.close()
 
+    def resume(self, stream_id):
+        cnghttp2.nghttp2_session_resume_data(self.session, stream_id)
+        if not self.inside_callback:
+            self.send_data()
+
+    def enter_callback(self):
+        self.inside_callback = True
+
+    def leave_callback(self):
+        self.inside_callback = False
+
     def _make_handler(self, stream_id):
         logging.debug('_make_handler, stream_id:%s', stream_id)
         handler = self.handler_class(self, stream_id)
@@ -698,6 +698,7 @@ cdef class _HTTP2SessionCoreBase:
         handler.stream_id = stream_id
         handler.http2 = self
         handler.remote_address = self._get_remote_address()
+        handler.client_certificate = self._get_client_certificate()
         self.handlers.add(handler)
 
     def _rst_stream(self, stream_id,
@@ -712,6 +713,13 @@ cdef class _HTTP2SessionCoreBase:
 
     def _get_remote_address(self):
         return self.transport.get_extra_info('peername')
+
+    def _get_client_certificate(self):
+        sock = self.transport.get_extra_info('socket')
+        try:
+            return sock.getpeercert()
+        except AttributeError:
+            return None
 
     def _start_settings_timer(self):
         loop = asyncio.get_event_loop()
@@ -830,8 +838,8 @@ cdef class _HTTP2SessionCore(_HTTP2SessionCoreBase):
         nvlen = _make_nva(&nva, handler.response_headers)
 
         if handler.response_body:
-            prd.source.ptr = <void*>handler
-            prd.read_callback = server_data_source_read
+            prd.source.ptr = <void*>handler.response_body
+            prd.read_callback = data_source_read
             prd_ptr = &prd
         else:
             prd_ptr = NULL
@@ -874,6 +882,11 @@ cdef class _HTTP2SessionCore(_HTTP2SessionCoreBase):
         logging.debug('push, stream_id:%s', promised_stream_id)
 
         return promised_handler
+
+    def connection_lost(self):
+        for handler in self.handlers:
+            handler.on_close(cnghttp2.NGHTTP2_INTERNAL_ERROR)
+        self.handlers = set()
 
 cdef class _HTTP2ClientSessionCore(_HTTP2SessionCoreBase):
     def __cinit__(self, *args, **kwargs):
@@ -934,21 +947,21 @@ cdef class _HTTP2ClientSessionCore(_HTTP2SessionCoreBase):
 
         body = wrap_body(body)
 
-        if headers is None:
-            headers = []
-
-        headers = _encode_headers(headers)
-        headers.append((b':scheme', scheme.encode('utf-8')))
-        headers.append((b':method', method.encode('utf-8')))
-        headers.append((b':authority', host.encode('utf-8')))
-        headers.append((b':path', path.encode('utf-8')))
+        custom_headers = _encode_headers(headers)
+        headers = [
+            (b':method', method.encode('utf-8')),
+            (b':scheme', scheme.encode('utf-8')),
+            (b':authority', host.encode('utf-8')),
+            (b':path', path.encode('utf-8'))
+        ]
+        headers.extend(custom_headers)
 
         nva = NULL
         nvlen = _make_nva(&nva, headers)
 
         if body:
             prd.source.ptr = <void*>body
-            prd.read_callback = client_data_source_read
+            prd.read_callback = data_source_read
             prd_ptr = &prd
         else:
             prd_ptr = NULL
@@ -983,7 +996,6 @@ cdef class _HTTP2ClientSessionCore(_HTTP2SessionCoreBase):
             handler.method = push_promise.method
             handler.host = push_promise.host
             handler.path = push_promise.path
-            handler.headers = push_promise.headers
             handler.cookies = push_promise.cookies
             handler.stream_id = push_promise.stream_id
             handler.http2 = self
@@ -1031,6 +1043,9 @@ if asyncio:
           Contains a tuple of the form (host, port) referring to the client's
           address.
 
+        client_certificate
+          May contain the client certifcate in its non-binary form
+
         stream_id
           Stream ID of this stream
 
@@ -1046,6 +1061,9 @@ if asyncio:
         path
           This is a value of :path header field.
 
+        headers
+          Request header fields
+
         """
 
         def __init__(self, http2, stream_id):
@@ -1056,6 +1074,8 @@ if asyncio:
             self.http2 = http2
             # address of the client
             self.remote_address = self.http2._get_remote_address()
+            # certificate of the client
+            self._client_certificate = self.http2._get_client_certificate()
             # :scheme header field in request
             self.scheme = None
             # :method header field in request
@@ -1072,6 +1092,10 @@ if asyncio:
         @property
         def client_address(self):
             return self.remote_address
+
+        @property
+        def client_certificate(self):
+            return self._client_certificate
 
         def on_headers(self):
 
@@ -1108,8 +1132,26 @@ if asyncio:
             additional response headers. The :status header field is
             appended by the library. The body is the response body. It
             could be None if response body is empty. Or it must be
-            instance of either str, bytes or io.IOBase. If instance of str
-            is specified, it is encoded using UTF-8.
+            instance of either str, bytes, io.IOBase or callable,
+            called body generator, which takes one parameter,
+            size. The body generator generates response body. It can
+            pause generation of response so that it can wait for slow
+            backend data generation. When invoked, it should return
+            tuple, byte string and flag. The flag is either DATA_OK,
+            DATA_EOF and DATA_DEFERRED. For non-empty byte string and
+            it is not the last chunk of response, DATA_OK is returned
+            as flag.  If this is the last chunk of the response (byte
+            string is possibly None), DATA_EOF must be returned as
+            flag.  If there is no data available right now, but
+            additional data are anticipated, return tuple (None,
+            DATA_DEFERRD).  When data arrived, call resume() and
+            restart response body transmission.
+
+            Only the body generator can pause response body
+            generation; instance of io.IOBase must not block.
+
+            If instance of str is specified as body, it is encoded
+            using UTF-8.
 
             The headers is a list of tuple of the form (name,
             value). The name and value can be either unicode string or
@@ -1142,11 +1184,9 @@ if asyncio:
             request_headers parameter).
 
             The status is HTTP status code. The headers is additional
-            response headers. The :status header field is appended by the
-            library. The body is the response body. It could be None if
-            response body is empty. Or it must be instance of either str,
-            bytes or io.IOBase. If instance of str is specified, it is
-            encoded using UTF-8.
+            response headers. The :status header field is appended by
+            the library. The body is the response body. It has the
+            same semantics of body parameter of send_response().
 
             The headers and request_headers are a list of tuple of the
             form (name, value). The name and value can be either
@@ -1174,16 +1214,15 @@ if asyncio:
             promised_handler.path = path.encode('utf-8')
             promised_handler._set_response_prop(status, headers, body)
 
-            if request_headers is None:
-                request_headers = []
+            headers = [
+                (b':method', promised_handler.method),
+                (b':scheme', promised_handler.scheme),
+                (b':authority', promised_handler.host),
+                (b':path', promised_handler.path)
+            ]
+            headers.extend(_encode_headers(request_headers))
 
-            request_headers = _encode_headers(request_headers)
-            request_headers.append((b':scheme', promised_handler.scheme))
-            request_headers.append((b':method', promised_handler.method))
-            request_headers.append((b':authority', promised_handler.host))
-            request_headers.append((b':path', promised_handler.path))
-
-            promised_handler.headers = request_headers
+            promised_handler.headers = headers
 
             return self.http2.push(self, promised_handler)
 
@@ -1193,13 +1232,17 @@ if asyncio:
             if headers is None:
                 headers = []
 
-            self.response_headers = _encode_headers(headers)
-            self.response_headers.append((b':status', str(status)\
-                                          .encode('utf-8')))
+            self.response_headers = [(b':status', str(status).encode('utf-8'))]
+            self.response_headers.extend(_encode_headers(headers))
 
             self.response_body = body
 
+        def resume(self):
+            self.http2.resume(self.stream_id)
+
     def _encode_headers(headers):
+        if not headers:
+            return []
         return [(k if isinstance(k, bytes) else k.encode('utf-8'),
                  v if isinstance(v, bytes) else v.encode('utf-8')) \
                 for k, v in headers]
@@ -1216,45 +1259,36 @@ if asyncio:
             logging.info('connection_made, address:%s, port:%s', address[0], address[1])
 
             self.transport = transport
-            self.connection_header = cnghttp2.NGHTTP2_CLIENT_CONNECTION_PREFACE
             sock = self.transport.get_extra_info('socket')
-            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            try:
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            except OSError as e:
+                logging.info('failed to set tcp-nodelay: %s', str(e))
             ssl_ctx = self.transport.get_extra_info('sslcontext')
             if ssl_ctx:
                 protocol = sock.selected_npn_protocol()
                 logging.info('npn, protocol:%s', protocol)
-                if protocol.encode('utf-8') != \
+                if protocol is None or protocol.encode('utf-8') != \
                    cnghttp2.NGHTTP2_PROTO_VERSION_ID:
                     self.transport.abort()
+                    return
+            try:
+                self.http2 = _HTTP2SessionCore\
+                             (self.transport,
+                              self.RequestHandlerClass)
+            except Exception as err:
+                sys.stderr.write(traceback.format_exc())
+                self.transport.abort()
+                return
+
 
         def connection_lost(self, exc):
             logging.info('connection_lost')
             if self.http2:
+                self.http2.connection_lost()
                 self.http2 = None
 
         def data_received(self, data):
-            nread = min(len(data), len(self.connection_header))
-
-            if self.connection_header.startswith(data[:nread]):
-                data = data[nread:]
-                self.connection_header = self.connection_header[nread:]
-                if len(self.connection_header) == 0:
-                    try:
-                        self.http2 = _HTTP2SessionCore\
-                                     (self.transport,
-                                      self.RequestHandlerClass)
-                    except Exception as err:
-                        sys.stderr.write(traceback.format_exc())
-                        self.transport.abort()
-                        return
-
-                    self.data_received = self.data_received2
-                    self.resume_writing = self.resume_writing2
-                    self.data_received(data)
-            else:
-                self.transport.abort()
-
-        def data_received2(self, data):
             try:
                 self.http2.data_received(data)
             except Exception as err:
@@ -1262,7 +1296,7 @@ if asyncio:
                 self.transport.close()
                 return
 
-        def resume_writing2(self):
+        def resume_writing(self):
             try:
                 self.http2.send_data()
             except Exception as err:
@@ -1329,7 +1363,8 @@ if asyncio:
 
         When whole response is received, on_response_done() is invoked.
 
-        When stream is closed, on_close(error_code) is called.
+        When stream is closed or underlying connection is lost,
+        on_close(error_code) is called.
 
         The application can send follow up requests using HTTP2Client.send_request() method.
 
@@ -1355,6 +1390,11 @@ if asyncio:
 
         path
           This is a value of :path header field.
+
+        headers
+          Response header fields.  There is a special exception.  If this
+          object is passed to push_promise(), this instance variable contains
+          pushed request header fields.
 
         """
 
@@ -1438,6 +1478,9 @@ if asyncio:
             '''
             self.http2.push(push_promise, handler)
 
+        def resume(self):
+            self.http2.resume(self.stream_id)
+
     class _HTTP2ClientSession(asyncio.Protocol):
 
         def __init__(self, client):
@@ -1461,8 +1504,6 @@ if asyncio:
                    cnghttp2.NGHTTP2_PROTO_VERSION_ID:
                     self.transport.abort()
 
-            # Send preamble
-            self.transport.write(cnghttp2.NGHTTP2_CLIENT_CONNECTION_PREFACE)
             self.http2 = _HTTP2ClientSessionCore(self.transport)
 
 	    # Clear pending requests

@@ -36,7 +36,8 @@ install-exec-local:
 	$(PYTHON) setup.py install --prefix=$(DESTDIR)$(prefix)
 
 uninstall-local:
-	rm -rf $(DESTDIR)$(libdir)/python*/site-packages/*nghttp2*
+	rm -f $(DESTDIR)$(libdir)/python*/site-packages/nghttp2.so
+	rm -f $(DESTDIR)$(libdir)/python*/site-packages/python_nghttp2-*.egg
 
 clean-local:
 	$(PYTHON) setup.py clean --all

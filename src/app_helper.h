@@ -27,9 +27,11 @@
 
 #include "nghttp2_config.h"
 
-#include <stdint.h>
+#include <cinttypes>
 #include <cstdlib>
+#ifdef HAVE_SYS_TIME_H
 #include <sys/time.h>
+#endif // HAVE_SYS_TIME_H
 #include <poll.h>
 
 #include <map>
@@ -49,8 +51,7 @@ int verbose_on_frame_recv_callback(nghttp2_session *session,
 
 int verbose_on_invalid_frame_recv_callback(nghttp2_session *session,
                                            const nghttp2_frame *frame,
-                                           uint32_t error_code,
-                                           void *user_data);
+                                           int lib_error_code, void *user_data);
 
 int verbose_on_frame_send_callback(nghttp2_session *session,
                                    const nghttp2_frame *frame, void *user_data);

@@ -21,7 +21,7 @@ SSL/TLS, the frontend also supports SPDY protocol.
 By default, this mode's frontend connection is encrypted using
 SSL/TLS.  So server's private key and certificate must be supplied to
 the command line (or through configuration file).  In this case, the
-fontend protocol selection will is done via ALPN or NPN.
+frontend protocol selection will be done via ALPN or NPN.
 
 With ``--frontend-no-tls`` option, user can turn off SSL/TLS in
 frontend connection.  In this case, SPDY protocol is not available
@@ -52,15 +52,15 @@ like forward proxy and assumes the backend is HTTP/1 proxy server
 (e.g., squid, traffic server).  So HTTP/1 request must include
 absolute URI in request line.
 
-By default, frontend connection is encrypted, this mode is also called
-secure proxy.  If nghttpx is linked with spdylay, it supports SPDY
-protocols and it works as so called SPDY proxy.
+By default, frontend connection is encrypted.  So this mode is also
+called secure proxy.  If nghttpx is linked with spdylay, it supports
+SPDY protocols and it works as so called SPDY proxy.
 
 With ``--frontend-no-tls`` option, SSL/TLS is turned off in frontend
 connection, so the connection gets insecure.
 
-The backend must be HTTP/1 proxy server.  nghttpx only supports 1
-backend server address.  It translates incoming requests to HTTP/1
+The backend must be HTTP/1 proxy server.  nghttpx supports multiple
+backend server addresses.  It translates incoming requests to HTTP/1
 request to backend server.  The backend server performs real proxy
 work for each request, for example, dispatching requests to the origin
 server and caching contents.
@@ -87,7 +87,7 @@ proxy, user has to create proxy.pac script file like this:
 
 ``SERVERADDR`` and ``PORT`` is the hostname/address and port of the
 machine nghttpx is running.  Please note that both Firefox nightly and
-Chromium requires valid certificate for secure proxy.
+Chromium require valid certificate for secure proxy.
 
 For Firefox nightly, open Preference window and select Advanced then
 click Network tab.  Clicking Connection Settings button will show the
@@ -100,9 +100,9 @@ For Chromium, use following command-line::
 
     $ google-chrome --proxy-pac-url=file:///path/to/proxy.pac --use-npn
 
-Squid may work as out-of-box.  Traffic server requires to be
-configured as forward proxy.  Here is the minimum configuration items
-to edit::
+As HTTP/1 proxy server, Squid may work as out-of-box.  Traffic server
+requires to be configured as forward proxy.  Here is the minimum
+configuration items to edit::
 
     CONFIG proxy.config.reverse_proxy.enabled INT 0
     CONFIG proxy.config.url_remap.remap_required INT 0
@@ -124,7 +124,9 @@ HTTP/1 frontend connection can be upgraded to HTTP/2 using HTTP
 Upgrade.  To disable SSL/TLS in backend connection, use
 ``--backend-no-tls`` option.
 
-The backend connection is created one per worker (thread).
+By default, the number of backend HTTP/2 connections per worker
+(thread) is determined by number of ``-b`` option.  To adjust this
+value, use ``--backend-http2-connections-per-worker`` option.
 
 The backend server is supporsed to be a HTTP/2 web server (e.g.,
 nghttpd).  The one use-case of this mode is utilize existing HTTP/1
@@ -156,7 +158,9 @@ HTTP/1 frontend connection can be upgraded to HTTP/2 using HTTP
 Upgrade.  To disable SSL/TLS in backend connection, use
 ``--backend-no-tls`` option.
 
-The backend connection is created one per worker (thread).
+By default, the number of backend HTTP/2 connections per worker
+(thread) is determined by number of ``-b`` option.  To adjust this
+value, use ``--backend-http2-connections-per-worker`` option.
 
 The backend server must be a HTTP/2 proxy.  You can use nghttpx in
 `HTTP/2 proxy mode`_ as backend server.  The one use-case of this mode
@@ -196,10 +200,14 @@ With ``--frontend-no-tls`` option, SSL/TLS is turned off in frontend
 connection, so the connection gets insecure.  To disable SSL/TLS in
 backend connection, use ``--backend-no-tls`` option.
 
+By default, the number of backend HTTP/2 connections per worker
+(thread) is determined by number of ``-b`` option.  To adjust this
+value, use ``--backend-http2-connections-per-worker`` option.
+
 The backend server is supporsed to be a HTTP/2 web server or HTTP/2
 proxy.  If backend server is HTTP/2 proxy, use
-``--no-location-rewrite`` option to disable rewriting location header
-field.
+``--no-location-rewrite`` and ``--no-host-rewrite`` options to disable
+rewriting location, host and :authority header field.
 
 The use-case of this mode is aggregate the incoming connections to one
 HTTP/2 connection.  One backend HTTP/2 connection is created per
@@ -235,12 +243,12 @@ Read/write rate limit
 ---------------------
 
 nghttpx supports transfer rate limiting on frontend connections.  You
-can do rate limit per worker (thread) for reading and writeing
+can do rate limit per frontend connection for reading and writing
 individually.
 
-To rate limit per worker (thread), use ``--worker-read-rate`` and
-``--worker-read-burst`` options.  For writing, use
-``--worker-write-rate`` and ``--worker-write-burst``.
+To perform rate limit for reading, use ``--read-rate`` and
+``--read-burst`` options.  For writing, use ``--write-rate`` and
+``--write-burst``.
 
 Please note that rate limit is performed on top of TCP and nothing to
 do with HTTP/2 flow control.
@@ -263,10 +271,10 @@ precedence.  If the above conditions are not met with the host value
 in :authority header field, rewrite is retried with the value in host
 header field.
 
-Hot deploy
-----------
+Hot swapping
+------------
 
-nghttpx supports hot deploy feature using signals.  The hot deploy in
+nghttpx supports hot swapping using signals.  The hot swapping in
 nghttpx is multi step process.  First send USR2 signal to nghttpx
 process.  It will do fork and execute new executable, using same
 command-line arguments and environment variables.  At this point, both
@@ -284,3 +292,12 @@ log rotation daemon renamed existing log files.  To tell nghttpx to
 re-open log files, send USR1 signal to nghttpx process.  It will
 re-open files specified by ``--accesslog-file`` and
 ``--errorlog-file`` options.
+
+Multiple backend addresses
+--------------------------
+
+nghttpx supports multiple backend addresses.  To specify them, just
+use ``-b`` option repeatedly.  For example, to use backend1:8080 and
+backend2:8080, use command-line like this: ``-bbackend1,8080
+-bbackend2,8080``.  For HTTP/2 backend, see also
+``--backend-http2-connections-per-worker`` option.

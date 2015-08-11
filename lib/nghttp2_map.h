@@ -31,6 +31,7 @@
 
 #include <nghttp2/nghttp2.h>
 #include "nghttp2_int.h"
+#include "nghttp2_mem.h"
 
 /* Implementation of unordered map */
 
@@ -39,10 +40,15 @@ typedef uint32_t key_type;
 typedef struct nghttp2_map_entry {
   struct nghttp2_map_entry *next;
   key_type key;
+#if SIZEOF_INT_P == 4
+  /* we requires 8 bytes aligment */
+  int64_t pad;
+#endif
 } nghttp2_map_entry;
 
 typedef struct {
   nghttp2_map_entry **table;
+  nghttp2_mem *mem;
   size_t tablelen;
   size_t size;
 } nghttp2_map;
@@ -56,7 +62,7 @@ typedef struct {
  * NGHTTP2_ERR_NOMEM
  *   Out of memory
  */
-int nghttp2_map_init(nghttp2_map *map);
+int nghttp2_map_init(nghttp2_map *map, nghttp2_mem *mem);
 
 /*
  * Deallocates any resources allocated for |map|. The stored entries

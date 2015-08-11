@@ -32,6 +32,7 @@
 #include <nghttp2/nghttp2.h>
 
 #include "nghttp2_int.h"
+#include "nghttp2_mem.h"
 
 typedef struct {
   /* This points to the beginning of the buffer. The effective range
@@ -86,12 +87,12 @@ void nghttp2_buf_init(nghttp2_buf *buf);
  * NGHTTP2_ERR_NOMEM
  *     Out of memory
  */
-int nghttp2_buf_init2(nghttp2_buf *buf, size_t initial);
+int nghttp2_buf_init2(nghttp2_buf *buf, size_t initial, nghttp2_mem *mem);
 
 /*
  * Frees buffer in |buf|.
  */
-void nghttp2_buf_free(nghttp2_buf *buf);
+void nghttp2_buf_free(nghttp2_buf *buf, nghttp2_mem *mem);
 
 /*
  * Extends buffer so that nghttp2_buf_cap() returns at least
@@ -104,7 +105,7 @@ void nghttp2_buf_free(nghttp2_buf *buf);
  * NGHTTP2_ERR_NOMEM
  *     Out of memory
  */
-int nghttp2_buf_reserve(nghttp2_buf *buf, size_t new_cap);
+int nghttp2_buf_reserve(nghttp2_buf *buf, size_t new_cap, nghttp2_mem *mem);
 
 /*
  * Resets pos, last, mark member of |buf| to buf->begin.
@@ -135,6 +136,8 @@ typedef struct {
   nghttp2_buf_chain *head;
   /* Buffer pointer where write occurs. */
   nghttp2_buf_chain *cur;
+  /* Memory allocator */
+  nghttp2_mem *mem;
   /* The buffer capacity of each buf */
   size_t chunk_length;
   /* The maximum number of nghttp2_buf_chain */
@@ -153,15 +156,15 @@ typedef struct {
  * This is the same as calling nghttp2_bufs_init2 with the given
  * arguments and offset = 0.
  */
-int nghttp2_bufs_init(nghttp2_bufs *bufs, size_t chunk_length,
-                      size_t max_chunk);
+int nghttp2_bufs_init(nghttp2_bufs *bufs, size_t chunk_length, size_t max_chunk,
+                      nghttp2_mem *mem);
 
 /*
  * This is the same as calling nghttp2_bufs_init3 with the given
  * arguments and chunk_keep = max_chunk.
  */
 int nghttp2_bufs_init2(nghttp2_bufs *bufs, size_t chunk_length,
-                       size_t max_chunk, size_t offset);
+                       size_t max_chunk, size_t offset, nghttp2_mem *mem);
 
 /*
  * Initializes |bufs|. Each buffer size is given in the
@@ -183,7 +186,8 @@ int nghttp2_bufs_init2(nghttp2_bufs *bufs, size_t chunk_length,
  *     long.
  */
 int nghttp2_bufs_init3(nghttp2_bufs *bufs, size_t chunk_length,
-                       size_t max_chunk, size_t chunk_keep, size_t offset);
+                       size_t max_chunk, size_t chunk_keep, size_t offset,
+                       nghttp2_mem *mem);
 
 /*
  * Frees any related resources to the |bufs|.
@@ -203,7 +207,8 @@ void nghttp2_bufs_free(nghttp2_bufs *bufs);
  * NGHTTP2_ERR_NOMEM
  *     Out of memory.
  */
-int nghttp2_bufs_wrap_init(nghttp2_bufs *bufs, uint8_t *begin, size_t len);
+int nghttp2_bufs_wrap_init(nghttp2_bufs *bufs, uint8_t *begin, size_t len,
+                           nghttp2_mem *mem);
 
 /*
  * Frees any related resource to the |bufs|.  This function does not
@@ -308,9 +313,8 @@ int nghttp2_bufs_orb_hold(nghttp2_bufs *bufs, uint8_t b);
  * function allocates the contagious memory to store all data in
  * |bufs| and assigns it to |*out|.
  *
- * On successful return, nghttp2_bufs_len(bufs) returns 0, just like
- * after calling nghttp2_bufs_reset().
-
+ * The contents of |bufs| is left unchanged.
+ *
  * This function returns the length of copied data and assigns the
  * pointer to copied data to |*out| if it succeeds, or one of the
  * following negative error codes:
@@ -319,6 +323,17 @@ int nghttp2_bufs_orb_hold(nghttp2_bufs *bufs, uint8_t b);
  *     Out of memory
  */
 ssize_t nghttp2_bufs_remove(nghttp2_bufs *bufs, uint8_t **out);
+
+/*
+ * Copies all data stored in |bufs| to |out|.  This function assumes
+ * that the buffer space pointed by |out| has at least
+ * nghttp2_bufs(bufs) bytes.
+ *
+ * The contents of |bufs| is left unchanged.
+ *
+ * This function returns the length of copied data.
+ */
+size_t nghttp2_bufs_remove_copy(nghttp2_bufs *bufs, uint8_t *out);
 
 /*
  * Resets |bufs| and makes the buffers empty.

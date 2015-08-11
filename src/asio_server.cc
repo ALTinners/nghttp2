@@ -36,126 +36,129 @@
 
 #include "asio_server.h"
 
-#include <boost/date_time/posix_time/posix_time.hpp>
+#include "asio_server_connection.h"
+#include "util.h"
 
 namespace nghttp2 {
 namespace asio_http2 {
 namespace server {
 
-server::server(const std::string &address, uint16_t port,
-               std::size_t io_service_pool_size, std::size_t thread_pool_size,
-               request_cb cb,
-               std::unique_ptr<boost::asio::ssl::context> ssl_ctx, int backlog)
-    : io_service_pool_(io_service_pool_size, thread_pool_size),
-      signals_(io_service_pool_.get_io_service()),
-      tick_timer_(io_service_pool_.get_io_service(),
-                  boost::posix_time::seconds(1)),
-      ssl_ctx_(std::move(ssl_ctx)), request_cb_(std::move(cb)) {
-  // Register to handle the signals that indicate when the server should exit.
-  // It is safe to register for the same signal multiple times in a program,
-  // provided all registration for the specified signal is made through Asio.
-  signals_.add(SIGINT);
-  signals_.add(SIGTERM);
-#if defined(SIGQUIT)
-  signals_.add(SIGQUIT);
-#endif // defined(SIGQUIT)
-  signals_.async_wait([this](const boost::system::error_code &error,
-                             int signal_number) { io_service_pool_.stop(); });
+server::server(std::size_t io_service_pool_size)
+    : io_service_pool_(io_service_pool_size) {}
 
-  // Open the acceptor with the option to reuse the address (i.e. SO_REUSEADDR).
-  boost::asio::ip::tcp::resolver resolver(io_service_pool_.get_io_service());
-  boost::asio::ip::tcp::resolver::query query(address, std::to_string(port));
+boost::system::error_code
+server::listen_and_serve(boost::system::error_code &ec,
+                         boost::asio::ssl::context *tls_context,
+                         const std::string &address, const std::string &port,
+                         int backlog, serve_mux &mux, bool asynchronous) {
+  ec.clear();
 
-  for (auto itr = resolver.resolve(query);
-       itr != boost::asio::ip::tcp::resolver::iterator(); ++itr) {
-    boost::asio::ip::tcp::endpoint endpoint = *itr;
-    auto acceptor =
-        boost::asio::ip::tcp::acceptor(io_service_pool_.get_io_service());
+  if (bind_and_listen(ec, address, port, backlog)) {
+    return ec;
+  }
 
-    acceptor.open(endpoint.protocol());
-    acceptor.set_option(boost::asio::ip::tcp::acceptor::reuse_address(true));
-    acceptor.bind(endpoint);
-    if (backlog == -1) {
-      acceptor.listen();
+  for (auto &acceptor : acceptors_) {
+    if (tls_context) {
+      start_accept(*tls_context, acceptor, mux);
     } else {
-      acceptor.listen(backlog);
+      start_accept(acceptor, mux);
     }
+  }
+
+  io_service_pool_.run(asynchronous);
+
+  return ec;
+}
+
+boost::system::error_code server::bind_and_listen(boost::system::error_code &ec,
+                                                  const std::string &address,
+                                                  const std::string &port,
+                                                  int backlog) {
+  // Open the acceptor with the option to reuse the address (i.e.
+  // SO_REUSEADDR).
+  tcp::resolver resolver(io_service_pool_.get_io_service());
+  tcp::resolver::query query(address, port);
+  auto it = resolver.resolve(query, ec);
+  if (ec) {
+    return ec;
+  }
+
+  for (; it != tcp::resolver::iterator(); ++it) {
+    tcp::endpoint endpoint = *it;
+    auto acceptor = tcp::acceptor(io_service_pool_.get_io_service());
+
+    if (acceptor.open(endpoint.protocol(), ec)) {
+      continue;
+    }
+
+    acceptor.set_option(tcp::acceptor::reuse_address(true));
+
+    if (acceptor.bind(endpoint, ec)) {
+      continue;
+    }
+
+    if (acceptor.listen(
+            backlog == -1 ? boost::asio::socket_base::max_connections : backlog,
+            ec)) {
+      continue;
+    }
+
     acceptors_.push_back(std::move(acceptor));
   }
 
-  start_accept();
+  if (acceptors_.empty()) {
+    return ec;
+  }
 
-  start_timer();
+  // ec could have some errors since we may have failed to bind some
+  // interfaces.
+  ec.clear();
+
+  return ec;
 }
 
-void server::run() { io_service_pool_.run(); }
+void server::start_accept(boost::asio::ssl::context &tls_context,
+                          tcp::acceptor &acceptor, serve_mux &mux) {
+  auto new_connection = std::make_shared<connection<ssl_socket>>(
+      mux, io_service_pool_.get_io_service(), tls_context);
 
-std::shared_ptr<std::string> cached_date;
+  acceptor.async_accept(new_connection->socket().lowest_layer(),
+                        [this, &tls_context, &acceptor, &mux, new_connection](
+                            const boost::system::error_code &e) {
+    if (!e) {
+      new_connection->socket().lowest_layer().set_option(tcp::no_delay(true));
+      new_connection->socket().async_handshake(
+          boost::asio::ssl::stream_base::server,
+          [new_connection](const boost::system::error_code &e) {
+            if (!e) {
+              new_connection->start();
+            }
+          });
+    }
 
-namespace {
-void update_date() {
-  cached_date = std::make_shared<std::string>(util::http_date(time(nullptr)));
-}
-} // namespace
-
-void server::start_timer() {
-  update_date();
-
-  tick_timer_.async_wait([this](const boost::system::error_code &e) {
-    tick_timer_.expires_at(tick_timer_.expires_at() +
-                           boost::posix_time::seconds(1));
-    start_timer();
+    start_accept(tls_context, acceptor, mux);
   });
 }
 
-typedef boost::asio::ssl::stream<boost::asio::ip::tcp::socket> ssl_socket;
+void server::start_accept(tcp::acceptor &acceptor, serve_mux &mux) {
+  auto new_connection = std::make_shared<connection<tcp::socket>>(
+      mux, io_service_pool_.get_io_service());
 
-void server::start_accept() {
-  if (ssl_ctx_) {
-    auto new_connection = std::make_shared<connection<ssl_socket>>(
-        request_cb_, io_service_pool_.get_task_io_service(),
-        io_service_pool_.get_io_service(), *ssl_ctx_);
-
-    for (auto &acceptor : acceptors_) {
-      acceptor.async_accept(
-          new_connection->socket().lowest_layer(),
-          [this, new_connection](const boost::system::error_code &e) {
-            if (!e) {
-              new_connection->socket().lowest_layer().set_option(
-                  boost::asio::ip::tcp::no_delay(true));
-              new_connection->socket().async_handshake(
-                  boost::asio::ssl::stream_base::server,
-                  [new_connection](const boost::system::error_code &e) {
-                    if (!e) {
-                      new_connection->start();
-                    }
-                  });
-            }
-
-            start_accept();
-          });
+  acceptor.async_accept(new_connection->socket(),
+                        [this, &acceptor, &mux, new_connection](
+                            const boost::system::error_code &e) {
+    if (!e) {
+      new_connection->socket().set_option(tcp::no_delay(true));
+      new_connection->start();
     }
-  } else {
-    auto new_connection =
-        std::make_shared<connection<boost::asio::ip::tcp::socket>>(
-            request_cb_, io_service_pool_.get_task_io_service(),
-            io_service_pool_.get_io_service());
 
-    for (auto &acceptor : acceptors_) {
-      acceptor.async_accept(
-          new_connection->socket(),
-          [this, new_connection](const boost::system::error_code &e) {
-            if (!e) {
-              new_connection->socket().set_option(
-                  boost::asio::ip::tcp::no_delay(true));
-              new_connection->start();
-            }
-
-            start_accept();
-          });
-    }
-  }
+    start_accept(acceptor, mux);
+  });
 }
+
+void server::stop() { io_service_pool_.stop(); }
+
+void server::join() { io_service_pool_.join(); }
 
 } // namespace server
 } // namespace asio_http2

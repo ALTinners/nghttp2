@@ -25,8 +25,17 @@
 #include "nghttp2_outbound_item.h"
 
 #include <assert.h>
+#include <string.h>
 
-void nghttp2_outbound_item_free(nghttp2_outbound_item *item) {
+void nghttp2_outbound_item_init(nghttp2_outbound_item *item) {
+  item->cycle = 0;
+  item->qnext = NULL;
+  item->queued = 0;
+
+  memset(&item->aux_data, 0, sizeof(nghttp2_aux_data));
+}
+
+void nghttp2_outbound_item_free(nghttp2_outbound_item *item, nghttp2_mem *mem) {
   nghttp2_frame *frame;
 
   if (item == NULL) {
@@ -40,7 +49,7 @@ void nghttp2_outbound_item_free(nghttp2_outbound_item *item) {
     nghttp2_frame_data_free(&frame->data);
     break;
   case NGHTTP2_HEADERS:
-    nghttp2_frame_headers_free(&frame->headers);
+    nghttp2_frame_headers_free(&frame->headers, mem);
     break;
   case NGHTTP2_PRIORITY:
     nghttp2_frame_priority_free(&frame->priority);
@@ -49,23 +58,48 @@ void nghttp2_outbound_item_free(nghttp2_outbound_item *item) {
     nghttp2_frame_rst_stream_free(&frame->rst_stream);
     break;
   case NGHTTP2_SETTINGS:
-    nghttp2_frame_settings_free(&frame->settings);
+    nghttp2_frame_settings_free(&frame->settings, mem);
     break;
   case NGHTTP2_PUSH_PROMISE:
-    nghttp2_frame_push_promise_free(&frame->push_promise);
+    nghttp2_frame_push_promise_free(&frame->push_promise, mem);
     break;
   case NGHTTP2_PING:
     nghttp2_frame_ping_free(&frame->ping);
     break;
   case NGHTTP2_GOAWAY:
-    nghttp2_frame_goaway_free(&frame->goaway);
+    nghttp2_frame_goaway_free(&frame->goaway, mem);
     break;
   case NGHTTP2_WINDOW_UPDATE:
     nghttp2_frame_window_update_free(&frame->window_update);
     break;
-  case NGHTTP2_EXT_ALTSVC:
-    nghttp2_frame_altsvc_free(&frame->ext);
-    free(frame->ext.payload);
-    break;
   }
+}
+
+void nghttp2_outbound_queue_init(nghttp2_outbound_queue *q) {
+  q->head = q->tail = NULL;
+  q->n = 0;
+}
+
+void nghttp2_outbound_queue_push(nghttp2_outbound_queue *q,
+                                 nghttp2_outbound_item *item) {
+  if (q->tail) {
+    q->tail = q->tail->qnext = item;
+  } else {
+    q->head = q->tail = item;
+  }
+  ++q->n;
+}
+
+void nghttp2_outbound_queue_pop(nghttp2_outbound_queue *q) {
+  nghttp2_outbound_item *item;
+  if (!q->head) {
+    return;
+  }
+  item = q->head;
+  q->head = q->head->qnext;
+  item->qnext = NULL;
+  if (!q->head) {
+    q->tail = NULL;
+  }
+  --q->n;
 }

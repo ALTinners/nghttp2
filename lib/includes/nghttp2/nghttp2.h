@@ -25,15 +25,40 @@
 #ifndef NGHTTP2_H
 #define NGHTTP2_H
 
+/* Define WIN32 when build target is Win32 API (borrowed from
+   libcurl) */
+#if (defined(_WIN32) || defined(__WIN32__)) && !defined(WIN32)
+#define WIN32
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #include <stdlib.h>
+#if defined(_MSC_VER) && (_MSC_VER < 1800)
+/* MSVC < 2013 does not have inttypes.h because it is not C99
+   compliant.  See compiler macros and version number in
+   https://sourceforge.net/p/predef/wiki/Compilers/ */
 #include <stdint.h>
+#else /* !defined(_MSC_VER) || (_MSC_VER >= 1800) */
+#include <inttypes.h>
+#endif /* !defined(_MSC_VER) || (_MSC_VER >= 1800) */
 #include <sys/types.h>
 
 #include <nghttp2/nghttp2ver.h>
+
+#ifdef NGHTTP2_STATICLIB
+#define NGHTTP2_EXTERN
+#elif defined(WIN32)
+#ifdef BUILDING_NGHTTP2
+#define NGHTTP2_EXTERN __declspec(dllexport)
+#else /* !BUILDING_NGHTTP2 */
+#define NGHTTP2_EXTERN __declspec(dllimport)
+#endif /* !BUILDING_NGHTTP2 */
+#else  /* !defined(WIN32) */
+#define NGHTTP2_EXTERN
+#endif /* !defined(WIN32) */
 
 /**
  * @macro
@@ -41,13 +66,31 @@ extern "C" {
  * The protocol version identification string of this library
  * supports.  This identifier is used if HTTP/2 is used over TLS.
  */
-#define NGHTTP2_PROTO_VERSION_ID "h2-14"
+#define NGHTTP2_PROTO_VERSION_ID "h2"
 /**
  * @macro
  *
  * The length of :macro:`NGHTTP2_PROTO_VERSION_ID`.
  */
-#define NGHTTP2_PROTO_VERSION_ID_LEN 5
+#define NGHTTP2_PROTO_VERSION_ID_LEN 2
+
+/**
+ * @macro
+ *
+ * The seriazlied form of ALPN protocol identifier this library
+ * supports.  Notice that first byte is the length of following
+ * protocol identifier.  This is the same wire format of `TLS ALPN
+ * extension <https://tools.ietf.org/html/rfc7301>`_.  This is useful
+ * to process incoming ALPN tokens in wire format.
+ */
+#define NGHTTP2_PROTO_ALPN "\x2h2"
+
+/**
+ * @macro
+ *
+ * The length of :macro:`NGHTTP2_PROTO_ALPN`.
+ */
+#define NGHTTP2_PROTO_ALPN_LEN (sizeof(NGHTTP2_PROTO_ALPN) - 1)
 
 /**
  * @macro
@@ -56,14 +99,14 @@ extern "C" {
  * supports.  This identifier is used if HTTP/2 is used over cleartext
  * TCP.
  */
-#define NGHTTP2_CLEARTEXT_PROTO_VERSION_ID "h2c-14"
+#define NGHTTP2_CLEARTEXT_PROTO_VERSION_ID "h2c"
 
 /**
  * @macro
  *
  * The length of :macro:`NGHTTP2_CLEARTEXT_PROTO_VERSION_ID`.
  */
-#define NGHTTP2_CLEARTEXT_PROTO_VERSION_ID_LEN 6
+#define NGHTTP2_CLEARTEXT_PROTO_VERSION_ID_LEN 3
 
 struct nghttp2_session;
 /**
@@ -162,32 +205,17 @@ typedef struct {
 /**
  * @macro
  *
- * The client connection preface.
+ * The client magic string, which is the first 24 bytes byte string of
+ * client connection preface.
  */
-#define NGHTTP2_CLIENT_CONNECTION_PREFACE "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
+#define NGHTTP2_CLIENT_MAGIC "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
 
 /**
  * @macro
  *
- * The length of :macro:`NGHTTP2_CLIENT_CONNECTION_PREFACE`.
+ * The length of :macro:`NGHTTP2_CLIENT_MAGIC`.
  */
-#define NGHTTP2_CLIENT_CONNECTION_PREFACE_LEN 24
-
-/**
- * @macro
- *
- * The client connection header.  This macro is obsoleted by
- * NGHTTP2_CLIENT_CONNECTION_PREFACE.
- */
-#define NGHTTP2_CLIENT_CONNECTION_HEADER NGHTTP2_CLIENT_CONNECTION_PREFACE
-
-/**
- * @macro
- *
- * The length of :macro:`NGHTTP2_CLIENT_CONNECTION_HEADER`.
- */
-#define NGHTTP2_CLIENT_CONNECTION_HEADER_LEN                                   \
-  NGHTTP2_CLIENT_CONNECTION_PREFACE_LEN
+#define NGHTTP2_CLIENT_MAGIC_LEN 24
 
 /**
  * @enum
@@ -201,7 +229,7 @@ typedef enum {
    */
   NGHTTP2_ERR_INVALID_ARGUMENT = -501,
   /**
-   * Ouf of buffer space.
+   * Out of buffer space.
    */
   NGHTTP2_ERR_BUFFER_ERROR = -502,
   /**
@@ -209,8 +237,9 @@ typedef enum {
    */
   NGHTTP2_ERR_UNSUPPORTED_VERSION = -503,
   /**
-   * Used as a return value from :type:`nghttp2_send_callback` and
-   * :type:`nghttp2_recv_callback` to indicate that the operation
+   * Used as a return value from :type:`nghttp2_send_callback`,
+   * :type:`nghttp2_recv_callback` and
+   * :type:`nghttp2_send_data_callback` to indicate that the operation
    * would block.
    */
   NGHTTP2_ERR_WOULDBLOCK = -504,
@@ -321,10 +350,34 @@ typedef enum {
    */
   NGHTTP2_ERR_PUSH_DISABLED = -528,
   /**
-   * DATA frame for a given stream has been already submitted and has
-   * not been fully processed yet.
+   * DATA or HEADERS frame for a given stream has been already
+   * submitted and has not been fully processed yet.  Application
+   * should wait for the transmission of the previously submitted
+   * frame before submitting another.
    */
   NGHTTP2_ERR_DATA_EXIST = -529,
+  /**
+   * The current session is closing due to a connection error or
+   * `nghttp2_session_terminate_session()` is called.
+   */
+  NGHTTP2_ERR_SESSION_CLOSING = -530,
+  /**
+   * Invalid HTTP header field was received and stream is going to be
+   * closed.
+   */
+  NGHTTP2_ERR_HTTP_HEADER = -531,
+  /**
+   * Violation in HTTP messaging rule.
+   */
+  NGHTTP2_ERR_HTTP_MESSAGING = -532,
+  /**
+   * Stream was refused.
+   */
+  NGHTTP2_ERR_REFUSED_STREAM = -533,
+  /**
+   * Unexpected internal error, but recovered.
+   */
+  NGHTTP2_ERR_INTERNAL = -534,
   /**
    * The errors < :enum:`NGHTTP2_ERR_FATAL` mean that the library is
    * under unexpected condition and processing was terminated (e.g.,
@@ -343,10 +396,10 @@ typedef enum {
    */
   NGHTTP2_ERR_CALLBACK_FAILURE = -902,
   /**
-   * Invalid connection preface was received and further processing is
-   * not possible.
+   * Invalid client magic (see :macro:`NGHTTP2_CLIENT_MAGIC`) was
+   * received and further processing is not possible.
    */
-  NGHTTP2_ERR_BAD_PREFACE = -903
+  NGHTTP2_ERR_BAD_CLIENT_MAGIC = -903
 } nghttp2_error;
 
 /**
@@ -360,7 +413,9 @@ typedef enum {
    */
   NGHTTP2_NV_FLAG_NONE = 0,
   /**
-   * Indicates that this name/value pair must not be indexed.
+   * Indicates that this name/value pair must not be indexed ("Literal
+   * Header Field never Indexed" representation must be used in HPACK
+   * encoding).  Other implementation calls this bit as "sensitive".
    */
   NGHTTP2_NV_FLAG_NO_INDEX = 0x01
 } nghttp2_nv_flag;
@@ -372,21 +427,27 @@ typedef enum {
  */
 typedef struct {
   /**
-   * The |name| byte string, which is not necessarily ``NULL``
-   * terminated.
+   * The |name| byte string.  If this struct is presented from library
+   * (e.g., :type:`nghttp2_on_frame_recv_callback`), |name| is
+   * guaranteed to be NULL-terminated.  When application is
+   * constructing this struct, |name| is not required to be
+   * NULL-terminated.
    */
   uint8_t *name;
   /**
-   * The |value| byte string, which is not necessarily ``NULL``
-   * terminated.
+   * The |value| byte string.  If this struct is presented from
+   * library (e.g., :type:`nghttp2_on_frame_recv_callback`), |value|
+   * is guaranteed to be NULL-terminated.  When application is
+   * constructing this struct, |value| is not required to be
+   * NULL-terminated.
    */
   uint8_t *value;
   /**
-   * The length of the |name|.
+   * The length of the |name|, excluding terminating NULL.
    */
   size_t namelen;
   /**
-   * The length of the |value|.
+   * The length of the |value|, excluding terminating NULL.
    */
   size_t valuelen;
   /**
@@ -438,25 +499,12 @@ typedef enum {
    */
   NGHTTP2_WINDOW_UPDATE = 0x08,
   /**
-   * The CONTINUATION frame.
+   * The CONTINUATION frame.  This frame type won't be passed to any
+   * callbacks because the library processes this frame type and its
+   * preceding HEADERS/PUSH_PROMISE as a single frame.
    */
   NGHTTP2_CONTINUATION = 0x09
 } nghttp2_frame_type;
-
-/**
- * @enum
- *
- * The extension frame types.
- *
- * TODO: The assigned frame types were carried from draft-12, and now
- * actually TBD.
- */
-typedef enum {
-  /**
-   * The ALTSVC extension frame.
-   */
-  NGHTTP2_EXT_ALTSVC = 0x0a
-} nghttp2_ext_frame_type;
 
 /**
  * @enum
@@ -652,7 +700,19 @@ typedef enum {
   /**
    * Indicates EOF was sensed.
    */
-  NGHTTP2_DATA_FLAG_EOF = 0x01
+  NGHTTP2_DATA_FLAG_EOF = 0x01,
+  /**
+   * Indicates that END_STREAM flag must not be set even if
+   * NGHTTP2_DATA_FLAG_EOF is set.  Usually this flag is used to send
+   * trailer header fields with `nghttp2_submit_request()` or
+   * `nghttp2_submit_response()`.
+   */
+  NGHTTP2_DATA_FLAG_NO_END_STREAM = 0x02,
+  /**
+   * Indicates that application will send complete DATA frame in
+   * :type:`nghttp2_send_data_callback`.
+   */
+  NGHTTP2_DATA_FLAG_NO_COPY = 0x04
 } nghttp2_data_flag;
 
 /**
@@ -664,6 +724,30 @@ typedef enum {
  * bytes of data from |source| (or possibly other places) and store
  * them in |buf| and return number of data stored in |buf|.  If EOF is
  * reached, set :enum:`NGHTTP2_DATA_FLAG_EOF` flag in |*data_flags|.
+ *
+ * Sometime it is desirable to avoid copying data into |buf| and let
+ * application to send data directly.  To achieve this, set
+ * :enum:`NGHTTP2_DATA_FLAG_NO_COPY` to |*data_flags| (and possibly
+ * other flags, just like when we do copy), and return the number of
+ * bytes to send without copying data into |buf|.  The library, seeing
+ * :enum:`NGHTTP2_DATA_FLAG_NO_COPY`, will invoke
+ * :type:`nghttp2_send_data_callback`.  The application must send
+ * complete DATA frame in that callback.
+ *
+ * If this callback is set by `nghttp2_submit_request()`,
+ * `nghttp2_submit_response()` or `nghttp2_submit_headers()` and
+ * `nghttp2_submit_data()` with flag parameter
+ * :enum:`NGHTTP2_FLAG_END_STREAM` set, and
+ * :enum:`NGHTTP2_DATA_FLAG_EOF` flag is set to |*data_flags|, DATA
+ * frame will have END_STREAM flag set.  Usually, this is expected
+ * behaviour and all are fine.  One exception is send trailer header
+ * fields.  You cannot send trailers after sending frame with
+ * END_STREAM set.  To avoid this problem, one can set
+ * :enum:`NGHTTP2_DATA_FLAG_NO_END_STREAM` along with
+ * :enum:`NGHTTP2_DATA_FLAG_EOF` to signal the library not to set
+ * END_STREAM in DATA frame.  Then application can use
+ * `nghttp2_submit_trailer()` to send trailers.
+ * `nghttp2_submit_trailer()` can be called inside this callback.
  *
  * If the application wants to postpone DATA frames (e.g.,
  * asynchronous I/O, or reading data blocks for long time), it is
@@ -990,51 +1074,11 @@ typedef struct {
    * The pointer to extension payload.  The exact pointer type is
    * determined by hd.type.
    *
-   * If hd.type == :enum:`NGHTTP2_EXT_ALTSVC`, it is a pointer to
-   * :type:`nghttp2_ext_altsvc`.
+   * Currently, no extension is supported.  This is a place holder for
+   * the future extensions.
    */
   void *payload;
 } nghttp2_extension;
-
-/**
- * @struct
- *
- * The ALTSVC extension frame payload.  It has following members:
- */
-typedef struct {
-  /**
-   * Protocol ID
-   */
-  uint8_t *protocol_id;
-  /**
-   * Host
-   */
-  uint8_t *host;
-  /**
-   * Origin
-   */
-  uint8_t *origin;
-  /**
-   * The length of |protocol_id|
-   */
-  size_t protocol_id_len;
-  /**
-   * The length of |host|
-   */
-  size_t host_len;
-  /**
-   * The length of |origin|
-   */
-  size_t origin_len;
-  /**
-   * Max-Age
-   */
-  uint32_t max_age;
-  /**
-   * Port
-   */
-  uint16_t port;
-} nghttp2_ext_altsvc;
 
 /**
  * @union
@@ -1110,10 +1154,60 @@ typedef union {
  *
  * To set this callback to :type:`nghttp2_session_callbacks`, use
  * `nghttp2_session_callbacks_set_send_callback()`.
+ *
+ * .. note::
+ *
+ *   The |length| may be very small.  If that is the case, and
+ *   application disables Nagle algorithm (``TCP_NODELAY``), then just
+ *   writing |data| to the network stack leads to very small packet,
+ *   and it is very inefficient.  An application should be responsible
+ *   to buffer up small chunks of data as necessary to avoid this
+ *   situation.
  */
 typedef ssize_t (*nghttp2_send_callback)(nghttp2_session *session,
                                          const uint8_t *data, size_t length,
                                          int flags, void *user_data);
+
+/**
+ * @functypedef
+ *
+ * Callback function invoked when :enum:`NGHTTP2_DATA_FLAG_NO_COPY` is
+ * used in :type:`nghttp2_data_source_read_callback` to send complete
+ * DATA frame.
+ *
+ * The |frame| is a DATA frame to send.  The |framehd| is the
+ * serialized frame header (9 bytes). The |length| is the length of
+ * application data to send (this does not include padding).  The
+ * |source| is the same pointer passed to
+ * :type:`nghttp2_data_source_read_callback`.
+ *
+ * The application first must send frame header |framehd| of length 9
+ * bytes.  If ``frame->padlen > 0``, send 1 byte of value
+ * ``frame->padlen - 1``.  Then send exactly |length| bytes of
+ * application data.  Finally, if ``frame->padlen > 0``, send
+ * ``frame->padlen - 1`` bytes of zero (they are padding).
+ *
+ * The application has to send complete DATA frame in this callback.
+ * If all data were written successfully, return 0.
+ *
+ * If it cannot send it all, just return
+ * :enum:`NGHTTP2_ERR_WOULDBLOCK`; the library will call this callback
+ * with the same parameters later (It is recommended to send complete
+ * DATA frame at once in this function to deal with error; if partial
+ * frame data has already sent, it is impossible to send another data
+ * in that state, and all we can do is tear down connection).  If
+ * application decided to reset this stream, return
+ * :enum:`NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE`, then the library
+ * will send RST_STREAM with INTERNAL_ERROR as error code.  The
+ * application can also return :enum:`NGHTTP2_ERR_CALLBACK_FAILURE`,
+ * which will result in connection closure.  Returning any other value
+ * is treated as :enum:`NGHTTP2_ERR_CALLBACK_FAILURE` is returned.
+ */
+typedef int (*nghttp2_send_data_callback)(nghttp2_session *session,
+                                          nghttp2_frame *frame,
+                                          const uint8_t *framehd, size_t length,
+                                          nghttp2_data_source *source,
+                                          void *user_data);
 
 /**
  * @functypedef
@@ -1146,10 +1240,10 @@ typedef ssize_t (*nghttp2_recv_callback)(nghttp2_session *session, uint8_t *buf,
 /**
  * @functypedef
  *
- * Callback function invoked by `nghttp2_session_recv()` when a frame
- * is received.  The |user_data| pointer is the third argument passed
- * in to the call to `nghttp2_session_client_new()` or
- * `nghttp2_session_server_new()`.
+ * Callback function invoked by `nghttp2_session_recv()` and
+ * `nghttp2_session_mem_recv()` when a frame is received.  The
+ * |user_data| pointer is the third argument passed in to the call to
+ * `nghttp2_session_client_new()` or `nghttp2_session_server_new()`.
  *
  * If frame is HEADERS or PUSH_PROMISE, the ``nva`` and ``nvlen``
  * member of their data structure are always ``NULL`` and 0
@@ -1184,14 +1278,14 @@ typedef int (*nghttp2_on_frame_recv_callback)(nghttp2_session *session,
 /**
  * @functypedef
  *
- * Callback function invoked by `nghttp2_session_recv()` when an
- * invalid non-DATA frame is received.  The |error_code| indicates the
- * error.  It is usually one of the :enum:`nghttp2_error_code` but
- * that is not guaranteed.  When this callback function is invoked,
- * the library automatically submits either RST_STREAM or GOAWAY
- * frame.  The |user_data| pointer is the third argument passed in to
- * the call to `nghttp2_session_client_new()` or
- * `nghttp2_session_server_new()`.
+ * Callback function invoked by `nghttp2_session_recv()` and
+ * `nghttp2_session_mem_recv()` when an invalid non-DATA frame is
+ * received.  The error is indicated by the |lib_error_code|, which is
+ * one of the values defined in :type:`nghttp2_error`.  When this
+ * callback function is invoked, the library automatically submits
+ * either RST_STREAM or GOAWAY frame.  The |user_data| pointer is the
+ * third argument passed in to the call to
+ * `nghttp2_session_client_new()` or `nghttp2_session_server_new()`.
  *
  * If frame is HEADERS or PUSH_PROMISE, the ``nva`` and ``nvlen``
  * member of their data structure are always ``NULL`` and 0
@@ -1199,14 +1293,14 @@ typedef int (*nghttp2_on_frame_recv_callback)(nghttp2_session *session,
  *
  * The implementation of this function must return 0 if it succeeds.
  * If nonzero is returned, it is treated as fatal error and
- * `nghttp2_session_recv()` and `nghttp2_session_send()` functions
+ * `nghttp2_session_recv()` and `nghttp2_session_mem_recv()` functions
  * immediately return :enum:`NGHTTP2_ERR_CALLBACK_FAILURE`.
  *
  * To set this callback to :type:`nghttp2_session_callbacks`, use
  * `nghttp2_session_callbacks_set_on_invalid_frame_recv_callback()`.
  */
 typedef int (*nghttp2_on_invalid_frame_recv_callback)(
-    nghttp2_session *session, const nghttp2_frame *frame, uint32_t error_code,
+    nghttp2_session *session, const nghttp2_frame *frame, int lib_error_code,
     void *user_data);
 
 /**
@@ -1232,7 +1326,7 @@ typedef int (*nghttp2_on_invalid_frame_recv_callback)(
  * region included in the input bytes.
  *
  * The implementation of this function must return 0 if it succeeds.
- * If nonzero is returned, it is treated as fatal error and
+ * If nonzero is returned, it is treated as fatal error, and
  * `nghttp2_session_recv()` and `nghttp2_session_mem_recv()` functions
  * immediately return :enum:`NGHTTP2_ERR_CALLBACK_FAILURE`.
  *
@@ -1255,7 +1349,7 @@ typedef int (*nghttp2_on_data_chunk_recv_callback)(nghttp2_session *session,
  *
  * The implementation of this function must return 0 if it succeeds.
  * If nonzero is returned, it is treated as fatal error and
- * `nghttp2_session_recv()` and `nghttp2_session_send()` functions
+ * `nghttp2_session_send()` and `nghttp2_session_mem_send()` functions
  * immediately return :enum:`NGHTTP2_ERR_CALLBACK_FAILURE`.
  *
  * To set this callback to :type:`nghttp2_session_callbacks`, use
@@ -1274,7 +1368,7 @@ typedef int (*nghttp2_before_frame_send_callback)(nghttp2_session *session,
  *
  * The implementation of this function must return 0 if it succeeds.
  * If nonzero is returned, it is treated as fatal error and
- * `nghttp2_session_recv()` and `nghttp2_session_send()` functions
+ * `nghttp2_session_send()` and `nghttp2_session_mem_send()` functions
  * immediately return :enum:`NGHTTP2_ERR_CALLBACK_FAILURE`.
  *
  * To set this callback to :type:`nghttp2_session_callbacks`, use
@@ -1296,8 +1390,11 @@ typedef int (*nghttp2_on_frame_send_callback)(nghttp2_session *session,
  *
  * The implementation of this function must return 0 if it succeeds.
  * If nonzero is returned, it is treated as fatal error and
- * `nghttp2_session_recv()` and `nghttp2_session_send()` functions
+ * `nghttp2_session_send()` and `nghttp2_session_mem_send()` functions
  * immediately return :enum:`NGHTTP2_ERR_CALLBACK_FAILURE`.
+ *
+ * `nghttp2_session_get_stream_user_data()` can be used to get
+ * associated data.
  *
  * To set this callback to :type:`nghttp2_session_callbacks`, use
  * `nghttp2_session_callbacks_set_on_frame_not_send_callback()`.
@@ -1323,8 +1420,9 @@ typedef int (*nghttp2_on_frame_not_send_callback)(nghttp2_session *session,
  *
  * The implementation of this function must return 0 if it succeeds.
  * If nonzero is returned, it is treated as fatal error and
- * `nghttp2_session_recv()` and `nghttp2_session_send()` functions
- * immediately return :enum:`NGHTTP2_ERR_CALLBACK_FAILURE`.
+ * `nghttp2_session_recv()`, `nghttp2_session_mem_recv()`,
+ * `nghttp2_session_send()`, and `nghttp2_session_mem_send()`
+ * functions immediately return :enum:`NGHTTP2_ERR_CALLBACK_FAILURE`.
  *
  * To set this callback to :type:`nghttp2_session_callbacks`, use
  * `nghttp2_session_callbacks_set_on_stream_close_callback()`.
@@ -1347,11 +1445,45 @@ typedef int (*nghttp2_on_stream_close_callback)(nghttp2_session *session,
  * not need to care about that because the header name/value pairs are
  * emitted transparently regardless of CONTINUATION frames.
  *
- * The implementation of this function must return 0 if it succeeds or
- * :enum:`NGHTTP2_ERR_CALLBACK_FAILURE`.  If nonzero value other than
- * :enum:`NGHTTP2_ERR_CALLBACK_FAILURE` is returned, it is treated as
- * if :enum:`NGHTTP2_ERR_CALLBACK_FAILURE` is returned.  If
- * :enum:`NGHTTP2_ERR_CALLBACK_FAILURE` is returned,
+ * The server applications probably create an object to store
+ * information about new stream if ``frame->hd.type ==
+ * NGHTTP2_HEADERS`` and ``frame->headers.cat ==
+ * NGHTTP2_HCAT_REQUEST``.  If |session| is configured as server side,
+ * ``frame->headers.cat`` is either ``NGHTTP2_HCAT_REQUEST``
+ * containing request headers or ``NGHTTP2_HCAT_HEADERS`` containing
+ * trailer headers and never get PUSH_PROMISE in this callback.
+ *
+ * For the client applications, ``frame->hd.type`` is either
+ * ``NGHTTP2_HEADERS`` or ``NGHTTP2_PUSH_PROMISE``.  In case of
+ * ``NGHTTP2_HEADERS``, ``frame->headers.cat ==
+ * NGHTTP2_HCAT_RESPONSE`` means that it is the first response
+ * headers, but it may be non-final response which is indicated by 1xx
+ * status code.  In this case, there may be zero or more HEADERS frame
+ * with ``frame->headers.cat == NGHTTP2_HCAT_HEADERS`` which has
+ * non-final response code and finally client gets exactly one HEADERS
+ * frame with ``frame->headers.cat == NGHTTP2_HCAT_HEADERS``
+ * containing final response headers (non-1xx status code).  The
+ * trailer headers also has ``frame->headers.cat ==
+ * NGHTTP2_HCAT_HEADERS`` which does not contain any status code.
+ *
+ * Returning :enum:`NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE` will close
+ * the stream (promised stream if frame is PUSH_PROMISE) by issuing
+ * RST_STREAM with :enum:`NGHTTP2_INTERNAL_ERROR`.  In this case,
+ * :type:`nghttp2_on_header_callback` and
+ * :type:`nghttp2_on_frame_recv_callback` will not be invoked.  If a
+ * different error code is desirable, use
+ * `nghttp2_submit_rst_stream()` with a desired error code and then
+ * return :enum:`NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE`.  Again, use
+ * ``frame->push_promise.promised_stream_id`` as stream_id parameter
+ * in `nghttp2_submit_rst_stream()` if frame is PUSH_PROMISE.
+ *
+ * The implementation of this function must return 0 if it succeeds.
+ * It can return :enum:`NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE` to
+ * reset the stream (promised stream if frame is PUSH_PROMISE).  For
+ * critical errors, it must return
+ * :enum:`NGHTTP2_ERR_CALLBACK_FAILURE`.  If the other value is
+ * returned, it is treated as if :enum:`NGHTTP2_ERR_CALLBACK_FAILURE`
+ * is returned.  If :enum:`NGHTTP2_ERR_CALLBACK_FAILURE` is returned,
  * `nghttp2_session_mem_recv()` function will immediately return
  * :enum:`NGHTTP2_ERR_CALLBACK_FAILURE`.
  *
@@ -1372,7 +1504,8 @@ typedef int (*nghttp2_on_begin_headers_callback)(nghttp2_session *session,
  *
  * If :enum:`NGHTTP2_NV_FLAG_NO_INDEX` is set in |flags|, the receiver
  * must not index this name/value pair when forwarding it to the next
- * hop.
+ * hop.  More specifically, "Literal Header Field never Indexed"
+ * representation must be used in HPACK encoding.
  *
  * When this callback is invoked, ``frame->hd.type`` is either
  * :enum:`NGHTTP2_HEADERS` or :enum:`NGHTTP2_PUSH_PROMISE`.  After all
@@ -1382,21 +1515,18 @@ typedef int (*nghttp2_on_begin_headers_callback)(nghttp2_session *session,
  * :type:`nghttp2_on_frame_recv_callback` for the |frame| will not be
  * invoked.
  *
- * The |name| may be ``NULL`` if the |namelen| is 0.  The same thing
- * can be said about the |value|.
+ * Both |name| and |value| are guaranteed to be NULL-terminated.  The
+ * |namelen| and |valuelen| do not include terminal NULL.  If
+ * `nghttp2_option_set_no_http_messaging()` is used with nonzero
+ * value, NULL character may be included in |name| or |value| before
+ * terminating NULL.
  *
- * Please note that nghttp2 library does not perform any validity
- * check against the |name| and the |value|.  For example, the
- * |namelen| could be 0, and/or the |value| contains ``0x0a`` or
- * ``0x0d``.  The application must check them if it matters.  The
- * helper function `nghttp2_check_header_name()` and
- * `nghttp2_check_header_value()` provide simple validation against
- * HTTP2 header field construction rule.
- *
- * HTTP/2 specification requires that pseudo header fields (header
- * field starting with ':') must appear in front of regular header
- * fields.  The library does not validate this requirement.  The
- * application must check them if it matters.
+ * Please note that unless `nghttp2_option_set_no_http_messaging()` is
+ * used, nghttp2 library does perform validation against the |name|
+ * and the |value| using `nghttp2_check_header_name()` and
+ * `nghttp2_check_header_value()`.  In addition to this, nghttp2
+ * performs validation based on HTTP Messaging rule, which is briefly
+ * explained in :ref:`http-messaging` section.
  *
  * If the application uses `nghttp2_session_mem_recv()`, it can return
  * :enum:`NGHTTP2_ERR_PAUSE` to make `nghttp2_session_mem_recv()`
@@ -1408,12 +1538,15 @@ typedef int (*nghttp2_on_begin_headers_callback)(nghttp2_session *session,
  * included in the input bytes.
  *
  * Returning :enum:`NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE` will close
- * the stream by issuing RST_STREAM with
- * :enum:`NGHTTP2_INTERNAL_ERROR`.  In this case,
+ * the stream (promised stream if frame is PUSH_PROMISE) by issuing
+ * RST_STREAM with :enum:`NGHTTP2_INTERNAL_ERROR`.  In this case,
+ * :type:`nghttp2_on_header_callback` and
  * :type:`nghttp2_on_frame_recv_callback` will not be invoked.  If a
  * different error code is desirable, use
  * `nghttp2_submit_rst_stream()` with a desired error code and then
- * return :enum:`NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE`.
+ * return :enum:`NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE`.  Again, use
+ * ``frame->push_promise.promised_stream_id`` as stream_id parameter
+ * in `nghttp2_submit_rst_stream()` if frame is PUSH_PROMISE.
  *
  * The implementation of this function must return 0 if it succeeds.
  * It may return :enum:`NGHTTP2_ERR_PAUSE` or
@@ -1445,8 +1578,8 @@ typedef int (*nghttp2_on_header_callback)(nghttp2_session *session,
  * :enum:`NGHTTP2_ERR_CALLBACK_FAILURE`.  Returning
  * ``frame->hd.length`` means no padding is added.  Returning
  * :enum:`NGHTTP2_ERR_CALLBACK_FAILURE` will make
- * `nghttp2_session_send()` function immediately return
- * :enum:`NGHTTP2_ERR_CALLBACK_FAILURE`.
+ * `nghttp2_session_send()` and `nghttp2_session_mem_send()` functions
+ * immediately return :enum:`NGHTTP2_ERR_CALLBACK_FAILURE`.
  *
  * To set this callback to :type:`nghttp2_session_callbacks`, use
  * `nghttp2_session_callbacks_set_select_padding_callback()`.
@@ -1538,7 +1671,8 @@ typedef struct nghttp2_session_callbacks nghttp2_session_callbacks;
  * :enum:`NGHTTP2_ERR_NOMEM`
  *     Out of memory.
  */
-int nghttp2_session_callbacks_new(nghttp2_session_callbacks **callbacks_ptr);
+NGHTTP2_EXTERN int
+nghttp2_session_callbacks_new(nghttp2_session_callbacks **callbacks_ptr);
 
 /**
  * @function
@@ -1546,7 +1680,8 @@ int nghttp2_session_callbacks_new(nghttp2_session_callbacks **callbacks_ptr);
  * Frees any resources allocated for |callbacks|.  If |callbacks| is
  * ``NULL``, this function does nothing.
  */
-void nghttp2_session_callbacks_del(nghttp2_session_callbacks *callbacks);
+NGHTTP2_EXTERN void
+nghttp2_session_callbacks_del(nghttp2_session_callbacks *callbacks);
 
 /**
  * @function
@@ -1556,7 +1691,7 @@ void nghttp2_session_callbacks_del(nghttp2_session_callbacks *callbacks);
  * uses solely `nghttp2_session_mem_send()` to serialize data to
  * transmit.
  */
-void nghttp2_session_callbacks_set_send_callback(
+NGHTTP2_EXTERN void nghttp2_session_callbacks_set_send_callback(
     nghttp2_session_callbacks *cbs, nghttp2_send_callback send_callback);
 
 /**
@@ -1567,26 +1702,28 @@ void nghttp2_session_callbacks_set_send_callback(
  * application uses solely `nghttp2_session_mem_recv()` to process
  * received data.
  */
-void nghttp2_session_callbacks_set_recv_callback(
+NGHTTP2_EXTERN void nghttp2_session_callbacks_set_recv_callback(
     nghttp2_session_callbacks *cbs, nghttp2_recv_callback recv_callback);
 
 /**
  * @function
  *
- * Sets callback function invoked by `nghttp2_session_recv()` when a
- * frame is received.
+ * Sets callback function invoked by `nghttp2_session_recv()` and
+ * `nghttp2_session_mem_recv()` when a frame is received.
  */
-void nghttp2_session_callbacks_set_on_frame_recv_callback(
+NGHTTP2_EXTERN void nghttp2_session_callbacks_set_on_frame_recv_callback(
     nghttp2_session_callbacks *cbs,
     nghttp2_on_frame_recv_callback on_frame_recv_callback);
 
 /**
  * @function
  *
- * Sets callback function invoked by `nghttp2_session_recv()` when an
- * invalid non-DATA frame is received.
+ * Sets callback function invoked by `nghttp2_session_recv()` and
+ * `nghttp2_session_mem_recv()` when an invalid non-DATA frame is
+ * received.
  */
-void nghttp2_session_callbacks_set_on_invalid_frame_recv_callback(
+NGHTTP2_EXTERN void
+nghttp2_session_callbacks_set_on_invalid_frame_recv_callback(
     nghttp2_session_callbacks *cbs,
     nghttp2_on_invalid_frame_recv_callback on_invalid_frame_recv_callback);
 
@@ -1596,7 +1733,7 @@ void nghttp2_session_callbacks_set_on_invalid_frame_recv_callback(
  * Sets callback function invoked when a chunk of data in DATA frame
  * is received.
  */
-void nghttp2_session_callbacks_set_on_data_chunk_recv_callback(
+NGHTTP2_EXTERN void nghttp2_session_callbacks_set_on_data_chunk_recv_callback(
     nghttp2_session_callbacks *cbs,
     nghttp2_on_data_chunk_recv_callback on_data_chunk_recv_callback);
 
@@ -1605,7 +1742,7 @@ void nghttp2_session_callbacks_set_on_data_chunk_recv_callback(
  *
  * Sets callback function invoked before a non-DATA frame is sent.
  */
-void nghttp2_session_callbacks_set_before_frame_send_callback(
+NGHTTP2_EXTERN void nghttp2_session_callbacks_set_before_frame_send_callback(
     nghttp2_session_callbacks *cbs,
     nghttp2_before_frame_send_callback before_frame_send_callback);
 
@@ -1614,7 +1751,7 @@ void nghttp2_session_callbacks_set_before_frame_send_callback(
  *
  * Sets callback function invoked after a frame is sent.
  */
-void nghttp2_session_callbacks_set_on_frame_send_callback(
+NGHTTP2_EXTERN void nghttp2_session_callbacks_set_on_frame_send_callback(
     nghttp2_session_callbacks *cbs,
     nghttp2_on_frame_send_callback on_frame_send_callback);
 
@@ -1624,7 +1761,7 @@ void nghttp2_session_callbacks_set_on_frame_send_callback(
  * Sets callback function invoked when a non-DATA frame is not sent
  * because of an error.
  */
-void nghttp2_session_callbacks_set_on_frame_not_send_callback(
+NGHTTP2_EXTERN void nghttp2_session_callbacks_set_on_frame_not_send_callback(
     nghttp2_session_callbacks *cbs,
     nghttp2_on_frame_not_send_callback on_frame_not_send_callback);
 
@@ -1633,7 +1770,7 @@ void nghttp2_session_callbacks_set_on_frame_not_send_callback(
  *
  * Sets callback function invoked when the stream is closed.
  */
-void nghttp2_session_callbacks_set_on_stream_close_callback(
+NGHTTP2_EXTERN void nghttp2_session_callbacks_set_on_stream_close_callback(
     nghttp2_session_callbacks *cbs,
     nghttp2_on_stream_close_callback on_stream_close_callback);
 
@@ -1643,7 +1780,7 @@ void nghttp2_session_callbacks_set_on_stream_close_callback(
  * Sets callback function invoked when the reception of header block
  * in HEADERS or PUSH_PROMISE is started.
  */
-void nghttp2_session_callbacks_set_on_begin_headers_callback(
+NGHTTP2_EXTERN void nghttp2_session_callbacks_set_on_begin_headers_callback(
     nghttp2_session_callbacks *cbs,
     nghttp2_on_begin_headers_callback on_begin_headers_callback);
 
@@ -1653,7 +1790,7 @@ void nghttp2_session_callbacks_set_on_begin_headers_callback(
  * Sets callback function invoked when a header name/value pair is
  * received.
  */
-void nghttp2_session_callbacks_set_on_header_callback(
+NGHTTP2_EXTERN void nghttp2_session_callbacks_set_on_header_callback(
     nghttp2_session_callbacks *cbs,
     nghttp2_on_header_callback on_header_callback);
 
@@ -1664,7 +1801,7 @@ void nghttp2_session_callbacks_set_on_header_callback(
  * how many padding bytes are required for the transmission of the
  * given frame.
  */
-void nghttp2_session_callbacks_set_select_padding_callback(
+NGHTTP2_EXTERN void nghttp2_session_callbacks_set_select_padding_callback(
     nghttp2_session_callbacks *cbs,
     nghttp2_select_padding_callback select_padding_callback);
 
@@ -1674,7 +1811,8 @@ void nghttp2_session_callbacks_set_select_padding_callback(
  * Sets callback function determine the length allowed in
  * :type:`nghttp2_data_source_read_callback`.
  */
-void nghttp2_session_callbacks_set_data_source_read_length_callback(
+NGHTTP2_EXTERN void
+nghttp2_session_callbacks_set_data_source_read_length_callback(
     nghttp2_session_callbacks *cbs,
     nghttp2_data_source_read_length_callback data_source_read_length_callback);
 
@@ -1683,9 +1821,115 @@ void nghttp2_session_callbacks_set_data_source_read_length_callback(
  *
  * Sets callback function invoked when a frame header is received.
  */
-void nghttp2_session_callbacks_set_on_begin_frame_callback(
+NGHTTP2_EXTERN void nghttp2_session_callbacks_set_on_begin_frame_callback(
     nghttp2_session_callbacks *cbs,
     nghttp2_on_begin_frame_callback on_begin_frame_callback);
+
+/**
+ * @function
+ *
+ * Sets callback function invoked when
+ * :enum:`NGHTTP2_DATA_FLAG_NO_COPY` is used in
+ * :type:`nghttp2_data_source_read_callback` to avoid data copy.
+ */
+NGHTTP2_EXTERN void nghttp2_session_callbacks_set_send_data_callback(
+    nghttp2_session_callbacks *cbs,
+    nghttp2_send_data_callback send_data_callback);
+
+/**
+ * @functypedef
+ *
+ * Custom memory allocator to replace malloc().  The |mem_user_data|
+ * is the mem_user_data member of :type:`nghttp2_mem` structure.
+ */
+typedef void *(*nghttp2_malloc)(size_t size, void *mem_user_data);
+
+/**
+ * @functypedef
+ *
+ * Custom memory allocator to replace free().  The |mem_user_data| is
+ * the mem_user_data member of :type:`nghttp2_mem` structure.
+ */
+typedef void (*nghttp2_free)(void *ptr, void *mem_user_data);
+
+/**
+ * @functypedef
+ *
+ * Custom memory allocator to replace calloc().  The |mem_user_data|
+ * is the mem_user_data member of :type:`nghttp2_mem` structure.
+ */
+typedef void *(*nghttp2_calloc)(size_t nmemb, size_t size, void *mem_user_data);
+
+/**
+ * @functypedef
+ *
+ * Custom memory allocator to replace realloc().  The |mem_user_data|
+ * is the mem_user_data member of :type:`nghttp2_mem` structure.
+ */
+typedef void *(*nghttp2_realloc)(void *ptr, size_t size, void *mem_user_data);
+
+/**
+ * @struct
+ *
+ * Custom memory allocator functions and user defined pointer.  The
+ * |mem_user_data| member is passed to each allocator function.  This
+ * can be used, for example, to achieve per-session memory pool.
+ *
+ * In the following example code, ``my_malloc``, ``my_free``,
+ * ``my_calloc`` and ``my_realloc`` are the replacement of the
+ * standard allocators ``malloc``, ``free``, ``calloc`` and
+ * ``realloc`` respectively::
+ *
+ *     void *my_malloc_cb(size_t size, void *mem_user_data) {
+ *       return my_malloc(size);
+ *     }
+ *
+ *     void my_free_cb(void *ptr, void *mem_user_data) { my_free(ptr); }
+ *
+ *     void *my_calloc_cb(size_t nmemb, size_t size, void *mem_user_data) {
+ *       return my_calloc(nmemb, size);
+ *     }
+ *
+ *     void *my_realloc_cb(void *ptr, size_t size, void *mem_user_data) {
+ *       return my_realloc(ptr, size);
+ *     }
+ *
+ *     void session_new() {
+ *       nghttp2_session *session;
+ *       nghttp2_session_callbacks *callbacks;
+ *       nghttp2_mem mem = {NULL, my_malloc_cb, my_free_cb, my_calloc_cb,
+ *                          my_realloc_cb};
+ *
+ *       ...
+ *
+ *       nghttp2_session_client_new3(&session, callbacks, NULL, NULL, &mem);
+ *
+ *       ...
+ *     }
+ */
+typedef struct {
+  /**
+   * An arbitrary user supplied data.  This is passed to each
+   * allocator function.
+   */
+  void *mem_user_data;
+  /**
+   * Custom allocator function to replace malloc().
+   */
+  nghttp2_malloc malloc;
+  /**
+   * Custom allocator function to replace free().
+   */
+  nghttp2_free free;
+  /**
+   * Custom allocator function to replace calloc().
+   */
+  nghttp2_calloc calloc;
+  /**
+   * Custom allocator function to replace realloc().
+   */
+  nghttp2_realloc realloc;
+} nghttp2_mem;
 
 struct nghttp2_option;
 
@@ -1711,7 +1955,7 @@ typedef struct nghttp2_option nghttp2_option;
  * :enum:`NGHTTP2_ERR_NOMEM`
  *     Out of memory.
  */
-int nghttp2_option_new(nghttp2_option **option_ptr);
+NGHTTP2_EXTERN int nghttp2_option_new(nghttp2_option **option_ptr);
 
 /**
  * @function
@@ -1719,7 +1963,7 @@ int nghttp2_option_new(nghttp2_option **option_ptr);
  * Frees any resources allocated for |option|.  If |option| is
  * ``NULL``, this function does nothing.
  */
-void nghttp2_option_del(nghttp2_option *option);
+NGHTTP2_EXTERN void nghttp2_option_del(nghttp2_option *option);
 
 /**
  * @function
@@ -1731,7 +1975,8 @@ void nghttp2_option_del(nghttp2_option *option);
  * data.  Don't use `nghttp2_submit_window_update()` for this purpose.
  * By default, this option is set to zero.
  */
-void nghttp2_option_set_no_auto_window_update(nghttp2_option *option, int val);
+NGHTTP2_EXTERN void
+nghttp2_option_set_no_auto_window_update(nghttp2_option *option, int val);
 
 /**
  * @function
@@ -1748,26 +1993,43 @@ void nghttp2_option_set_no_auto_window_update(nghttp2_option *option, int val);
  * overwritten if the local endpoint receives
  * SETTINGS_MAX_CONCURRENT_STREAMS from the remote endpoint.
  */
-void nghttp2_option_set_peer_max_concurrent_streams(nghttp2_option *option,
-                                                    uint32_t val);
+NGHTTP2_EXTERN void
+nghttp2_option_set_peer_max_concurrent_streams(nghttp2_option *option,
+                                               uint32_t val);
 
 /**
  * @function
  *
- * By default, nghttp2 library only handles HTTP/2 frames and does not
- * recognize first 24 bytes of client connection preface.  This design
- * choice is done due to the fact that server may want to detect the
- * application protocol based on first few bytes on clear text
- * communication.  But for simple servers which only speak HTTP/2, it
- * is easier for developers if nghttp2 library takes care of client
- * connection preface.
+ * By default, nghttp2 library, if configured as server, requires
+ * first 24 bytes of client magic byte string (MAGIC).  In most cases,
+ * this will simplify the implementation of server.  But sometimes
+ * server may want to detect the application protocol based on first
+ * few bytes on clear text communication.
  *
- * If this option is used with nonzero |val|, nghttp2 library checks
- * first 24 bytes client connection preface.  If it is not a valid
- * one, `nghttp2_session_recv()` and `nghttp2_session_mem_recv()` will
- * return error :enum:`NGHTTP2_ERR_BAD_PREFACE`, which is fatal error.
+ * If this option is used with nonzero |val|, nghttp2 library does not
+ * handle MAGIC.  It still checks following SETTINGS frame.  This
+ * means that applications should deal with MAGIC by themselves.
+ *
+ * If this option is not used or used with zero value, if MAGIC does
+ * not match :macro:`NGHTTP2_CLIENT_MAGIC`, `nghttp2_session_recv()`
+ * and `nghttp2_session_mem_recv()` will return error
+ * :enum:`NGHTTP2_ERR_BAD_CLIENT_MAGIC`, which is fatal error.
  */
-void nghttp2_option_set_recv_client_preface(nghttp2_option *option, int val);
+NGHTTP2_EXTERN void
+nghttp2_option_set_no_recv_client_magic(nghttp2_option *option, int val);
+
+/**
+ * @function
+ *
+ * By default, nghttp2 library enforces subset of HTTP Messaging rules
+ * described in `HTTP/2 specification, section 8
+ * <https://tools.ietf.org/html/rfc7540#section-8>`_.  See
+ * :ref:`http-messaging` section for details.  For those applications
+ * who use nghttp2 library as non-HTTP use, give nonzero to |val| to
+ * disable this enforcement.
+ */
+NGHTTP2_EXTERN void nghttp2_option_set_no_http_messaging(nghttp2_option *option,
+                                                         int val);
 
 /**
  * @function
@@ -1790,9 +2052,10 @@ void nghttp2_option_set_recv_client_preface(nghttp2_option *option, int val);
  * :enum:`NGHTTP2_ERR_NOMEM`
  *     Out of memory.
  */
-int nghttp2_session_client_new(nghttp2_session **session_ptr,
-                               const nghttp2_session_callbacks *callbacks,
-                               void *user_data);
+NGHTTP2_EXTERN int
+nghttp2_session_client_new(nghttp2_session **session_ptr,
+                           const nghttp2_session_callbacks *callbacks,
+                           void *user_data);
 
 /**
  * @function
@@ -1815,9 +2078,10 @@ int nghttp2_session_client_new(nghttp2_session **session_ptr,
  * :enum:`NGHTTP2_ERR_NOMEM`
  *     Out of memory.
  */
-int nghttp2_session_server_new(nghttp2_session **session_ptr,
-                               const nghttp2_session_callbacks *callbacks,
-                               void *user_data);
+NGHTTP2_EXTERN int
+nghttp2_session_server_new(nghttp2_session **session_ptr,
+                           const nghttp2_session_callbacks *callbacks,
+                           void *user_data);
 
 /**
  * @function
@@ -1840,9 +2104,10 @@ int nghttp2_session_server_new(nghttp2_session **session_ptr,
  * :enum:`NGHTTP2_ERR_NOMEM`
  *     Out of memory.
  */
-int nghttp2_session_client_new2(nghttp2_session **session_ptr,
-                                const nghttp2_session_callbacks *callbacks,
-                                void *user_data, const nghttp2_option *option);
+NGHTTP2_EXTERN int
+nghttp2_session_client_new2(nghttp2_session **session_ptr,
+                            const nghttp2_session_callbacks *callbacks,
+                            void *user_data, const nghttp2_option *option);
 
 /**
  * @function
@@ -1865,9 +2130,60 @@ int nghttp2_session_client_new2(nghttp2_session **session_ptr,
  * :enum:`NGHTTP2_ERR_NOMEM`
  *     Out of memory.
  */
-int nghttp2_session_server_new2(nghttp2_session **session_ptr,
-                                const nghttp2_session_callbacks *callbacks,
-                                void *user_data, const nghttp2_option *option);
+NGHTTP2_EXTERN int
+nghttp2_session_server_new2(nghttp2_session **session_ptr,
+                            const nghttp2_session_callbacks *callbacks,
+                            void *user_data, const nghttp2_option *option);
+
+/**
+ * @function
+ *
+ * Like `nghttp2_session_client_new2()`, but with additional custom
+ * memory allocator specified in the |mem|.
+ *
+ * The |mem| can be ``NULL`` and the call is equivalent to
+ * `nghttp2_session_client_new2()`.
+ *
+ * This function does not take ownership |mem|.  The application is
+ * responsible for freeing |mem|.
+ *
+ * The library code does not refer to |mem| pointer after this
+ * function returns, so the application can safely free it.
+ *
+ * This function returns 0 if it succeeds, or one of the following
+ * negative error codes:
+ *
+ * :enum:`NGHTTP2_ERR_NOMEM`
+ *     Out of memory.
+ */
+NGHTTP2_EXTERN int nghttp2_session_client_new3(
+    nghttp2_session **session_ptr, const nghttp2_session_callbacks *callbacks,
+    void *user_data, const nghttp2_option *option, nghttp2_mem *mem);
+
+/**
+ * @function
+ *
+ * Like `nghttp2_session_server_new2()`, but with additional custom
+ * memory allocator specified in the |mem|.
+ *
+ * The |mem| can be ``NULL`` and the call is equivalent to
+ * `nghttp2_session_server_new2()`.
+ *
+ * This function does not take ownership |mem|.  The application is
+ * responsible for freeing |mem|.
+ *
+ * The library code does not refer to |mem| pointer after this
+ * function returns, so the application can safely free it.
+ *
+ * This function returns 0 if it succeeds, or one of the following
+ * negative error codes:
+ *
+ * :enum:`NGHTTP2_ERR_NOMEM`
+ *     Out of memory.
+ */
+NGHTTP2_EXTERN int nghttp2_session_server_new3(
+    nghttp2_session **session_ptr, const nghttp2_session_callbacks *callbacks,
+    void *user_data, const nghttp2_option *option, nghttp2_mem *mem);
 
 /**
  * @function
@@ -1875,7 +2191,7 @@ int nghttp2_session_server_new2(nghttp2_session **session_ptr,
  * Frees any resources allocated for |session|.  If |session| is
  * ``NULL``, this function does nothing.
  */
-void nghttp2_session_del(nghttp2_session *session);
+NGHTTP2_EXTERN void nghttp2_session_del(nghttp2_session *session);
 
 /**
  * @function
@@ -1924,7 +2240,7 @@ void nghttp2_session_del(nghttp2_session *session);
  * :enum:`NGHTTP2_ERR_CALLBACK_FAILURE`
  *     The callback function failed.
  */
-int nghttp2_session_send(nghttp2_session *session);
+NGHTTP2_EXTERN int nghttp2_session_send(nghttp2_session *session);
 
 /**
  * @function
@@ -1955,9 +2271,18 @@ int nghttp2_session_send(nghttp2_session *session);
  *
  * :enum:`NGHTTP2_ERR_NOMEM`
  *     Out of memory.
+ *
+ * .. note::
+ *
+ *   This function may produce very small byte string.  If that is the
+ *   case, and application disables Nagle algorithm (``TCP_NODELAY``),
+ *   then writing this small chunk leads to very small packet, and it
+ *   is very inefficient.  An application should be responsible to
+ *   buffer up small chunks of data as necessary to avoid this
+ *   situation.
  */
-ssize_t nghttp2_session_mem_send(nghttp2_session *session,
-                                 const uint8_t **data_ptr);
+NGHTTP2_EXTERN ssize_t nghttp2_session_mem_send(nghttp2_session *session,
+                                                const uint8_t **data_ptr);
 
 /**
  * @function
@@ -2017,12 +2342,13 @@ ssize_t nghttp2_session_mem_send(nghttp2_session *session,
  *     Out of memory.
  * :enum:`NGHTTP2_ERR_CALLBACK_FAILURE`
  *     The callback function failed.
- * :enum:`NGHTTP2_ERR_BAD_PREFACE`
- *     Invalid client preface was detected.  This error only returns
+ * :enum:`NGHTTP2_ERR_BAD_CLIENT_MAGIC`
+ *     Invalid client magic was detected.  This error only returns
  *     when |session| was configured as server and
- *     `nghttp2_option_set_recv_client_preface()` is used.
+ *     `nghttp2_option_set_no_recv_client_magic()` is not used with
+ *     nonzero value.
  */
-int nghttp2_session_recv(nghttp2_session *session);
+NGHTTP2_EXTERN int nghttp2_session_recv(nghttp2_session *session);
 
 /**
  * @function
@@ -2052,13 +2378,15 @@ int nghttp2_session_recv(nghttp2_session *session);
  *     Out of memory.
  * :enum:`NGHTTP2_ERR_CALLBACK_FAILURE`
  *     The callback function failed.
- * :enum:`NGHTTP2_ERR_BAD_PREFACE`
- *     Invalid client preface was detected.  This error only returns
+ * :enum:`NGHTTP2_ERR_BAD_CLIENT_MAGIC`
+ *     Invalid client magic was detected.  This error only returns
  *     when |session| was configured as server and
- *     `nghttp2_option_set_recv_client_preface()` is used.
+ *     `nghttp2_option_set_no_recv_client_magic()` is not used with
+ *     nonzero value.
  */
-ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
-                                 size_t inlen);
+NGHTTP2_EXTERN ssize_t nghttp2_session_mem_recv(nghttp2_session *session,
+                                                const uint8_t *in,
+                                                size_t inlen);
 
 /**
  * @function
@@ -2074,7 +2402,8 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
  * :enum:`NGHTTP2_ERR_NOMEM`
  *     Out of memory.
  */
-int nghttp2_session_resume_data(nghttp2_session *session, int32_t stream_id);
+NGHTTP2_EXTERN int nghttp2_session_resume_data(nghttp2_session *session,
+                                               int32_t stream_id);
 
 /**
  * @function
@@ -2086,7 +2415,7 @@ int nghttp2_session_resume_data(nghttp2_session *session, int32_t stream_id);
  * `nghttp2_session_want_write()` return 0, the application should
  * drop the connection.
  */
-int nghttp2_session_want_read(nghttp2_session *session);
+NGHTTP2_EXTERN int nghttp2_session_want_read(nghttp2_session *session);
 
 /**
  * @function
@@ -2098,7 +2427,7 @@ int nghttp2_session_want_read(nghttp2_session *session);
  * `nghttp2_session_want_write()` return 0, the application should
  * drop the connection.
  */
-int nghttp2_session_want_write(nghttp2_session *session);
+NGHTTP2_EXTERN int nghttp2_session_want_write(nghttp2_session *session);
 
 /**
  * @function
@@ -2112,8 +2441,9 @@ int nghttp2_session_want_write(nghttp2_session *session);
  * ``NULL``.  If the stream does not exist, this function returns
  * ``NULL``.
  */
-void *nghttp2_session_get_stream_user_data(nghttp2_session *session,
-                                           int32_t stream_id);
+NGHTTP2_EXTERN void *
+nghttp2_session_get_stream_user_data(nghttp2_session *session,
+                                     int32_t stream_id);
 
 /**
  * @function
@@ -2133,9 +2463,9 @@ void *nghttp2_session_get_stream_user_data(nghttp2_session *session,
  * :enum:`NGHTTP2_ERR_INVALID_ARGUMENT`
  *     The stream does not exist
  */
-int nghttp2_session_set_stream_user_data(nghttp2_session *session,
-                                         int32_t stream_id,
-                                         void *stream_user_data);
+NGHTTP2_EXTERN int
+nghttp2_session_set_stream_user_data(nghttp2_session *session,
+                                     int32_t stream_id, void *stream_user_data);
 
 /**
  * @function
@@ -2143,7 +2473,8 @@ int nghttp2_session_set_stream_user_data(nghttp2_session *session,
  * Returns the number of frames in the outbound queue.  This does not
  * include the deferred DATA frames.
  */
-size_t nghttp2_session_get_outbound_queue_size(nghttp2_session *session);
+NGHTTP2_EXTERN size_t
+    nghttp2_session_get_outbound_queue_size(nghttp2_session *session);
 
 /**
  * @function
@@ -2159,9 +2490,8 @@ size_t nghttp2_session_get_outbound_queue_size(nghttp2_session *session);
  *
  * This function returns -1 if it fails.
  */
-int32_t
-nghttp2_session_get_stream_effective_recv_data_length(nghttp2_session *session,
-                                                      int32_t stream_id);
+NGHTTP2_EXTERN int32_t nghttp2_session_get_stream_effective_recv_data_length(
+    nghttp2_session *session, int32_t stream_id);
 
 /**
  * @function
@@ -2173,9 +2503,8 @@ nghttp2_session_get_stream_effective_recv_data_length(nghttp2_session *session,
  *
  * This function returns -1 if it fails.
  */
-int32_t
-nghttp2_session_get_stream_effective_local_window_size(nghttp2_session *session,
-                                                       int32_t stream_id);
+NGHTTP2_EXTERN int32_t nghttp2_session_get_stream_effective_local_window_size(
+    nghttp2_session *session, int32_t stream_id);
 
 /**
  * @function
@@ -2191,8 +2520,8 @@ nghttp2_session_get_stream_effective_local_window_size(nghttp2_session *session,
  *
  * This function returns -1 if it fails.
  */
-int32_t
-nghttp2_session_get_effective_recv_data_length(nghttp2_session *session);
+NGHTTP2_EXTERN int32_t
+    nghttp2_session_get_effective_recv_data_length(nghttp2_session *session);
 
 /**
  * @function
@@ -2204,8 +2533,8 @@ nghttp2_session_get_effective_recv_data_length(nghttp2_session *session);
  *
  * This function returns -1 if it fails.
  */
-int32_t
-nghttp2_session_get_effective_local_window_size(nghttp2_session *session);
+NGHTTP2_EXTERN int32_t
+    nghttp2_session_get_effective_local_window_size(nghttp2_session *session);
 
 /**
  * @function
@@ -2221,8 +2550,9 @@ nghttp2_session_get_effective_local_window_size(nghttp2_session *session);
  *
  * This function returns -1 if it fails.
  */
-int32_t nghttp2_session_get_stream_remote_window_size(nghttp2_session *session,
-                                                      int32_t stream_id);
+NGHTTP2_EXTERN int32_t
+    nghttp2_session_get_stream_remote_window_size(nghttp2_session *session,
+                                                  int32_t stream_id);
 
 /**
  * @function
@@ -2231,7 +2561,8 @@ int32_t nghttp2_session_get_stream_remote_window_size(nghttp2_session *session,
  *
  * This function always succeeds.
  */
-int32_t nghttp2_session_get_remote_window_size(nghttp2_session *session);
+NGHTTP2_EXTERN int32_t
+    nghttp2_session_get_remote_window_size(nghttp2_session *session);
 
 /**
  * @function
@@ -2239,8 +2570,9 @@ int32_t nghttp2_session_get_remote_window_size(nghttp2_session *session);
  * Returns 1 if local peer half closed the given stream |stream_id|.
  * Returns 0 if it did not.  Returns -1 if no such stream exists.
  */
-int nghttp2_session_get_stream_local_close(nghttp2_session *session,
-                                           int32_t stream_id);
+NGHTTP2_EXTERN int
+nghttp2_session_get_stream_local_close(nghttp2_session *session,
+                                       int32_t stream_id);
 
 /**
  * @function
@@ -2248,8 +2580,9 @@ int nghttp2_session_get_stream_local_close(nghttp2_session *session,
  * Returns 1 if remote peer half closed the given stream |stream_id|.
  * Returns 0 if it did not.  Returns -1 if no such stream exists.
  */
-int nghttp2_session_get_stream_remote_close(nghttp2_session *session,
-                                            int32_t stream_id);
+NGHTTP2_EXTERN int
+nghttp2_session_get_stream_remote_close(nghttp2_session *session,
+                                        int32_t stream_id);
 
 /**
  * @function
@@ -2277,8 +2610,8 @@ int nghttp2_session_get_stream_remote_close(nghttp2_session *session,
  * :enum:`NGHTTP2_ERR_NOMEM`
  *     Out of memory.
  */
-int nghttp2_session_terminate_session(nghttp2_session *session,
-                                      uint32_t error_code);
+NGHTTP2_EXTERN int nghttp2_session_terminate_session(nghttp2_session *session,
+                                                     uint32_t error_code);
 
 /**
  * @function
@@ -2306,9 +2639,46 @@ int nghttp2_session_terminate_session(nghttp2_session *session,
  * :enum:`NGHTTP2_ERR_INVALID_ARGUMENT`
  *     The |last_stream_id| is invalid.
  */
-int nghttp2_session_terminate_session2(nghttp2_session *session,
-                                       int32_t last_stream_id,
-                                       uint32_t error_code);
+NGHTTP2_EXTERN int nghttp2_session_terminate_session2(nghttp2_session *session,
+                                                      int32_t last_stream_id,
+                                                      uint32_t error_code);
+
+/**
+ * @function
+ *
+ * Signals to the client that the server started graceful shutdown
+ * procedure.
+ *
+ * This function is only usable for server.  If this function is
+ * called with client side session, this function returns
+ * :enum:`NGHTTP2_ERR_INVALID_STATE`.
+ *
+ * To gracefully shutdown HTTP/2 session, server should call this
+ * function to send GOAWAY with last_stream_id (1u << 31) - 1.  And
+ * after some delay (e.g., 1 RTT), send another GOAWAY with the stream
+ * ID that the server has some processing using
+ * `nghttp2_submit_goaway()`.  See also
+ * `nghttp2_session_get_last_proc_stream_id()`.
+ *
+ * Unlike `nghttp2_submit_goaway()`, this function just sends GOAWAY
+ * and does nothing more.  This is a mere indication to the client
+ * that session shutdown is imminent.  The application should call
+ * `nghttp2_submit_goaway()` with appropriate last_stream_id after
+ * this call.
+ *
+ * If one or more GOAWAY frame have been already sent by either
+ * `nghttp2_submit_goaway()` or `nghttp2_session_terminate_session()`,
+ * this function has no effect.
+ *
+ * This function returns 0 if it succeeds, or one of the following
+ * negative error codes:
+ *
+ * :enum:`NGHTTP2_ERR_NOMEM`
+ *     Out of memory.
+ * :enum:`NGHTTP2_ERR_INVALID_STATE`
+ *     The |session| is initialized as client.
+ */
+NGHTTP2_EXTERN int nghttp2_submit_shutdown_notice(nghttp2_session *session);
 
 /**
  * @function
@@ -2317,15 +2687,49 @@ int nghttp2_session_terminate_session2(nghttp2_session *session,
  * The |id| must be one of values defined in
  * :enum:`nghttp2_settings_id`.
  */
-uint32_t nghttp2_session_get_remote_settings(nghttp2_session *session,
-                                             nghttp2_settings_id id);
+NGHTTP2_EXTERN uint32_t
+    nghttp2_session_get_remote_settings(nghttp2_session *session,
+                                        nghttp2_settings_id id);
+
+/**
+ * @function
+ *
+ * Tells the |session| that next stream ID is |next_stream_id|.  The
+ * |next_stream_id| must be equal or greater than the value returned
+ * by `nghttp2_session_get_next_stream_id()`.
+ *
+ * This function returns 0 if it succeeds, or one of the following
+ * negative error codes:
+ *
+ * :enum:`NGHTTP2_ERR_INVALID_ARGUMENT`
+ *     The |next_stream_id| is strictly less than the value
+ *     `nghttp2_session_get_next_stream_id()` returns; or
+ *     |next_stream_id| is invalid (e.g., even integer for client, or
+ *     odd integer for server).
+ */
+NGHTTP2_EXTERN int nghttp2_session_set_next_stream_id(nghttp2_session *session,
+                                                      int32_t next_stream_id);
+
+/**
+ * @function
+ *
+ * Returns the next outgoing stream ID.  Notice that return type is
+ * uint32_t.  If we run out of stream ID for this session, this
+ * function returns 1 << 31.
+ */
+NGHTTP2_EXTERN uint32_t
+    nghttp2_session_get_next_stream_id(nghttp2_session *session);
 
 /**
  * @function
  *
  * Tells the |session| that |size| bytes for a stream denoted by
  * |stream_id| were consumed by application and are ready to
- * WINDOW_UPDATE.  This function is intended to be used without
+ * WINDOW_UPDATE.  The consumed bytes are counted towards both
+ * connection and stream level WINDOW_UPDATE (see
+ * `nghttp2_session_consume_connection()` and
+ * `nghttp2_session_consume_stream()` to update consumption
+ * independently).  This function is intended to be used without
  * automatic window update (see
  * `nghttp2_option_set_no_auto_window_update()`).
  *
@@ -2339,8 +2743,49 @@ uint32_t nghttp2_session_get_remote_settings(nghttp2_session *session,
  * :enum:`NGHTTP2_ERR_INVALID_STATE`
  *     Automatic WINDOW_UPDATE is not disabled.
  */
-int nghttp2_session_consume(nghttp2_session *session, int32_t stream_id,
-                            size_t size);
+NGHTTP2_EXTERN int nghttp2_session_consume(nghttp2_session *session,
+                                           int32_t stream_id, size_t size);
+
+/**
+ * @function
+ *
+ * Like `nghttp2_session_consume()`, but this only tells library that
+ * |size| bytes were consumed only for connection level.  Note that
+ * HTTP/2 maintains connection and stream level flow control windows
+ * independently.
+ *
+ * This function returns 0 if it succeeds, or one of the following
+ * negative error codes:
+ *
+ * :enum:`NGHTTP2_ERR_NOMEM`
+ *     Out of memory.
+ * :enum:`NGHTTP2_ERR_INVALID_STATE`
+ *     Automatic WINDOW_UPDATE is not disabled.
+ */
+NGHTTP2_EXTERN int nghttp2_session_consume_connection(nghttp2_session *session,
+                                                      size_t size);
+
+/**
+ * @function
+ *
+ * Like `nghttp2_session_consume()`, but this only tells library that
+ * |size| bytes were consumed only for stream denoted by |stream_id|.
+ * Note that HTTP/2 maintains connection and stream level flow control
+ * windows independently.
+ *
+ * This function returns 0 if it succeeds, or one of the following
+ * negative error codes:
+ *
+ * :enum:`NGHTTP2_ERR_NOMEM`
+ *     Out of memory.
+ * :enum:`NGHTTP2_ERR_INVALID_ARGUMENT`
+ *     The |stream_id| is 0.
+ * :enum:`NGHTTP2_ERR_INVALID_STATE`
+ *     Automatic WINDOW_UPDATE is not disabled.
+ */
+NGHTTP2_EXTERN int nghttp2_session_consume_stream(nghttp2_session *session,
+                                                  int32_t stream_id,
+                                                  size_t size);
 
 /**
  * @function
@@ -2378,9 +2823,10 @@ int nghttp2_session_consume(nghttp2_session *session, int32_t stream_id,
  * :enum:`NGHTTP2_ERR_PROTO`
  *     The stream ID 1 is already used or closed; or is not available.
  */
-int nghttp2_session_upgrade(nghttp2_session *session,
-                            const uint8_t *settings_payload,
-                            size_t settings_payloadlen, void *stream_user_data);
+NGHTTP2_EXTERN int nghttp2_session_upgrade(nghttp2_session *session,
+                                           const uint8_t *settings_payload,
+                                           size_t settings_payloadlen,
+                                           void *stream_user_data);
 
 /**
  * @function
@@ -2403,9 +2849,9 @@ int nghttp2_session_upgrade(nghttp2_session *session,
  * :enum:`NGHTTP2_ERR_INSUFF_BUFSIZE`
  *     The provided |buflen| size is too small to hold the output.
  */
-ssize_t nghttp2_pack_settings_payload(uint8_t *buf, size_t buflen,
-                                      const nghttp2_settings_entry *iv,
-                                      size_t niv);
+NGHTTP2_EXTERN ssize_t
+    nghttp2_pack_settings_payload(uint8_t *buf, size_t buflen,
+                                  const nghttp2_settings_entry *iv, size_t niv);
 
 /**
  * @function
@@ -2413,7 +2859,7 @@ ssize_t nghttp2_pack_settings_payload(uint8_t *buf, size_t buflen,
  * Returns string describing the |lib_error_code|.  The
  * |lib_error_code| must be one of the :enum:`nghttp2_error`.
  */
-const char *nghttp2_strerror(int lib_error_code);
+NGHTTP2_EXTERN const char *nghttp2_strerror(int lib_error_code);
 
 /**
  * @function
@@ -2425,9 +2871,9 @@ const char *nghttp2_strerror(int lib_error_code);
  * The |weight| must be in [:enum:`NGHTTP2_MIN_WEIGHT`,
  * :enum:`NGHTTP2_MAX_WEIGHT`], inclusive.
  */
-void nghttp2_priority_spec_init(nghttp2_priority_spec *pri_spec,
-                                int32_t stream_id, int32_t weight,
-                                int exclusive);
+NGHTTP2_EXTERN void nghttp2_priority_spec_init(nghttp2_priority_spec *pri_spec,
+                                               int32_t stream_id,
+                                               int32_t weight, int exclusive);
 
 /**
  * @function
@@ -2436,14 +2882,16 @@ void nghttp2_priority_spec_init(nghttp2_priority_spec *pri_spec,
  * are: stream_id = 0, weight = :macro:`NGHTTP2_DEFAULT_WEIGHT` and
  * exclusive = 0.
  */
-void nghttp2_priority_spec_default_init(nghttp2_priority_spec *pri_spec);
+NGHTTP2_EXTERN void
+nghttp2_priority_spec_default_init(nghttp2_priority_spec *pri_spec);
 
 /**
  * @function
  *
  * Returns nonzero if the |pri_spec| is filled with default values.
  */
-int nghttp2_priority_spec_check_default(const nghttp2_priority_spec *pri_spec);
+NGHTTP2_EXTERN int
+nghttp2_priority_spec_check_default(const nghttp2_priority_spec *pri_spec);
 
 /**
  * @function
@@ -2456,8 +2904,8 @@ int nghttp2_priority_spec_check_default(const nghttp2_priority_spec *pri_spec);
  * use `nghttp2_priority_spec_init()`.  If |pri_spec| is not ``NULL``,
  * this function will copy its data members.
  *
- * The `pri_spec->weight` must be in [:enum:`NGHTTP2_MIN_WEIGHT`,
- * :enum:`NGHTTP2_MAX_WEIGHT`], inclusive.  If `pri_spec->weight` is
+ * The ``pri_spec->weight`` must be in [:enum:`NGHTTP2_MIN_WEIGHT`,
+ * :enum:`NGHTTP2_MAX_WEIGHT`], inclusive.  If ``pri_spec->weight`` is
  * strictly less than :enum:`NGHTTP2_MIN_WEIGHT`, it becomes
  * :enum:`NGHTTP2_MIN_WEIGHT`.  If it is strictly greater than
  * :enum:`NGHTTP2_MAX_WEIGHT`, it becomes :enum:`NGHTTP2_MAX_WEIGHT`.
@@ -2478,13 +2926,13 @@ int nghttp2_priority_spec_check_default(const nghttp2_priority_spec *pri_spec);
  * If |data_prd| is not ``NULL``, it provides data which will be sent
  * in subsequent DATA frames.  In this case, a method that allows
  * request message bodies
- * (http://www.w3.org/Protocols/rfc2616/rfc2616-sec9.html#sec9) must
- * be specified with ``:method`` key in |nva| (e.g. ``POST``).  This
- * function does not take ownership of the |data_prd|.  The function
- * copies the members of the |data_prd|.  If |data_prd| is ``NULL``,
- * HEADERS have END_STREAM set.  The |stream_user_data| is data
- * associated to the stream opened by this request and can be an
- * arbitrary pointer, which can be retrieved later by
+ * (https://tools.ietf.org/html/rfc7231#section-4) must be specified
+ * with ``:method`` key in |nva| (e.g. ``POST``).  This function does
+ * not take ownership of the |data_prd|.  The function copies the
+ * members of the |data_prd|.  If |data_prd| is ``NULL``, HEADERS have
+ * END_STREAM set.  The |stream_user_data| is data associated to the
+ * stream opened by this request and can be an arbitrary pointer,
+ * which can be retrieved later by
  * `nghttp2_session_get_stream_user_data()`.
  *
  * This function returns assigned stream ID if it succeeds, or one of
@@ -2505,11 +2953,12 @@ int nghttp2_priority_spec_check_default(const nghttp2_priority_spec *pri_spec);
  *   frame.
  *
  */
-int32_t nghttp2_submit_request(nghttp2_session *session,
-                               const nghttp2_priority_spec *pri_spec,
-                               const nghttp2_nv *nva, size_t nvlen,
-                               const nghttp2_data_provider *data_prd,
-                               void *stream_user_data);
+NGHTTP2_EXTERN int32_t
+    nghttp2_submit_request(nghttp2_session *session,
+                           const nghttp2_priority_spec *pri_spec,
+                           const nghttp2_nv *nva, size_t nvlen,
+                           const nghttp2_data_provider *data_prd,
+                           void *stream_user_data);
 
 /**
  * @function
@@ -2553,10 +3002,70 @@ int32_t nghttp2_submit_request(nghttp2_session *session,
  *     Out of memory.
  * :enum:`NGHTTP2_ERR_INVALID_ARGUMENT`
  *     The |stream_id| is 0.
+ * :enum:`NGHTTP2_ERR_DATA_EXIST`
+ *     DATA or HEADERS has been already submitted and not fully
+ *     processed yet.  Normally, this does not happen, but when
+ *     application wrongly calls `nghttp2_submit_response()` twice,
+ *     this may happen.
+ *
+ * .. warning::
+ *
+ *   Calling this function twice for the same stream ID may lead to
+ *   program crash.  It is generally considered to a programming error
+ *   to commit response twice.
  */
-int nghttp2_submit_response(nghttp2_session *session, int32_t stream_id,
-                            const nghttp2_nv *nva, size_t nvlen,
-                            const nghttp2_data_provider *data_prd);
+NGHTTP2_EXTERN int
+nghttp2_submit_response(nghttp2_session *session, int32_t stream_id,
+                        const nghttp2_nv *nva, size_t nvlen,
+                        const nghttp2_data_provider *data_prd);
+
+/**
+ * @function
+ *
+ * Submits trailer HEADERS against the stream |stream_id|.
+ *
+ * The |nva| is an array of name/value pair :type:`nghttp2_nv` with
+ * |nvlen| elements.  The application is responsible not to include
+ * required pseudo-header fields (header field whose name starts with
+ * ":") in |nva|.
+ *
+ * This function creates copies of all name/value pairs in |nva|.  It
+ * also lower-cases all names in |nva|.  The order of elements in
+ * |nva| is preserved.
+ *
+ * For server, trailer must be followed by response HEADERS or
+ * response DATA.  The library does not check that response HEADERS
+ * has already sent and if `nghttp2_submit_trailer()` is called before
+ * any response HEADERS submission (usually by
+ * `nghttp2_submit_response()`), the content of |nva| will be sent as
+ * reponse headers, which will result in error.
+ *
+ * This function has the same effect with `nghttp2_submit_headers()`,
+ * with flags = :enum:`NGHTTP2_FLAG_END_HEADERS` and both pri_spec and
+ * stream_user_data to NULL.
+ *
+ * To submit trailer after `nghttp2_submit_response()` is called, the
+ * application has to specify :type:`nghttp2_data_provider` to
+ * `nghttp2_submit_response()`.  In side
+ * :type:`nghttp2_data_source_read_callback`, when setting
+ * :enum:`NGHTTP2_DATA_FLAG_EOF`, also set
+ * :enum:`NGHTTP2_DATA_FLAG_NO_END_STREAM`.  After that, the
+ * application can send trailer using `nghttp2_submit_trailer()`.
+ * `nghttp2_submit_trailer()` can be used inside
+ * :type:`nghttp2_data_source_read_callback`.
+ *
+ * This function returns 0 if it succeeds and |stream_id| is -1.
+ * Otherwise, this function returns 0 if it succeeds, or one of the
+ * following negative error codes:
+ *
+ * :enum:`NGHTTP2_ERR_NOMEM`
+ *     Out of memory.
+ * :enum:`NGHTTP2_ERR_INVALID_ARGUMENT`
+ *     The |stream_id| is 0.
+ */
+NGHTTP2_EXTERN int nghttp2_submit_trailer(nghttp2_session *session,
+                                          int32_t stream_id,
+                                          const nghttp2_nv *nva, size_t nvlen);
 
 /**
  * @function
@@ -2584,8 +3093,8 @@ int nghttp2_submit_response(nghttp2_session *session, int32_t stream_id,
  * use `nghttp2_priority_spec_init()`.  If |pri_spec| is not ``NULL``,
  * this function will copy its data members.
  *
- * The `pri_spec->weight` must be in [:enum:`NGHTTP2_MIN_WEIGHT`,
- * :enum:`NGHTTP2_MAX_WEIGHT`], inclusive.  If `pri_spec->weight` is
+ * The ``pri_spec->weight`` must be in [:enum:`NGHTTP2_MIN_WEIGHT`,
+ * :enum:`NGHTTP2_MAX_WEIGHT`], inclusive.  If ``pri_spec->weight`` is
  * strictly less than :enum:`NGHTTP2_MIN_WEIGHT`, it becomes
  * :enum:`NGHTTP2_MIN_WEIGHT`.  If it is strictly greater than
  * :enum:`NGHTTP2_MAX_WEIGHT`, it becomes :enum:`NGHTTP2_MAX_WEIGHT`.
@@ -2607,7 +3116,8 @@ int nghttp2_submit_response(nghttp2_session *session, int32_t stream_id,
  *
  * This function is low-level in a sense that the application code can
  * specify flags directly.  For usual HTTP request,
- * `nghttp2_submit_request()` is useful.
+ * `nghttp2_submit_request()` is useful.  Likewise, for HTTP response,
+ * prefer `nghttp2_submit_response()`.
  *
  * This function returns newly assigned stream ID if it succeeds and
  * |stream_id| is -1.  Otherwise, this function returns 0 if it
@@ -2620,6 +3130,10 @@ int nghttp2_submit_response(nghttp2_session *session, int32_t stream_id,
  *     reached.
  * :enum:`NGHTTP2_ERR_INVALID_ARGUMENT`
  *     The |stream_id| is 0.
+ * :enum:`NGHTTP2_ERR_DATA_EXIST`
+ *     DATA or HEADERS has been already submitted and not fully
+ *     processed yet.  This happens if stream denoted by |stream_id|
+ *     is in reserved state.
  *
  * .. warning::
  *
@@ -2630,11 +3144,12 @@ int nghttp2_submit_response(nghttp2_session *session, int32_t stream_id,
  *   frame.
  *
  */
-int32_t nghttp2_submit_headers(nghttp2_session *session, uint8_t flags,
-                               int32_t stream_id,
-                               const nghttp2_priority_spec *pri_spec,
-                               const nghttp2_nv *nva, size_t nvlen,
-                               void *stream_user_data);
+NGHTTP2_EXTERN int32_t
+    nghttp2_submit_headers(nghttp2_session *session, uint8_t flags,
+                           int32_t stream_id,
+                           const nghttp2_priority_spec *pri_spec,
+                           const nghttp2_nv *nva, size_t nvlen,
+                           void *stream_user_data);
 
 /**
  * @function
@@ -2653,7 +3168,8 @@ int32_t nghttp2_submit_headers(nghttp2_session *session, uint8_t flags,
  * :enum:`NGHTTP2_ERR_NOMEM`
  *     Out of memory.
  * :enum:`NGHTTP2_ERR_DATA_EXIST`
- *     DATA has been already submitted and not fully processed yet.
+ *     DATA or HEADERS has been already submitted and not fully
+ *     processed yet.
  * :enum:`NGHTTP2_ERR_INVALID_ARGUMENT`
  *     The |stream_id| is 0.
  * :enum:`NGHTTP2_ERR_STREAM_CLOSED`
@@ -2661,18 +3177,23 @@ int32_t nghttp2_submit_headers(nghttp2_session *session, uint8_t flags,
  *
  * .. note::
  *
- *   Currently, only one data is allowed for a stream at a time.
- *   Submitting data more than once before first data is finished
- *   results in :enum:`NGHTTP2_ERR_DATA_EXIST` error code.  The
- *   earliest callback which tells that previous data is done is
- *   :type:`nghttp2_on_frame_send_callback`.  In side that callback,
- *   new data can be submitted using `nghttp2_submit_data()`.  Of
- *   course, all data except for last one must not have
- *   :enum:`NGHTTP2_FLAG_END_STREAM` flag set in |flags|.
+ *   Currently, only one DATA or HEADERS is allowed for a stream at a
+ *   time.  Submitting these frames more than once before first DATA
+ *   or HEADERS is finished results in :enum:`NGHTTP2_ERR_DATA_EXIST`
+ *   error code.  The earliest callback which tells that previous
+ *   frame is done is :type:`nghttp2_on_frame_send_callback`.  In side
+ *   that callback, new data can be submitted using
+ *   `nghttp2_submit_data()`.  Of course, all data except for last one
+ *   must not have :enum:`NGHTTP2_FLAG_END_STREAM` flag set in
+ *   |flags|.  This sounds a bit complicated, and we recommend to use
+ *   `nghttp2_submit_request()` and `nghttp2_submit_response()` to
+ *   avoid this cascading issue.  The experience shows that for HTTP
+ *   use, these two functions are enough to implement both client and
+ *   server.
  */
-int nghttp2_submit_data(nghttp2_session *session, uint8_t flags,
-                        int32_t stream_id,
-                        const nghttp2_data_provider *data_prd);
+NGHTTP2_EXTERN int nghttp2_submit_data(nghttp2_session *session, uint8_t flags,
+                                       int32_t stream_id,
+                                       const nghttp2_data_provider *data_prd);
 
 /**
  * @function
@@ -2688,8 +3209,8 @@ int nghttp2_submit_data(nghttp2_session *session, uint8_t flags,
  * `nghttp2_priority_spec_init()`.  This function will copy its data
  * members.
  *
- * The `pri_spec->weight` must be in [:enum:`NGHTTP2_MIN_WEIGHT`,
- * :enum:`NGHTTP2_MAX_WEIGHT`], inclusive.  If `pri_spec->weight` is
+ * The ``pri_spec->weight`` must be in [:enum:`NGHTTP2_MIN_WEIGHT`,
+ * :enum:`NGHTTP2_MAX_WEIGHT`], inclusive.  If ``pri_spec->weight`` is
  * strictly less than :enum:`NGHTTP2_MIN_WEIGHT`, it becomes
  * :enum:`NGHTTP2_MIN_WEIGHT`.  If it is strictly greater than
  * :enum:`NGHTTP2_MAX_WEIGHT`, it becomes :enum:`NGHTTP2_MAX_WEIGHT`.
@@ -2703,9 +3224,10 @@ int nghttp2_submit_data(nghttp2_session *session, uint8_t flags,
  *     The |stream_id| is 0; or the |pri_spec| is NULL; or trying to
  *     depend on itself.
  */
-int nghttp2_submit_priority(nghttp2_session *session, uint8_t flags,
-                            int32_t stream_id,
-                            const nghttp2_priority_spec *pri_spec);
+NGHTTP2_EXTERN int
+nghttp2_submit_priority(nghttp2_session *session, uint8_t flags,
+                        int32_t stream_id,
+                        const nghttp2_priority_spec *pri_spec);
 
 /**
  * @function
@@ -2726,8 +3248,9 @@ int nghttp2_submit_priority(nghttp2_session *session, uint8_t flags,
  * :enum:`NGHTTP2_ERR_INVALID_ARGUMENT`
  *     The |stream_id| is 0.
  */
-int nghttp2_submit_rst_stream(nghttp2_session *session, uint8_t flags,
-                              int32_t stream_id, uint32_t error_code);
+NGHTTP2_EXTERN int nghttp2_submit_rst_stream(nghttp2_session *session,
+                                             uint8_t flags, int32_t stream_id,
+                                             uint32_t error_code);
 
 /**
  * @function
@@ -2755,15 +3278,13 @@ int nghttp2_submit_rst_stream(nghttp2_session *session, uint8_t flags,
  * :enum:`NGHTTP2_ERR_INVALID_ARGUMENT`
  *     The |iv| contains invalid value (e.g., initial window size
  *     strictly greater than (1 << 31) - 1.
- * :enum:`NGHTTP2_ERR_TOO_MANY_INFLIGHT_SETTINGS`
- *     There is already another in-flight SETTINGS.  Note that the
- *     current implementation only allows 1 in-flight SETTINGS frame
- *     without ACK flag set.
  * :enum:`NGHTTP2_ERR_NOMEM`
  *     Out of memory.
  */
-int nghttp2_submit_settings(nghttp2_session *session, uint8_t flags,
-                            const nghttp2_settings_entry *iv, size_t niv);
+NGHTTP2_EXTERN int nghttp2_submit_settings(nghttp2_session *session,
+                                           uint8_t flags,
+                                           const nghttp2_settings_entry *iv,
+                                           size_t niv);
 
 /**
  * @function
@@ -2795,6 +3316,9 @@ int nghttp2_submit_settings(nghttp2_session *session, uint8_t flags,
  *
  * The client side is not allowed to use this function.
  *
+ * To submit response headers and data, use
+ * `nghttp2_submit_response()`.
+ *
  * This function returns assigned promised stream ID if it succeeds,
  * or one of the following negative error codes:
  *
@@ -2819,10 +3343,10 @@ int nghttp2_submit_settings(nghttp2_session *session, uint8_t flags,
  *   frame.
  *
  */
-int32_t nghttp2_submit_push_promise(nghttp2_session *session, uint8_t flags,
-                                    int32_t stream_id, const nghttp2_nv *nva,
-                                    size_t nvlen,
-                                    void *promised_stream_user_data);
+NGHTTP2_EXTERN int32_t
+    nghttp2_submit_push_promise(nghttp2_session *session, uint8_t flags,
+                                int32_t stream_id, const nghttp2_nv *nva,
+                                size_t nvlen, void *promised_stream_user_data);
 
 /**
  * @function
@@ -2845,8 +3369,8 @@ int32_t nghttp2_submit_push_promise(nghttp2_session *session, uint8_t flags,
  * :enum:`NGHTTP2_ERR_NOMEM`
  *     Out of memory.
  */
-int nghttp2_submit_ping(nghttp2_session *session, uint8_t flags,
-                        const uint8_t *opaque_data);
+NGHTTP2_EXTERN int nghttp2_submit_ping(nghttp2_session *session, uint8_t flags,
+                                       const uint8_t *opaque_data);
 
 /**
  * @function
@@ -2877,6 +3401,13 @@ int nghttp2_submit_ping(nghttp2_session *session, uint8_t flags,
  * keep this memory after the return of this function.  If the
  * |opaque_data_len| is 0, the |opaque_data| could be ``NULL``.
  *
+ * After successful transmission of GOAWAY, following things happen.
+ * All incoming streams having strictly more than |last_stream_id| are
+ * closed.  All incoming HEADERS which starts new stream are simply
+ * ignored.  After all active streams are handled, both
+ * `nghttp2_session_want_read()` and `nghttp2_session_want_write()`
+ * return 0 and the application can close session.
+ *
  * This function returns 0 if it succeeds, or one of the following
  * negative error codes:
  *
@@ -2886,9 +3417,25 @@ int nghttp2_submit_ping(nghttp2_session *session, uint8_t flags,
  *     The |opaque_data_len| is too large; the |last_stream_id| is
  *     invalid.
  */
-int nghttp2_submit_goaway(nghttp2_session *session, uint8_t flags,
-                          int32_t last_stream_id, uint32_t error_code,
-                          const uint8_t *opaque_data, size_t opaque_data_len);
+NGHTTP2_EXTERN int nghttp2_submit_goaway(nghttp2_session *session,
+                                         uint8_t flags, int32_t last_stream_id,
+                                         uint32_t error_code,
+                                         const uint8_t *opaque_data,
+                                         size_t opaque_data_len);
+
+/**
+ * @function
+ *
+ * Returns the last stream ID of a stream for which
+ * :type:`nghttp2_on_frame_recv_callback` was invoked most recently.
+ * The returned value can be used as last_stream_id parameter for
+ * `nghttp2_submit_goaway()` and
+ * `nghttp2_session_terminate_session2()`.
+ *
+ * This function always succeeds.
+ */
+NGHTTP2_EXTERN int32_t
+    nghttp2_session_get_last_proc_stream_id(nghttp2_session *session);
 
 /**
  * @function
@@ -2897,6 +3444,9 @@ int nghttp2_submit_goaway(nghttp2_session *session, uint8_t flags,
  *
  * The |flags| is currently ignored and should be
  * :enum:`NGHTTP2_FLAG_NONE`.
+ *
+ * The |stream_id| is the stream ID to send this WINDOW_UPDATE.  To
+ * send connection level WINDOW_UPDATE, specify 0 to |stream_id|.
  *
  * If the |window_size_increment| is positive, the WINDOW_UPDATE with
  * that value as window_size_increment is queued.  If the
@@ -2922,45 +3472,10 @@ int nghttp2_submit_goaway(nghttp2_session *session, uint8_t flags,
  * :enum:`NGHTTP2_ERR_NOMEM`
  *     Out of memory.
  */
-int nghttp2_submit_window_update(nghttp2_session *session, uint8_t flags,
-                                 int32_t stream_id,
-                                 int32_t window_size_increment);
-
-/**
- * @function
- *
- * Submits ALTSVC frame with given parameters.
- *
- * The |flags| is currently ignored and should be
- * :enum:`NGHTTP2_FLAG_NONE`.
- *
- * Only the server can send the ALTSVC frame.  If |session| is
- * initialized as client, this function fails and returns
- * :enum:`NGHTTP2_ERR_PROTO`.
- *
- * If the |protocol_id_len| is 0, the |protocol_id| could be ``NULL``.
- *
- * If the |host_len| is 0, the |host| could be ``NULL``.
- *
- * If the |origin_len| is 0, the |origin| could be ``NULL``.
- *
- * This function returns 0 if it succeeds, or one of the following
- * negative error codes:
- *
- * :enum:`NGHTTP2_ERR_NOMEM`
- *     Out of memory.
- * :enum:`NGHTTP2_ERR_PROTO`
- *     The function is invoked with |session| which was initialized as
- *     client.
- * :enum:`NGHTTP2_ERR_INVALID_ARGUMENT`
- *     The combined length of |protocol_id_len|, |host_len| and
- *     |origin_len| is is too large.
- */
-int nghttp2_submit_altsvc(nghttp2_session *session, uint8_t flags,
-                          int32_t stream_id, uint32_t max_age, uint16_t port,
-                          const uint8_t *protocol_id, size_t protocol_id_len,
-                          const uint8_t *host, size_t host_len,
-                          const uint8_t *origin, size_t origin_len);
+NGHTTP2_EXTERN int nghttp2_submit_window_update(nghttp2_session *session,
+                                                uint8_t flags,
+                                                int32_t stream_id,
+                                                int32_t window_size_increment);
 
 /**
  * @function
@@ -2971,7 +3486,8 @@ int nghttp2_submit_altsvc(nghttp2_session *session, uint8_t flags,
  * returns positive integer if ``lhs->name`` is found to be greater
  * than ``rhs->name``; or returns 0 otherwise.
  */
-int nghttp2_nv_compare_name(const nghttp2_nv *lhs, const nghttp2_nv *rhs);
+NGHTTP2_EXTERN int nghttp2_nv_compare_name(const nghttp2_nv *lhs,
+                                           const nghttp2_nv *rhs);
 
 /**
  * @function
@@ -2979,14 +3495,14 @@ int nghttp2_nv_compare_name(const nghttp2_nv *lhs, const nghttp2_nv *rhs);
  * A helper function for dealing with NPN in client side or ALPN in
  * server side.  The |in| contains peer's protocol list in preferable
  * order.  The format of |in| is length-prefixed and not
- * null-terminated.  For example, ``HTTP-draft-04/2.0`` and
+ * null-terminated.  For example, ``h2`` and
  * ``http/1.1`` stored in |in| like this::
  *
- *     in[0] = 17
- *     in[1..17] = "HTTP-draft-04/2.0"
- *     in[18] = 8
- *     in[19..26] = "http/1.1"
- *     inlen = 27
+ *     in[0] = 2
+ *     in[1..2] = "h2"
+ *     in[3] = 8
+ *     in[4..11] = "http/1.1"
+ *     inlen = 12
  *
  * The selection algorithm is as follows:
  *
@@ -3000,12 +3516,10 @@ int nghttp2_nv_compare_name(const nghttp2_nv *lhs, const nghttp2_nv *rhs);
  *    non-overlap case).  In this case, |out| and |outlen| are left
  *    untouched.
  *
- * Selecting ``HTTP-draft-04/2.0`` means that ``HTTP-draft-04/2.0`` is
- * written into |*out| and its length (which is 17) is assigned to
- * |*outlen|.
+ * Selecting ``h2`` means that ``h2`` is written into |*out| and its
+ * length (which is 2) is assigned to |*outlen|.
  *
- * For ALPN, refer to
- * https://tools.ietf.org/html/draft-ietf-tls-applayerprotoneg-05
+ * For ALPN, refer to https://tools.ietf.org/html/rfc7301
  *
  * See http://technotes.googlecode.com/git/nextprotoneg.html for more
  * details about NPN.
@@ -3021,7 +3535,10 @@ int nghttp2_nv_compare_name(const nghttp2_nv *lhs, const nghttp2_nv *rhs);
  *     {
  *         int rv;
  *         rv = nghttp2_select_next_protocol(out, outlen, in, inlen);
- *         if(rv == 1) {
+ *         if (rv == -1) {
+ *             return SSL_TLSEXT_ERR_NOACK;
+ *         }
+ *         if (rv == 1) {
  *             ((MyType*)arg)->http2_selected = 1;
  *         }
  *         return SSL_TLSEXT_ERR_OK;
@@ -3030,8 +3547,10 @@ int nghttp2_nv_compare_name(const nghttp2_nv *lhs, const nghttp2_nv *rhs);
  *     SSL_CTX_set_next_proto_select_cb(ssl_ctx, select_next_proto_cb, my_obj);
  *
  */
-int nghttp2_select_next_protocol(unsigned char **out, unsigned char *outlen,
-                                 const unsigned char *in, unsigned int inlen);
+NGHTTP2_EXTERN int nghttp2_select_next_protocol(unsigned char **out,
+                                                unsigned char *outlen,
+                                                const unsigned char *in,
+                                                unsigned int inlen);
 
 /**
  * @function
@@ -3042,7 +3561,7 @@ int nghttp2_select_next_protocol(unsigned char **out, unsigned char *outlen,
  * version number and if the condition is not met, this function will
  * return a ``NULL``.  Pass in 0 to skip the version checking.
  */
-nghttp2_info *nghttp2_version(int least_version);
+NGHTTP2_EXTERN nghttp2_info *nghttp2_version(int least_version);
 
 /**
  * @function
@@ -3050,7 +3569,7 @@ nghttp2_info *nghttp2_version(int least_version);
  * Returns nonzero if the :type:`nghttp2_error` library error code
  * |lib_error| is fatal.
  */
-int nghttp2_is_fatal(int lib_error);
+NGHTTP2_EXTERN int nghttp2_is_fatal(int lib_error_code);
 
 /**
  * @function
@@ -3061,7 +3580,7 @@ int nghttp2_is_fatal(int lib_error);
  * Because this is a header field name in HTTP2, the upper cased alphabet
  * is treated as error.
  */
-int nghttp2_check_header_name(const uint8_t *name, size_t len);
+NGHTTP2_EXTERN int nghttp2_check_header_name(const uint8_t *name, size_t len);
 
 /**
  * @function
@@ -3070,7 +3589,7 @@ int nghttp2_check_header_name(const uint8_t *name, size_t len);
  * is valid according to
  * http://tools.ietf.org/html/rfc7230#section-3.2
  */
-int nghttp2_check_header_value(const uint8_t *value, size_t len);
+NGHTTP2_EXTERN int nghttp2_check_header_value(const uint8_t *value, size_t len);
 
 /* HPACK API */
 
@@ -3099,15 +3618,34 @@ typedef struct nghttp2_hd_deflater nghttp2_hd_deflater;
  * :enum:`NGHTTP2_ERR_NOMEM`
  *     Out of memory.
  */
-int nghttp2_hd_deflate_new(nghttp2_hd_deflater **deflater_ptr,
-                           size_t deflate_hd_table_bufsize_max);
+NGHTTP2_EXTERN int nghttp2_hd_deflate_new(nghttp2_hd_deflater **deflater_ptr,
+                                          size_t deflate_hd_table_bufsize_max);
+
+/**
+ * @function
+ *
+ * Like `nghttp2_hd_deflate_new()`, but with additional custom memory
+ * allocator specified in the |mem|.
+ *
+ * The |mem| can be ``NULL`` and the call is equivalent to
+ * `nghttp2_hd_deflate_new()`.
+ *
+ * This function does not take ownership |mem|.  The application is
+ * responsible for freeing |mem|.
+ *
+ * The library code does not refer to |mem| pointer after this
+ * function returns, so the application can safely free it.
+ */
+NGHTTP2_EXTERN int nghttp2_hd_deflate_new2(nghttp2_hd_deflater **deflater_ptr,
+                                           size_t deflate_hd_table_bufsize_max,
+                                           nghttp2_mem *mem);
 
 /**
  * @function
  *
  * Deallocates any resources allocated for |deflater|.
  */
-void nghttp2_hd_deflate_del(nghttp2_hd_deflater *deflater);
+NGHTTP2_EXTERN void nghttp2_hd_deflate_del(nghttp2_hd_deflater *deflater);
 
 /**
  * @function
@@ -3132,8 +3670,9 @@ void nghttp2_hd_deflate_del(nghttp2_hd_deflater *deflater);
  * :enum:`NGHTTP2_ERR_NOMEM`
  *     Out of memory.
  */
-int nghttp2_hd_deflate_change_table_size(nghttp2_hd_deflater *deflater,
-                                         size_t settings_hd_table_bufsize_max);
+NGHTTP2_EXTERN int
+nghttp2_hd_deflate_change_table_size(nghttp2_hd_deflater *deflater,
+                                     size_t settings_hd_table_bufsize_max);
 
 /**
  * @function
@@ -3162,9 +3701,9 @@ int nghttp2_hd_deflate_change_table_size(nghttp2_hd_deflater *deflater,
  * :enum:`NGHTTP2_ERR_INSUFF_BUFSIZE`
  *     The provided |buflen| size is too small to hold the output.
  */
-ssize_t nghttp2_hd_deflate_hd(nghttp2_hd_deflater *deflater, uint8_t *buf,
-                              size_t buflen, const nghttp2_nv *nva,
-                              size_t nvlen);
+NGHTTP2_EXTERN ssize_t
+    nghttp2_hd_deflate_hd(nghttp2_hd_deflater *deflater, uint8_t *buf,
+                          size_t buflen, const nghttp2_nv *nva, size_t nvlen);
 
 /**
  * @function
@@ -3172,8 +3711,9 @@ ssize_t nghttp2_hd_deflate_hd(nghttp2_hd_deflater *deflater, uint8_t *buf,
  * Returns an upper bound on the compressed size after deflation of
  * |nva| of length |nvlen|.
  */
-size_t nghttp2_hd_deflate_bound(nghttp2_hd_deflater *deflater,
-                                const nghttp2_nv *nva, size_t nvlen);
+NGHTTP2_EXTERN size_t nghttp2_hd_deflate_bound(nghttp2_hd_deflater *deflater,
+                                               const nghttp2_nv *nva,
+                                               size_t nvlen);
 
 struct nghttp2_hd_inflater;
 
@@ -3197,14 +3737,32 @@ typedef struct nghttp2_hd_inflater nghttp2_hd_inflater;
  * :enum:`NGHTTP2_ERR_NOMEM`
  *     Out of memory.
  */
-int nghttp2_hd_inflate_new(nghttp2_hd_inflater **inflater_ptr);
+NGHTTP2_EXTERN int nghttp2_hd_inflate_new(nghttp2_hd_inflater **inflater_ptr);
+
+/**
+ * @function
+ *
+ * Like `nghttp2_hd_inflate_new()`, but with additional custom memory
+ * allocator specified in the |mem|.
+ *
+ * The |mem| can be ``NULL`` and the call is equivalent to
+ * `nghttp2_hd_inflate_new()`.
+ *
+ * This function does not take ownership |mem|.  The application is
+ * responsible for freeing |mem|.
+ *
+ * The library code does not refer to |mem| pointer after this
+ * function returns, so the application can safely free it.
+ */
+NGHTTP2_EXTERN int nghttp2_hd_inflate_new2(nghttp2_hd_inflater **inflater_ptr,
+                                           nghttp2_mem *mem);
 
 /**
  * @function
  *
  * Deallocates any resources allocated for |inflater|.
  */
-void nghttp2_hd_inflate_del(nghttp2_hd_inflater *inflater);
+NGHTTP2_EXTERN void nghttp2_hd_inflate_del(nghttp2_hd_inflater *inflater);
 
 /**
  * @function
@@ -3215,14 +3773,26 @@ void nghttp2_hd_inflate_del(nghttp2_hd_inflater *inflater);
  * The |settings_hd_table_bufsize_max| should be the value transmitted
  * in SETTINGS_HEADER_TABLE_SIZE.
  *
+ * This function must not be called while header block is being
+ * inflated.  In other words, this function must be called after
+ * initialization of |inflater|, but before calling
+ * `nghttp2_hd_inflate_hd()`, or after
+ * `nghttp2_hd_inflate_end_headers()`.  Otherwise,
+ * `NGHTTP2_ERR_INVALID_STATE` was returned.
+ *
  * This function returns 0 if it succeeds, or one of the following
  * negative error codes:
  *
  * :enum:`NGHTTP2_ERR_NOMEM`
  *     Out of memory.
+ * :enum:`NGHTTP2_ERR_INVALID_STATE`
+ *     The function is called while header block is being inflated.
+ *     Probably, application missed to call
+ *     `nghttp2_hd_inflate_end_headers()`.
  */
-int nghttp2_hd_inflate_change_table_size(nghttp2_hd_inflater *inflater,
-                                         size_t settings_hd_table_bufsize_max);
+NGHTTP2_EXTERN int
+nghttp2_hd_inflate_change_table_size(nghttp2_hd_inflater *inflater,
+                                     size_t settings_hd_table_bufsize_max);
 
 /**
  * @enum
@@ -3321,9 +3891,10 @@ typedef enum {
  *     }
  *
  */
-ssize_t nghttp2_hd_inflate_hd(nghttp2_hd_inflater *inflater, nghttp2_nv *nv_out,
-                              int *inflate_flags, uint8_t *in, size_t inlen,
-                              int in_final);
+NGHTTP2_EXTERN ssize_t nghttp2_hd_inflate_hd(nghttp2_hd_inflater *inflater,
+                                             nghttp2_nv *nv_out,
+                                             int *inflate_flags, uint8_t *in,
+                                             size_t inlen, int in_final);
 
 /**
  * @function
@@ -3333,7 +3904,8 @@ ssize_t nghttp2_hd_inflate_hd(nghttp2_hd_inflater *inflater, nghttp2_nv *nv_out,
  * This function returns 0 if it succeeds. Currently this function
  * always succeeds.
  */
-int nghttp2_hd_inflate_end_headers(nghttp2_hd_inflater *inflater);
+NGHTTP2_EXTERN int
+nghttp2_hd_inflate_end_headers(nghttp2_hd_inflater *inflater);
 
 #ifdef __cplusplus
 }

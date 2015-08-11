@@ -22,16 +22,35 @@
  * OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
+#ifdef __sgi
+#include <string.h>
+#define errx(exitcode, format, args...)                                        \
+  {                                                                            \
+    warnx(format, ##args);                                                     \
+    exit(exitcode);                                                            \
+  }
+#define warnx(format, args...) fprintf(stderr, format "\n", ##args)
+char *strndup(const char *s, size_t size);
+#endif
+
 #ifdef HAVE_CONFIG_H
 #include <config.h>
-#endif /* !HAVE_CONFIG_H */
+#endif /* HAVE_CONFIG_H */
 
 #include <sys/types.h>
+#ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#endif /* HAVE_UNISTD_H */
+#ifdef HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
+#endif /* HAVE_SYS_SOCKET_H */
+#ifdef HAVE_NETINET_IN_H
 #include <netinet/in.h>
+#endif /* HAVE_NETINET_IN_H */
 #include <netinet/tcp.h>
+#ifndef __sgi
 #include <err.h>
+#endif
 #include <signal.h>
 
 #include <openssl/ssl.h>
@@ -50,11 +69,11 @@
 #define ARRLEN(x) (sizeof(x) / sizeof(x[0]))
 
 typedef struct {
-  /* The NULL-terminated URI string to retreive. */
+  /* The NULL-terminated URI string to retrieve. */
   const char *uri;
   /* Parsed result of the |uri| */
   struct http_parser_url *u;
-  /* The authroity portion of the |uri|, not NULL-terminated */
+  /* The authority portion of the |uri|, not NULL-terminated */
   char *authority;
   /* The path portion of the |uri|, including query, not
      NULL-terminated */
@@ -94,7 +113,8 @@ static http2_stream_data *create_http2_stream_data(const char *uri,
                  ":%u", u->port);
   }
 
-  stream_data->pathlen = 0;
+  /* If we don't have path in URI, we use "/" as path. */
+  stream_data->pathlen = 1;
   if (u->field_set & (1 << UF_PATH)) {
     stream_data->pathlen = u->field_data[UF_PATH].len;
   }
@@ -102,19 +122,22 @@ static http2_stream_data *create_http2_stream_data(const char *uri,
     /* +1 for '?' character */
     stream_data->pathlen += u->field_data[UF_QUERY].len + 1;
   }
-  if (stream_data->pathlen > 0) {
-    stream_data->path = malloc(stream_data->pathlen);
-    if (u->field_set & (1 << UF_PATH)) {
-      memcpy(stream_data->path, &uri[u->field_data[UF_PATH].off],
-             u->field_data[UF_PATH].len);
-    }
-    if (u->field_set & (1 << UF_QUERY)) {
-      memcpy(stream_data->path + u->field_data[UF_PATH].len + 1,
-             &uri[u->field_data[UF_QUERY].off], u->field_data[UF_QUERY].len);
-    }
+
+  stream_data->path = malloc(stream_data->pathlen);
+  if (u->field_set & (1 << UF_PATH)) {
+    memcpy(stream_data->path, &uri[u->field_data[UF_PATH].off],
+           u->field_data[UF_PATH].len);
   } else {
-    stream_data->path = NULL;
+    stream_data->path[0] = '/';
   }
+  if (u->field_set & (1 << UF_QUERY)) {
+    stream_data->path[stream_data->pathlen - u->field_data[UF_QUERY].len - 1] =
+        '?';
+    memcpy(stream_data->path + stream_data->pathlen -
+               u->field_data[UF_QUERY].len,
+           &uri[u->field_data[UF_QUERY].off], u->field_data[UF_QUERY].len);
+  }
+
   return stream_data;
 }
 
@@ -258,8 +281,7 @@ static int on_data_chunk_recv_callback(nghttp2_session *session _U_,
    stream), if it is closed, we send GOAWAY and tear down the
    session */
 static int on_stream_close_callback(nghttp2_session *session, int32_t stream_id,
-                                    nghttp2_error_code error_code,
-                                    void *user_data) {
+                                    uint32_t error_code, void *user_data) {
   http2_session_data *session_data = (http2_session_data *)user_data;
   int rv;
 
@@ -345,8 +367,7 @@ static void send_client_connection_header(http2_session_data *session_data) {
       {NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, 100}};
   int rv;
 
-  bufferevent_write(session_data->bev, NGHTTP2_CLIENT_CONNECTION_PREFACE,
-                    NGHTTP2_CLIENT_CONNECTION_PREFACE_LEN);
+  /* client 24 bytes magic string will be sent by nghttp2 library */
   rv = nghttp2_submit_settings(session_data->session, NGHTTP2_FLAG_NONE, iv,
                                ARRLEN(iv));
   if (rv != 0) {
@@ -547,10 +568,10 @@ int main(int argc, char **argv) {
   act.sa_handler = SIG_IGN;
   sigaction(SIGPIPE, &act, NULL);
 
-  OPENSSL_config(NULL);
-  OpenSSL_add_all_algorithms();
   SSL_load_error_strings();
   SSL_library_init();
+  OpenSSL_add_all_algorithms();
+  OPENSSL_config(NULL);
 
   run(argv[1]);
   return 0;

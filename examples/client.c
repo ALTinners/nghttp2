@@ -28,16 +28,26 @@
  */
 #ifdef HAVE_CONFIG_H
 #include <config.h>
-#endif /* !HAVE_CONFIG_H */
+#endif /* HAVE_CONFIG_H */
 
-#include <stdint.h>
+#include <inttypes.h>
 #include <stdlib.h>
+#ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#endif /* HAVE_UNISTD_H */
+#ifdef HAVE_FCNTL_H
 #include <fcntl.h>
+#endif /* HAVE_FCNTL_H */
 #include <sys/types.h>
+#ifdef HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
+#endif /* HAVE_SYS_SOCKET_H */
+#ifdef HAVE_NETDB_H
 #include <netdb.h>
+#endif /* HAVE_NETDB_H */
+#ifdef HAVE_NETINET_IN_H
 #include <netinet/in.h>
+#endif /* HAVE_NETINET_IN_H */
 #include <netinet/tcp.h>
 #include <poll.h>
 #include <signal.h>
@@ -152,7 +162,7 @@ static ssize_t send_callback(nghttp2_session *session _U_, const uint8_t *data,
   connection->want_io = IO_NONE;
   ERR_clear_error();
   rv = SSL_write(connection->ssl, data, (int)length);
-  if (rv < 0) {
+  if (rv <= 0) {
     int err = SSL_get_error(connection->ssl, rv);
     if (err == SSL_ERROR_WANT_WRITE || err == SSL_ERROR_WANT_READ) {
       connection->want_io =
@@ -528,10 +538,6 @@ static void fetch_uri(const struct URI *uri) {
   connection.ssl = ssl;
   connection.want_io = IO_NONE;
 
-  /* Send connection header in blocking I/O mode */
-  SSL_write(ssl, NGHTTP2_CLIENT_CONNECTION_PREFACE,
-            NGHTTP2_CLIENT_CONNECTION_PREFACE_LEN);
-
   /* Here make file descriptor non-block */
   make_non_block(fd);
   set_tcp_nodelay(fd);
@@ -553,6 +559,8 @@ static void fetch_uri(const struct URI *uri) {
   if (rv != 0) {
     diec("nghttp2_session_client_new", rv);
   }
+
+  nghttp2_submit_settings(connection.session, NGHTTP2_FLAG_NONE, NULL, 0);
 
   /* Submit the HTTP request to the outbound queue. */
   submit_request(&connection, &req);
@@ -681,10 +689,10 @@ int main(int argc, char **argv) {
   act.sa_handler = SIG_IGN;
   sigaction(SIGPIPE, &act, 0);
 
-  OPENSSL_config(NULL);
-  OpenSSL_add_all_algorithms();
   SSL_load_error_strings();
   SSL_library_init();
+  OpenSSL_add_all_algorithms();
+  OPENSSL_config(NULL);
 
   rv = parse_uri(&uri, argv[1]);
   if (rv != 0) {

@@ -28,14 +28,18 @@ Contents:
    h2load.1
    nghttpx-howto
    h2load-howto
+   programmers-guide
    apiref
    libnghttp2_asio
    python-apiref
    nghttp2.h
    nghttp2ver.h
+   asio_http2_server.h
+   asio_http2_client.h
    asio_http2.h
    Source <https://github.com/tatsuhiro-t/nghttp2>
    Issues <https://github.com/tatsuhiro-t/nghttp2/issues>
+   nghttp2.org <https://nghttp2.org/>
 
 Released Versions
 =================
@@ -45,6 +49,5 @@ https://github.com/tatsuhiro-t/nghttp2/releases
 Resources
 ---------
 
-* http://tools.ietf.org/html/draft-ietf-httpbis-http2-14
-* http://tools.ietf.org/html/draft-ietf-httpbis-header-compression-09
-* http://tools.ietf.org/html/draft-ietf-httpbis-alt-svc-04
+* HTTP/2 https://tools.ietf.org/html/rfc7540
+* HPACK https://tools.ietf.org/html/rfc7541

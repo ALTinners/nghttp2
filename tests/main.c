@@ -41,7 +41,7 @@
 #include "nghttp2_helper_test.h"
 #include "nghttp2_buf_test.h"
 
-extern int nghttp2_enable_strict_first_settings_check;
+extern int nghttp2_enable_strict_preface;
 
 static int init_suite1(void) { return 0; }
 
@@ -51,7 +51,7 @@ int main(int argc _U_, char *argv[] _U_) {
   CU_pSuite pSuite = NULL;
   unsigned int num_tests_failed;
 
-  nghttp2_enable_strict_first_settings_check = 0;
+  nghttp2_enable_strict_preface = 0;
 
   /* initialize the CUnit test registry */
   if (CUE_SUCCESS != CU_initialize_registry())
@@ -80,14 +80,14 @@ int main(int argc _U_, char *argv[] _U_) {
       !CU_add_test(pSuite, "session_recv_eof", test_nghttp2_session_recv_eof) ||
       !CU_add_test(pSuite, "session_recv_data",
                    test_nghttp2_session_recv_data) ||
+      !CU_add_test(pSuite, "session_recv_data_no_auto_flow_control",
+                   test_nghttp2_session_recv_data_no_auto_flow_control) ||
       !CU_add_test(pSuite, "session_recv_continuation",
                    test_nghttp2_session_recv_continuation) ||
       !CU_add_test(pSuite, "session_recv_headers_with_priority",
                    test_nghttp2_session_recv_headers_with_priority) ||
       !CU_add_test(pSuite, "session_recv_premature_headers",
                    test_nghttp2_session_recv_premature_headers) ||
-      !CU_add_test(pSuite, "session_recv_altsvc",
-                   test_nghttp2_session_recv_altsvc) ||
       !CU_add_test(pSuite, "session_recv_unknown_frame",
                    test_nghttp2_session_recv_unknown_frame) ||
       !CU_add_test(pSuite, "session_recv_unexpected_continuation",
@@ -141,8 +141,8 @@ int main(int argc _U_, char *argv[] _U_) {
       !CU_add_test(pSuite, "session_reprioritize_stream",
                    test_nghttp2_session_reprioritize_stream) ||
       !CU_add_test(
-          pSuite, "session_reprioritize_stream_with_closed_stream_limit",
-          test_nghttp2_session_reprioritize_stream_with_closed_stream_limit) ||
+          pSuite, "session_reprioritize_stream_with_idle_stream_dep",
+          test_nghttp2_session_reprioritize_stream_with_idle_stream_dep) ||
       !CU_add_test(pSuite, "submit_data", test_nghttp2_submit_data) ||
       !CU_add_test(pSuite, "submit_data_read_length_too_large",
                    test_nghttp2_submit_data_read_length_too_large) ||
@@ -156,6 +156,7 @@ int main(int argc _U_, char *argv[] _U_) {
                    test_nghttp2_submit_response_with_data) ||
       !CU_add_test(pSuite, "submit_response_without_data",
                    test_nghttp2_submit_response_without_data) ||
+      !CU_add_test(pSuite, "submit_trailer", test_nghttp2_submit_trailer) ||
       !CU_add_test(pSuite, "submit_headers_start_stream",
                    test_nghttp2_submit_headers_start_stream) ||
       !CU_add_test(pSuite, "submit_headers_reply",
@@ -170,19 +171,22 @@ int main(int argc _U_, char *argv[] _U_) {
                    test_nghttp2_submit_settings) ||
       !CU_add_test(pSuite, "session_submit_settings_update_local_window_size",
                    test_nghttp2_submit_settings_update_local_window_size) ||
+      !CU_add_test(pSuite, "session_submit_settings_multiple_times",
+                   test_nghttp2_submit_settings_multiple_times) ||
       !CU_add_test(pSuite, "session_submit_push_promise",
                    test_nghttp2_submit_push_promise) ||
       !CU_add_test(pSuite, "submit_window_update",
                    test_nghttp2_submit_window_update) ||
       !CU_add_test(pSuite, "submit_window_update_local_window_size",
                    test_nghttp2_submit_window_update_local_window_size) ||
-      !CU_add_test(pSuite, "submit_altsvc", test_nghttp2_submit_altsvc) ||
+      !CU_add_test(pSuite, "submit_shutdown_notice",
+                   test_nghttp2_submit_shutdown_notice) ||
       !CU_add_test(pSuite, "submit_invalid_nv",
                    test_nghttp2_submit_invalid_nv) ||
       !CU_add_test(pSuite, "session_open_stream",
                    test_nghttp2_session_open_stream) ||
-      !CU_add_test(pSuite, "session_open_stream_with_closed_stream_limit",
-                   test_nghttp2_session_open_stream_with_closed_stream_limit) ||
+      !CU_add_test(pSuite, "session_open_stream_with_idle_stream_dep",
+                   test_nghttp2_session_open_stream_with_idle_stream_dep) ||
       !CU_add_test(pSuite, "session_get_next_ob_item",
                    test_nghttp2_session_get_next_ob_item) ||
       !CU_add_test(pSuite, "session_pop_next_ob_item",
@@ -234,26 +238,58 @@ int main(int argc _U_, char *argv[] _U_) {
       !CU_add_test(
           pSuite, "session_stream_dep_all_your_stream_are_belong_to_us",
           test_nghttp2_session_stream_dep_all_your_stream_are_belong_to_us) ||
-      !CU_add_test(pSuite, "session_stream_attach_data",
-                   test_nghttp2_session_stream_attach_data) ||
-      !CU_add_test(pSuite, "session_stream_attach_data_subtree",
-                   test_nghttp2_session_stream_attach_data_subtree) ||
+      !CU_add_test(pSuite, "session_stream_attach_item",
+                   test_nghttp2_session_stream_attach_item) ||
+      !CU_add_test(pSuite, "session_stream_attach_item_subtree",
+                   test_nghttp2_session_stream_attach_item_subtree) ||
       !CU_add_test(pSuite, "session_stream_keep_closed_stream",
                    test_nghttp2_session_keep_closed_stream) ||
-      !CU_add_test(pSuite, "session_detach_closed_stream",
-                   test_nghttp2_session_detach_closed_stream) ||
+      !CU_add_test(pSuite, "session_stream_keep_idle_stream",
+                   test_nghttp2_session_keep_idle_stream) ||
+      !CU_add_test(pSuite, "session_detach_idle_stream",
+                   test_nghttp2_session_detach_idle_stream) ||
       !CU_add_test(pSuite, "session_large_dep_tree",
                    test_nghttp2_session_large_dep_tree) ||
       !CU_add_test(pSuite, "session_graceful_shutdown",
                    test_nghttp2_session_graceful_shutdown) ||
       !CU_add_test(pSuite, "session_on_header_temporal_failure",
                    test_nghttp2_session_on_header_temporal_failure) ||
-      !CU_add_test(pSuite, "session_recv_client_preface",
-                   test_nghttp2_session_recv_client_preface) ||
+      !CU_add_test(pSuite, "session_recv_client_magic",
+                   test_nghttp2_session_recv_client_magic) ||
       !CU_add_test(pSuite, "session_delete_data_item",
                    test_nghttp2_session_delete_data_item) ||
       !CU_add_test(pSuite, "session_open_idle_stream",
                    test_nghttp2_session_open_idle_stream) ||
+      !CU_add_test(pSuite, "session_cancel_reserved_remote",
+                   test_nghttp2_session_cancel_reserved_remote) ||
+      !CU_add_test(pSuite, "session_reset_pending_headers",
+                   test_nghttp2_session_reset_pending_headers) ||
+      !CU_add_test(pSuite, "session_send_data_callback",
+                   test_nghttp2_session_send_data_callback) ||
+      !CU_add_test(pSuite, "session_on_begin_headers_temporal_failure",
+                   test_nghttp2_session_on_begin_headers_temporal_failure) ||
+      !CU_add_test(pSuite, "session_defer_then_close",
+                   test_nghttp2_session_defer_then_close) ||
+      !CU_add_test(pSuite, "session_detach_item_from_closed_stream",
+                   test_nghttp2_session_detach_item_from_closed_stream) ||
+      !CU_add_test(pSuite, "http_mandatory_headers",
+                   test_nghttp2_http_mandatory_headers) ||
+      !CU_add_test(pSuite, "http_content_length",
+                   test_nghttp2_http_content_length) ||
+      !CU_add_test(pSuite, "http_content_length_mismatch",
+                   test_nghttp2_http_content_length_mismatch) ||
+      !CU_add_test(pSuite, "http_non_final_response",
+                   test_nghttp2_http_non_final_response) ||
+      !CU_add_test(pSuite, "http_trailer_headers",
+                   test_nghttp2_http_trailer_headers) ||
+      !CU_add_test(pSuite, "http_ignore_regular_header",
+                   test_nghttp2_http_ignore_regular_header) ||
+      !CU_add_test(pSuite, "http_ignore_content_length",
+                   test_nghttp2_http_ignore_content_length) ||
+      !CU_add_test(pSuite, "http_record_request_method",
+                   test_nghttp2_http_record_request_method) ||
+      !CU_add_test(pSuite, "http_push_promise",
+                   test_nghttp2_http_push_promise) ||
       !CU_add_test(pSuite, "frame_pack_headers",
                    test_nghttp2_frame_pack_headers) ||
       !CU_add_test(pSuite, "frame_pack_headers_frame_too_large",
@@ -273,8 +309,6 @@ int main(int argc _U_, char *argv[] _U_) {
                    test_nghttp2_frame_pack_goaway) ||
       !CU_add_test(pSuite, "frame_pack_window_update",
                    test_nghttp2_frame_pack_window_update) ||
-      !CU_add_test(pSuite, "frame_pack_altsvc",
-                   test_nghttp2_frame_pack_altsvc) ||
       !CU_add_test(pSuite, "nv_array_copy", test_nghttp2_nv_array_copy) ||
       !CU_add_test(pSuite, "iv_check", test_nghttp2_iv_check) ||
       !CU_add_test(pSuite, "hd_deflate", test_nghttp2_hd_deflate) ||
@@ -296,6 +330,10 @@ int main(int argc _U_, char *argv[] _U_) {
                    test_nghttp2_hd_inflate_clearall_inc) ||
       !CU_add_test(pSuite, "hd_inflate_zero_length_huffman",
                    test_nghttp2_hd_inflate_zero_length_huffman) ||
+      !CU_add_test(pSuite, "hd_inflate_expect_table_size_update",
+                   test_nghttp2_hd_inflate_expect_table_size_update) ||
+      !CU_add_test(pSuite, "hd_inflate_unexpected_table_size_update",
+                   test_nghttp2_hd_inflate_unexpected_table_size_update) ||
       !CU_add_test(pSuite, "hd_ringbuf_reserve",
                    test_nghttp2_hd_ringbuf_reserve) ||
       !CU_add_test(pSuite, "hd_change_table_size",
@@ -306,6 +344,7 @@ int main(int argc _U_, char *argv[] _U_) {
       !CU_add_test(pSuite, "hd_deflate_bound", test_nghttp2_hd_deflate_bound) ||
       !CU_add_test(pSuite, "hd_public_api", test_nghttp2_hd_public_api) ||
       !CU_add_test(pSuite, "hd_decode_length", test_nghttp2_hd_decode_length) ||
+      !CU_add_test(pSuite, "hd_huff_encode", test_nghttp2_hd_huff_encode) ||
       !CU_add_test(pSuite, "adjust_local_window_size",
                    test_nghttp2_adjust_local_window_size) ||
       !CU_add_test(pSuite, "check_header_name",
@@ -313,6 +352,8 @@ int main(int argc _U_, char *argv[] _U_) {
       !CU_add_test(pSuite, "check_header_value",
                    test_nghttp2_check_header_value) ||
       !CU_add_test(pSuite, "bufs_add", test_nghttp2_bufs_add) ||
+      !CU_add_test(pSuite, "bufs_add_stack_buffer_overflow_bug",
+                   test_nghttp2_bufs_add_stack_buffer_overflow_bug) ||
       !CU_add_test(pSuite, "bufs_addb", test_nghttp2_bufs_addb) ||
       !CU_add_test(pSuite, "bufs_orb", test_nghttp2_bufs_orb) ||
       !CU_add_test(pSuite, "bufs_remove", test_nghttp2_bufs_remove) ||

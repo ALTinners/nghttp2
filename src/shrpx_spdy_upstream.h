@@ -29,12 +29,14 @@
 
 #include <memory>
 
+#include <ev.h>
+
 #include <spdylay/spdylay.h>
 
 #include "shrpx_upstream.h"
 #include "shrpx_downstream_queue.h"
+#include "memchunk.h"
 #include "util.h"
-#include "libevent_util.h"
 
 namespace shrpx {
 
@@ -46,20 +48,16 @@ public:
   virtual ~SpdyUpstream();
   virtual int on_read();
   virtual int on_write();
-  virtual int on_event();
   virtual int on_timeout(Downstream *downstream);
   virtual int on_downstream_abort_request(Downstream *downstream,
                                           unsigned int status_code);
-  int send();
   virtual ClientHandler *get_client_handler() const;
-  virtual bufferevent_data_cb get_downstream_readcb();
-  virtual bufferevent_data_cb get_downstream_writecb();
-  virtual bufferevent_event_cb get_downstream_eventcb();
+  virtual int downstream_read(DownstreamConnection *dconn);
+  virtual int downstream_write(DownstreamConnection *dconn);
+  virtual int downstream_eof(DownstreamConnection *dconn);
+  virtual int downstream_error(DownstreamConnection *dconn, int events);
   Downstream *add_pending_downstream(int32_t stream_id, int32_t priority);
   void remove_downstream(Downstream *downstream);
-  Downstream *find_downstream(int32_t stream_id);
-
-  spdylay_session *get_http2_session();
 
   int rst_stream(Downstream *downstream, int status_code);
   int error_reply(Downstream *downstream, unsigned int status_code);
@@ -74,17 +72,14 @@ public:
   virtual int on_downstream_body_complete(Downstream *downstream);
 
   virtual void on_handler_delete();
-
-  virtual void reset_timeouts();
+  virtual int on_downstream_reset(bool no_retry);
 
   bool get_flow_control() const;
 
   int consume(int32_t stream_id, size_t len);
 
-  void maintain_downstream_concurrency();
-  void initiate_downstream(std::unique_ptr<Downstream> downstream);
-
-  nghttp2::util::EvbufferBuffer sendbuf;
+  void start_downstream(Downstream *downstream);
+  void initiate_downstream(Downstream *downstream);
 
 private:
   DownstreamQueue downstream_queue_;

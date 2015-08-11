@@ -24,9 +24,15 @@
  */
 #include "shrpx_log.h"
 
+#ifdef HAVE_SYSLOG_H
 #include <syslog.h>
+#endif // HAVE_SYSLOG_H
+#ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#endif // HAVE_UNISTD_H
+#ifdef HAVE_INTTYPES_H
 #include <inttypes.h>
+#endif // HAVE_INTTYPES_H
 
 #include <cerrno>
 #include <cstdio>
@@ -37,8 +43,8 @@
 
 #include "shrpx_config.h"
 #include "shrpx_downstream.h"
-#include "shrpx_worker_config.h"
 #include "util.h"
+#include "template.h"
 
 using namespace nghttp2;
 
@@ -63,7 +69,7 @@ int Log::severity_thres_ = NOTICE;
 void Log::set_severity_level(int severity) { severity_thres_ = severity; }
 
 int Log::set_severity_level_by_name(const char *name) {
-  for (size_t i = 0, max = util::array_size(SEVERITY_STR); i < max; ++i) {
+  for (size_t i = 0, max = array_size(SEVERITY_STR); i < max; ++i) {
     if (strcmp(SEVERITY_STR[i], name) == 0) {
       severity_thres_ = i;
       return 0;
@@ -99,10 +105,10 @@ Log::~Log() {
     return;
   }
 
-  auto wconf = worker_config;
+  auto lgconf = log_config();
 
   if (!log_enabled(severity_) ||
-      (wconf->errorlog_fd == -1 && !get_config()->errorlog_syslog)) {
+      (lgconf->errorlog_fd == -1 && !get_config()->errorlog_syslog)) {
     return;
   }
 
@@ -119,19 +125,20 @@ Log::~Log() {
     return;
   }
 
-  char buf[4096];
-  auto tty = wconf->errorlog_tty;
+  char buf[4_k];
+  auto tty = lgconf->errorlog_tty;
 
-  auto cached_time = get_config()->cached_time;
+  lgconf->update_tstamp(std::chrono::system_clock::now());
+  auto &time_local = lgconf->time_local_str;
 
   if (severity_ == NOTICE) {
     rv = snprintf(buf, sizeof(buf), "%s PID%d [%s%s%s] %s\n",
-                  cached_time->c_str(), get_config()->pid,
+                  time_local.c_str(), get_config()->pid,
                   tty ? SEVERITY_COLOR[severity_] : "", SEVERITY_STR[severity_],
                   tty ? "\033[0m" : "", stream_.str().c_str());
   } else {
     rv = snprintf(buf, sizeof(buf), "%s PID%d [%s%s%s] %s%s:%d%s %s\n",
-                  cached_time->c_str(), get_config()->pid,
+                  time_local.c_str(), get_config()->pid,
                   tty ? SEVERITY_COLOR[severity_] : "", SEVERITY_STR[severity_],
                   tty ? "\033[0m" : "", tty ? "\033[1;30m" : "", filename_,
                   linenum_, tty ? "\033[0m" : "", stream_.str().c_str());
@@ -143,7 +150,7 @@ Log::~Log() {
 
   auto nwrite = std::min(static_cast<size_t>(rv), sizeof(buf) - 1);
 
-  while (write(wconf->errorlog_fd, buf, nwrite) == -1 && errno == EINTR)
+  while (write(lgconf->errorlog_fd, buf, nwrite) == -1 && errno == EINTR)
     ;
 }
 
@@ -157,19 +164,42 @@ std::pair<OutputIterator, size_t> copy(const char *src, size_t avail,
 }
 } // namespace
 
-void upstream_accesslog(const std::vector<LogFragment> &lfv, LogSpec *lgsp) {
-  auto wconf = worker_config;
+namespace {
+const char LOWER_XDIGITS[] = "0123456789abcdef";
+} // namespace
 
-  if (wconf->accesslog_fd == -1 && !get_config()->accesslog_syslog) {
+namespace {
+template <typename OutputIterator>
+std::pair<OutputIterator, size_t> copy_hex_low(const uint8_t *src,
+                                               size_t srclen, size_t avail,
+                                               OutputIterator oitr) {
+  auto nwrite = std::min(srclen * 2, avail) / 2;
+  for (auto i = 0u; i < nwrite; ++i) {
+    *oitr++ = LOWER_XDIGITS[src[i] >> 4];
+    *oitr++ = LOWER_XDIGITS[src[i] & 0xf];
+  }
+  return std::make_pair(oitr, avail - nwrite);
+}
+} // namespace
+
+void upstream_accesslog(const std::vector<LogFragment> &lfv,
+                        const LogSpec &lgsp) {
+  auto lgconf = log_config();
+
+  if (lgconf->accesslog_fd == -1 && !get_config()->accesslog_syslog) {
     return;
   }
 
-  char buf[4096];
+  char buf[4_k];
 
-  auto downstream = lgsp->downstream;
+  auto downstream = lgsp.downstream;
 
   auto p = buf;
   auto avail = sizeof(buf) - 2;
+
+  lgconf->update_tstamp(lgsp.time_now);
+  auto &time_local = lgconf->time_local_str;
+  auto &time_iso8601 = lgconf->time_iso8601_str;
 
   for (auto &lf : lfv) {
     switch (lf.type) {
@@ -177,36 +207,36 @@ void upstream_accesslog(const std::vector<LogFragment> &lfv, LogSpec *lgsp) {
       std::tie(p, avail) = copy(lf.value.get(), avail, p);
       break;
     case SHRPX_LOGF_REMOTE_ADDR:
-      std::tie(p, avail) = copy(lgsp->remote_addr, avail, p);
+      std::tie(p, avail) = copy(lgsp.remote_addr, avail, p);
       break;
     case SHRPX_LOGF_TIME_LOCAL:
-      std::tie(p, avail) =
-          copy(util::format_common_log(lgsp->time_now).c_str(), avail, p);
+      std::tie(p, avail) = copy(time_local.c_str(), avail, p);
       break;
     case SHRPX_LOGF_TIME_ISO8601:
-      std::tie(p, avail) =
-          copy(util::format_iso8601(lgsp->time_now).c_str(), avail, p);
+      std::tie(p, avail) = copy(time_iso8601.c_str(), avail, p);
       break;
     case SHRPX_LOGF_REQUEST:
-      std::tie(p, avail) = copy(lgsp->method, avail, p);
+      std::tie(p, avail) = copy(lgsp.method, avail, p);
       std::tie(p, avail) = copy(" ", avail, p);
-      std::tie(p, avail) = copy(lgsp->path, avail, p);
+      std::tie(p, avail) = copy(lgsp.path, avail, p);
       std::tie(p, avail) = copy(" HTTP/", avail, p);
-      std::tie(p, avail) = copy(util::utos(lgsp->major).c_str(), avail, p);
-      std::tie(p, avail) = copy(".", avail, p);
-      std::tie(p, avail) = copy(util::utos(lgsp->minor).c_str(), avail, p);
+      std::tie(p, avail) = copy(util::utos(lgsp.major).c_str(), avail, p);
+      if (lgsp.major < 2) {
+        std::tie(p, avail) = copy(".", avail, p);
+        std::tie(p, avail) = copy(util::utos(lgsp.minor).c_str(), avail, p);
+      }
       break;
     case SHRPX_LOGF_STATUS:
-      std::tie(p, avail) = copy(util::utos(lgsp->status).c_str(), avail, p);
+      std::tie(p, avail) = copy(util::utos(lgsp.status).c_str(), avail, p);
       break;
     case SHRPX_LOGF_BODY_BYTES_SENT:
       std::tie(p, avail) =
-          copy(util::utos(lgsp->body_bytes_sent).c_str(), avail, p);
+          copy(util::utos(lgsp.body_bytes_sent).c_str(), avail, p);
       break;
     case SHRPX_LOGF_HTTP:
       if (downstream) {
         auto hd = downstream->get_request_header(lf.value.get());
-        if (hd != std::end(downstream->get_request_headers())) {
+        if (hd) {
           std::tie(p, avail) = copy((*hd).value.c_str(), avail, p);
           break;
         }
@@ -216,15 +246,14 @@ void upstream_accesslog(const std::vector<LogFragment> &lfv, LogSpec *lgsp) {
 
       break;
     case SHRPX_LOGF_REMOTE_PORT:
-      std::tie(p, avail) = copy(lgsp->remote_port, avail, p);
+      std::tie(p, avail) = copy(lgsp.remote_port, avail, p);
       break;
     case SHRPX_LOGF_SERVER_PORT:
-      std::tie(p, avail) =
-          copy(util::utos(lgsp->server_port).c_str(), avail, p);
+      std::tie(p, avail) = copy(util::utos(lgsp.server_port).c_str(), avail, p);
       break;
     case SHRPX_LOGF_REQUEST_TIME: {
       auto t = std::chrono::duration_cast<std::chrono::milliseconds>(
-                   lgsp->time_now - lgsp->request_start_time).count();
+                   lgsp.request_end_time - lgsp.request_start_time).count();
 
       auto frac = util::utos(t % 1000);
       auto sec = util::utos(t / 1000);
@@ -237,10 +266,41 @@ void upstream_accesslog(const std::vector<LogFragment> &lfv, LogSpec *lgsp) {
       std::tie(p, avail) = copy(sec.c_str(), avail, p);
     } break;
     case SHRPX_LOGF_PID:
-      std::tie(p, avail) = copy(util::utos(lgsp->pid).c_str(), avail, p);
+      std::tie(p, avail) = copy(util::utos(lgsp.pid).c_str(), avail, p);
       break;
     case SHRPX_LOGF_ALPN:
-      std::tie(p, avail) = copy(lgsp->alpn, avail, p);
+      std::tie(p, avail) = copy(lgsp.alpn, avail, p);
+      break;
+    case SHRPX_LOGF_SSL_CIPHER:
+      if (!lgsp.tls_info) {
+        std::tie(p, avail) = copy("-", avail, p);
+        break;
+      }
+      std::tie(p, avail) = copy(lgsp.tls_info->cipher, avail, p);
+      break;
+    case SHRPX_LOGF_SSL_PROTOCOL:
+      if (!lgsp.tls_info) {
+        std::tie(p, avail) = copy("-", avail, p);
+        break;
+      }
+      std::tie(p, avail) = copy(lgsp.tls_info->protocol, avail, p);
+      break;
+    case SHRPX_LOGF_SSL_SESSION_ID:
+      if (!lgsp.tls_info || lgsp.tls_info->session_id_length == 0) {
+        std::tie(p, avail) = copy("-", avail, p);
+        break;
+      }
+      std::tie(p, avail) =
+          copy_hex_low(lgsp.tls_info->session_id,
+                       lgsp.tls_info->session_id_length, avail, p);
+      break;
+    case SHRPX_LOGF_SSL_SESSION_REUSED:
+      if (!lgsp.tls_info) {
+        std::tie(p, avail) = copy("-", avail, p);
+        break;
+      }
+      std::tie(p, avail) =
+          copy(lgsp.tls_info->session_reused ? "r" : ".", avail, p);
       break;
     case SHRPX_LOGF_NONE:
       break;
@@ -260,26 +320,26 @@ void upstream_accesslog(const std::vector<LogFragment> &lfv, LogSpec *lgsp) {
   *p++ = '\n';
 
   auto nwrite = p - buf;
-  while (write(wconf->accesslog_fd, buf, nwrite) == -1 && errno == EINTR)
+  while (write(lgconf->accesslog_fd, buf, nwrite) == -1 && errno == EINTR)
     ;
 }
 
 int reopen_log_files() {
   int res = 0;
 
-  auto wconf = worker_config;
+  auto lgconf = log_config();
 
-  if (wconf->accesslog_fd != -1) {
-    close(wconf->accesslog_fd);
-    wconf->accesslog_fd = -1;
+  if (lgconf->accesslog_fd != -1) {
+    close(lgconf->accesslog_fd);
+    lgconf->accesslog_fd = -1;
   }
 
   if (!get_config()->accesslog_syslog && get_config()->accesslog_file) {
 
-    wconf->accesslog_fd =
+    lgconf->accesslog_fd =
         util::reopen_log_file(get_config()->accesslog_file.get());
 
-    if (wconf->accesslog_fd == -1) {
+    if (lgconf->accesslog_fd == -1) {
       LOG(ERROR) << "Failed to open accesslog file "
                  << get_config()->accesslog_file.get();
       res = -1;
@@ -293,7 +353,7 @@ int reopen_log_files() {
     new_errorlog_fd = util::reopen_log_file(get_config()->errorlog_file.get());
 
     if (new_errorlog_fd == -1) {
-      if (wconf->errorlog_fd != -1) {
+      if (lgconf->errorlog_fd != -1) {
         LOG(ERROR) << "Failed to open errorlog file "
                    << get_config()->errorlog_file.get();
       } else {
@@ -305,18 +365,28 @@ int reopen_log_files() {
     }
   }
 
-  if (wconf->errorlog_fd != -1) {
-    close(wconf->errorlog_fd);
-    wconf->errorlog_fd = -1;
-    wconf->errorlog_tty = false;
+  if (lgconf->errorlog_fd != -1) {
+    close(lgconf->errorlog_fd);
+    lgconf->errorlog_fd = -1;
+    lgconf->errorlog_tty = false;
   }
 
   if (new_errorlog_fd != -1) {
-    wconf->errorlog_fd = new_errorlog_fd;
-    wconf->errorlog_tty = isatty(wconf->errorlog_fd);
+    lgconf->errorlog_fd = new_errorlog_fd;
+    lgconf->errorlog_tty = isatty(lgconf->errorlog_fd);
   }
 
   return res;
+}
+
+void redirect_stderr_to_errorlog() {
+  auto lgconf = log_config();
+
+  if (get_config()->errorlog_syslog || lgconf->errorlog_fd == -1) {
+    return;
+  }
+
+  dup2(lgconf->errorlog_fd, STDERR_FILENO);
 }
 
 } // namespace shrpx
