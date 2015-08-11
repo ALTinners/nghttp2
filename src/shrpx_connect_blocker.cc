@@ -22,30 +22,71 @@
  * OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-#ifndef SHRPX_WORKER_CONFIG_H
-#define SHRPX_WORKER_CONFIG_H
-
-#include "shrpx.h"
+#include "shrpx_connect_blocker.h"
 
 namespace shrpx {
 
-struct WorkerConfig {
-  int accesslog_fd;
-  int errorlog_fd;
-  // true if errorlog_fd is referring to a terminal.
-  bool errorlog_tty;
-  bool graceful_shutdown;
+namespace {
+const int INITIAL_SLEEP = 2;
+} // namespace
 
-  WorkerConfig();
-};
+ConnectBlocker::ConnectBlocker()
+  : timerev_(nullptr),
+    sleep_(INITIAL_SLEEP)
+{}
 
-// We need WorkerConfig per thread
-extern
-#ifndef NOTHREADS
-thread_local
-#endif // NOTHREADS
-WorkerConfig *worker_config;
+ConnectBlocker::~ConnectBlocker()
+{
+  if(timerev_) {
+    event_free(timerev_);
+  }
+}
+
+namespace {
+void connect_blocker_cb(evutil_socket_t sig, short events, void *arg)
+{
+  if(LOG_ENABLED(INFO)) {
+    LOG(INFO) << "unblock downstream connection";
+  }
+}
+} // namespace
+
+int ConnectBlocker::init(event_base *evbase)
+{
+  timerev_ = evtimer_new(evbase, connect_blocker_cb, this);
+
+  if(timerev_ == nullptr) {
+    return -1;
+  }
+
+  return 0;
+}
+
+bool ConnectBlocker::blocked() const
+{
+  return evtimer_pending(timerev_, nullptr);
+}
+
+void ConnectBlocker::on_success()
+{
+  sleep_ = INITIAL_SLEEP;
+}
+
+void ConnectBlocker::on_failure()
+{
+  int rv;
+
+  sleep_ = std::min(128, sleep_ * 2);
+
+  LOG(WARNING) << "connect failure, start sleeping " << sleep_;
+
+  timeval t = {sleep_, 0};
+
+  rv = evtimer_add(timerev_, &t);
+
+  if(rv == -1) {
+    LOG(ERROR) << "evtimer_add for ConnectBlocker timerev_ failed";
+  }
+}
 
 } // namespace shrpx
-
-#endif // SHRPX_WORKER_CONFIG_H

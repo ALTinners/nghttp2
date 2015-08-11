@@ -39,13 +39,13 @@ AM_CPPFLAGS = \
 	@ZLIB_CFLAGS@ \
 	@DEFS@
 AM_LDFLAGS = \
+	@JEMALLOC_LIBS@ \
 	@LIBSPDYLAY_LIBS@ \
 	@XML_LIBS@ \
 	@LIBEVENT_OPENSSL_LIBS@ \
 	@OPENSSL_LIBS@ \
 	@JANSSON_LIBS@ \
 	@ZLIB_LIBS@ \
-	@JEMALLOC_LIBS@ \
 	@SRC_LIBS@
 
 LDADD = \
@@ -113,7 +113,8 @@ NGHTTPX_SRCS = \
 	shrpx_ssl.cc shrpx_ssl.h \
 	shrpx_thread_event_receiver.cc shrpx_thread_event_receiver.h \
 	shrpx_worker.cc shrpx_worker.h \
-	shrpx_worker_config.cc shrpx_worker_config.h
+	shrpx_worker_config.cc shrpx_worker_config.h \
+	shrpx_connect_blocker.cc shrpx_connect_blocker.h
 
 if HAVE_SPDYLAY
 NGHTTPX_SRCS += shrpx_spdy_upstream.cc shrpx_spdy_upstream.h

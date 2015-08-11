@@ -42,6 +42,7 @@ public:
   virtual int on_read() = 0;
   virtual int on_write() = 0;
   virtual int on_event() = 0;
+  virtual int on_timeout(Downstream *downstream) { return 0; };
   virtual int on_downstream_abort_request(Downstream *downstream,
                                           unsigned int status_code) = 0;
   virtual bufferevent_data_cb get_downstream_readcb() = 0;
@@ -56,7 +57,8 @@ public:
   virtual int on_downstream_body_complete(Downstream *downstream) = 0;
 
   virtual void pause_read(IOCtrlReason reason) = 0;
-  virtual int resume_read(IOCtrlReason reason, Downstream *downstream) = 0;
+  virtual int resume_read(IOCtrlReason reason, Downstream *downstream,
+                          size_t consumed) = 0;
 };
 
 } // namespace shrpx

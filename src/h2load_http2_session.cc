@@ -89,7 +89,7 @@ int on_data_chunk_recv_callback
 
 namespace {
 int on_stream_close_callback
-(nghttp2_session *session, int32_t stream_id, nghttp2_error_code error_code,
+(nghttp2_session *session, int32_t stream_id, uint32_t error_code,
  void *user_data)
 {
   auto client = static_cast<Client*>(user_data);
@@ -102,13 +102,26 @@ void Http2Session::on_connect()
 {
   int rv;
 
-  nghttp2_session_callbacks callbacks = {0};
-  callbacks.on_frame_recv_callback = on_frame_recv_callback;
-  callbacks.on_data_chunk_recv_callback = on_data_chunk_recv_callback;
-  callbacks.on_stream_close_callback = on_stream_close_callback;
-  callbacks.on_header_callback = on_header_callback;
+  nghttp2_session_callbacks *callbacks;
 
-  nghttp2_session_client_new(&session_, &callbacks, client_);
+  nghttp2_session_callbacks_new(&callbacks);
+
+  util::auto_delete<nghttp2_session_callbacks*> callbacks_deleter
+    (callbacks, nghttp2_session_callbacks_del);
+
+  nghttp2_session_callbacks_set_on_frame_recv_callback
+    (callbacks, on_frame_recv_callback);
+
+  nghttp2_session_callbacks_set_on_data_chunk_recv_callback
+    (callbacks, on_data_chunk_recv_callback);
+
+  nghttp2_session_callbacks_set_on_stream_close_callback
+    (callbacks, on_stream_close_callback);
+
+  nghttp2_session_callbacks_set_on_header_callback
+    (callbacks, on_header_callback);
+
+  nghttp2_session_client_new(&session_, callbacks, client_);
 
   nghttp2_settings_entry iv[2];
   iv[0].settings_id = NGHTTP2_SETTINGS_ENABLE_PUSH;
@@ -117,7 +130,7 @@ void Http2Session::on_connect()
   iv[1].value = (1 << client_->worker->config->window_bits) - 1;
 
   rv = nghttp2_submit_settings(session_, NGHTTP2_FLAG_NONE, iv,
-                               sizeof(iv) / sizeof(iv[0]));
+                               util::array_size(iv));
 
   assert(rv == 0);
 

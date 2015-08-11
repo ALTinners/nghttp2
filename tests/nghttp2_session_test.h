@@ -37,6 +37,7 @@ void test_nghttp2_session_recv_altsvc(void);
 void test_nghttp2_session_recv_unknown_frame(void);
 void test_nghttp2_session_recv_unexpected_continuation(void);
 void test_nghttp2_session_recv_settings_header_table_size(void);
+void test_nghttp2_session_recv_too_large_frame_length(void);
 void test_nghttp2_session_continue(void);
 void test_nghttp2_session_add_frame(void);
 void test_nghttp2_session_on_request_headers_received(void);
@@ -61,6 +62,9 @@ void test_nghttp2_session_is_my_stream_id(void);
 void test_nghttp2_session_upgrade(void);
 void test_nghttp2_session_reprioritize_stream(void);
 void test_nghttp2_submit_data(void);
+void test_nghttp2_submit_data_read_length_too_large(void);
+void test_nghttp2_submit_data_read_length_smallest(void);
+void test_nghttp2_submit_data_twice(void);
 void test_nghttp2_submit_request_with_data(void);
 void test_nghttp2_submit_request_without_data(void);
 void test_nghttp2_submit_response_with_data(void);
@@ -108,5 +112,6 @@ void test_nghttp2_session_stream_attach_data(void);
 void test_nghttp2_session_stream_attach_data_subtree(void);
 void test_nghttp2_session_keep_closed_stream(void);
 void test_nghttp2_session_graceful_shutdown(void);
+void test_nghttp2_session_on_header_temporal_failure(void);
 
 #endif /* NGHTTP2_SESSION_TEST_H */

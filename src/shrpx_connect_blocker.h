@@ -1,7 +1,7 @@
 /*
  * nghttp2 - HTTP/2 C Library
  *
- * Copyright (c) 2012 Tatsuhiro Tsujikawa
+ * Copyright (c) 2014 Tatsuhiro Tsujikawa
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -22,38 +22,34 @@
  * OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-#ifndef SHRPX_WORKER_H
-#define SHRPX_WORKER_H
+#ifndef SHRPX_CONNECT_BLOCKER_H
+#define SHRPX_CONNECT_BLOCKER_H
 
 #include "shrpx.h"
 
-#include <openssl/ssl.h>
-#include <openssl/err.h>
-
-#include "shrpx_listen_handler.h"
+#include <event2/event.h>
 
 namespace shrpx {
 
-struct WorkerStat {
-  WorkerStat() : num_connections(0) {}
-
-  size_t num_connections;
-};
-
-class Worker {
+class ConnectBlocker {
 public:
-  Worker(const WorkerInfo *info);
-  ~Worker();
-  void run();
+  ConnectBlocker();
+  ~ConnectBlocker();
+
+  int init(event_base *evbase);
+  // Returns true if making connection is not allowed.
+  bool blocked() const;
+  // Call this function if connect operation succeeded.  This will
+  // reset sleep_ to minimum value.
+  void on_success();
+  // Call this function if connect operation failed.  This will start
+  // timer and blocks connection establishment for sleep_ seconds.
+  void on_failure();
 private:
-  SSL_CTX *sv_ssl_ctx_;
-  SSL_CTX *cl_ssl_ctx_;
-  // Channel to the main thread
-  int fd_;
+  event *timerev_;
+  int sleep_;
 };
 
-void start_threaded_worker(WorkerInfo *info);
+} // namespace
 
-} // namespace shrpx
-
-#endif // SHRPX_WORKER_H
+#endif // SHRPX_CONNECT_BLOCKER_H

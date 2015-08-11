@@ -46,6 +46,7 @@ public:
   virtual int on_read();
   virtual int on_write();
   virtual int on_event();
+  virtual int on_timeout(Downstream *downstream);
   virtual int on_downstream_abort_request(Downstream *downstream,
                                           unsigned int status_code);
   int send();
@@ -53,21 +54,19 @@ public:
   virtual bufferevent_data_cb get_downstream_readcb();
   virtual bufferevent_data_cb get_downstream_writecb();
   virtual bufferevent_event_cb get_downstream_eventcb();
-  void add_downstream(Downstream *downstream);
+  void add_pending_downstream(std::unique_ptr<Downstream> downstream);
   void remove_downstream(Downstream *downstream);
   Downstream* find_downstream(int32_t stream_id);
 
   nghttp2_session* get_http2_session();
 
-  int rst_stream(Downstream *downstream, nghttp2_error_code error_code);
-  // To send WINDOW_UPDATE for a connection, specify nullptr to
-  // |downstream|.
-  int window_update(Downstream *downstream, int32_t window_size_increment);
-  int terminate_session(nghttp2_error_code error_code);
+  int rst_stream(Downstream *downstream, uint32_t error_code);
+  int terminate_session(uint32_t error_code);
   int error_reply(Downstream *downstream, unsigned int status_code);
 
   virtual void pause_read(IOCtrlReason reason);
-  virtual int resume_read(IOCtrlReason reason, Downstream *downstream);
+  virtual int resume_read(IOCtrlReason reason, Downstream *downstream,
+                          size_t consumed);
 
   virtual int on_downstream_header_complete(Downstream *downstream);
   virtual int on_downstream_body(Downstream *downstream,
@@ -81,16 +80,17 @@ public:
   int upgrade_upstream(HttpsUpstream *upstream);
   int start_settings_timer();
   void stop_settings_timer();
-  int handle_ign_data_chunk(size_t len);
+  int consume(int32_t stream_id, size_t len);
+  void log_response_headers(Downstream *downstream,
+                            const std::vector<nghttp2_nv>& nva) const;
+  void maintain_downstream_concurrency();
+  void initiate_downstream(std::unique_ptr<Downstream> downstream);
 private:
   DownstreamQueue downstream_queue_;
   std::unique_ptr<HttpsUpstream> pre_upstream_;
   ClientHandler *handler_;
   nghttp2_session *session_;
   event *settings_timerev_;
-  // Received DATA frame size while it is not sent to backend before
-  // any connection-level WINDOW_UPDATE
-  int32_t recv_ign_window_size_;
   bool flow_control_;
 };
 

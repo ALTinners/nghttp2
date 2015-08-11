@@ -37,16 +37,17 @@
 #include "shrpx_log.h"
 #include "shrpx_http2_session.h"
 #include "shrpx_worker_config.h"
+#include "shrpx_connect_blocker.h"
 #include "util.h"
 
 using namespace nghttp2;
 
 namespace shrpx {
 
-Worker::Worker(const WorkerInfo& info)
-  : sv_ssl_ctx_(info.sv_ssl_ctx),
-    cl_ssl_ctx_(info.cl_ssl_ctx),
-    fd_(info.sv[1])
+Worker::Worker(const WorkerInfo *info)
+  : sv_ssl_ctx_(info->sv_ssl_ctx),
+    cl_ssl_ctx_(info->cl_ssl_ctx),
+    fd_(info->sv[1])
 {}
 
 Worker::~Worker()
@@ -93,22 +94,32 @@ void Worker::run()
     return;
   }
   std::unique_ptr<Http2Session> http2session;
+  std::unique_ptr<ConnectBlocker> http1_connect_blocker;
   if(get_config()->downstream_proto == PROTO_HTTP2) {
     http2session = util::make_unique<Http2Session>(evbase.get(), cl_ssl_ctx_);
     if(http2session->init_notification() == -1) {
       DIE();
     }
+  } else {
+    http1_connect_blocker = util::make_unique<ConnectBlocker>();
+    if(http1_connect_blocker->init(evbase.get()) == -1) {
+      DIE();
+    }
   }
-  auto receiver = util::make_unique<ThreadEventReceiver>(evbase.get(),
-                                                         sv_ssl_ctx_,
-                                                         http2session.get());
+
+  auto receiver = util::make_unique<ThreadEventReceiver>
+    (evbase.get(),
+     sv_ssl_ctx_,
+     http2session.get(),
+     http1_connect_blocker.get());
+
   bufferevent_enable(bev.get(), EV_READ);
   bufferevent_setcb(bev.get(), readcb, nullptr, eventcb, receiver.get());
 
   event_base_loop(evbase.get(), 0);
 }
 
-void start_threaded_worker(WorkerInfo info)
+void start_threaded_worker(WorkerInfo *info)
 {
   Worker worker(info);
   worker.run();

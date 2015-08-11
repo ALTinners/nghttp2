@@ -40,10 +40,12 @@ namespace shrpx {
 
 ThreadEventReceiver::ThreadEventReceiver(event_base *evbase,
                                          SSL_CTX *ssl_ctx,
-                                         Http2Session *http2session)
+                                         Http2Session *http2session,
+                                         ConnectBlocker *http1_connect_blocker)
   : evbase_(evbase),
     ssl_ctx_(ssl_ctx),
     http2session_(http2session),
+    http1_connect_blocker_(http1_connect_blocker),
     rate_limit_group_(bufferevent_rate_limit_group_new
                       (evbase_, get_config()->worker_rate_limit_cfg)),
     worker_stat_(util::make_unique<WorkerStat>())
@@ -73,10 +75,26 @@ void ThreadEventReceiver::on_read(bufferevent *bev)
     if(wev.type == REOPEN_LOG) {
       if(LOG_ENABLED(INFO)) {
         LOG(INFO) << "Reopening log files: worker_info("
-                  << &worker_config << ")";
+                  << worker_config << ")";
       }
 
       reopen_log_files();
+
+      continue;
+    }
+
+    if(wev.type == GRACEFUL_SHUTDOWN) {
+      if(LOG_ENABLED(INFO)) {
+        LOG(INFO) << "Graceful shutdown commencing";
+      }
+
+      worker_config->graceful_shutdown = true;
+
+      if(worker_stat_->num_connections == 0) {
+        event_base_loopbreak(evbase_);
+
+        break;
+      }
 
       continue;
     }
@@ -108,6 +126,7 @@ void ThreadEventReceiver::on_read(bufferevent *bev)
                                                  worker_stat_.get());
     if(client_handler) {
       client_handler->set_http2_session(http2session_);
+      client_handler->set_http1_connect_blocker(http1_connect_blocker_);
 
       if(LOG_ENABLED(INFO)) {
         TLOG(INFO, this) << "CLIENT_HANDLER:" << client_handler << " created";

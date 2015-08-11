@@ -147,7 +147,8 @@ am__objects_2 = nghttp2_pq.lo nghttp2_map.lo nghttp2_queue.lo \
 	nghttp2_outbound_item.lo nghttp2_session.lo nghttp2_submit.lo \
 	nghttp2_helper.lo nghttp2_npn.lo nghttp2_hd.lo \
 	nghttp2_hd_huffman.lo nghttp2_hd_huffman_data.lo \
-	nghttp2_version.lo nghttp2_priority_spec.lo nghttp2_option.lo
+	nghttp2_version.lo nghttp2_priority_spec.lo nghttp2_option.lo \
+	nghttp2_callbacks.lo
 am_libnghttp2_la_OBJECTS = $(am__objects_1) $(am__objects_2)
 libnghttp2_la_OBJECTS = $(am_libnghttp2_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
@@ -450,7 +451,8 @@ OBJECTS = nghttp2_pq.c nghttp2_map.c nghttp2_queue.c \
 	nghttp2_hd.c nghttp2_hd_huffman.c nghttp2_hd_huffman_data.c \
 	nghttp2_version.c \
 	nghttp2_priority_spec.c \
-	nghttp2_option.c
+	nghttp2_option.c \
+	nghttp2_callbacks.c
 
 HFILES = nghttp2_pq.h nghttp2_int.h nghttp2_map.h nghttp2_queue.h \
 	nghttp2_frame.h \
@@ -461,7 +463,8 @@ HFILES = nghttp2_pq.h nghttp2_int.h nghttp2_map.h nghttp2_queue.h \
 	nghttp2_net.h \
 	nghttp2_hd.h nghttp2_hd_huffman.h \
 	nghttp2_priority_spec.h \
-	nghttp2_option.h
+	nghttp2_option.h \
+	nghttp2_callbacks.h
 
 libnghttp2_la_SOURCES = $(HFILES) $(OBJECTS)
 libnghttp2_la_LDFLAGS = -no-undefined \
@@ -549,6 +552,7 @@ distclean-compile:
 	-rm -f *.tab.c
 
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_buf.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_callbacks.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_frame.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_hd.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_hd_huffman.Plo@am__quote@

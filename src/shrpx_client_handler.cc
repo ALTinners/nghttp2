@@ -35,6 +35,7 @@
 #include "shrpx_http2_downstream_connection.h"
 #include "shrpx_ssl.h"
 #include "shrpx_worker.h"
+#include "shrpx_worker_config.h"
 #ifdef HAVE_SPDYLAY
 #include "shrpx_spdy_upstream.h"
 #endif // HAVE_SPDYLAY
@@ -237,6 +238,11 @@ ClientHandler::ClientHandler(bufferevent *bev,
 
   ++worker_stat->num_connections;
 
+  rv = bufferevent_set_rate_limit(bev_, get_config()->rate_limit_cfg);
+  if(rv == -1) {
+    CLOG(FATAL, this) << "bufferevent_set_rate_limit() failed";
+  }
+
   rv = bufferevent_add_to_rate_limit_group(bev_, rate_limit_group);
   if(rv == -1) {
     CLOG(FATAL, this) << "bufferevent_add_to_rate_limit_group() failed";
@@ -265,6 +271,12 @@ ClientHandler::~ClientHandler()
   }
 
   --worker_stat_->num_connections;
+
+  // TODO If backend is http/2, and it is in CONNECTED state, signal
+  // it and make it loopbreak when output is zero.
+  if(worker_config->graceful_shutdown && worker_stat_->num_connections == 0) {
+    event_base_loopbreak(get_evbase());
+  }
 
   if(reneg_shutdown_timerev_) {
     event_free(reneg_shutdown_timerev_);
@@ -450,12 +462,13 @@ void ClientHandler::set_should_close_after_write(bool f)
   should_close_after_write_ = f;
 }
 
-void ClientHandler::pool_downstream_connection(DownstreamConnection *dconn)
+void ClientHandler::pool_downstream_connection
+(std::unique_ptr<DownstreamConnection> dconn)
 {
   if(LOG_ENABLED(INFO)) {
-    CLOG(INFO, this) << "Pooling downstream connection DCONN:" << dconn;
+    CLOG(INFO, this) << "Pooling downstream connection DCONN:" << dconn.get();
   }
-  dconn_pool_.insert(dconn);
+  dconn_pool_.insert(dconn.release());
 }
 
 void ClientHandler::remove_downstream_connection(DownstreamConnection *dconn)
@@ -465,9 +478,11 @@ void ClientHandler::remove_downstream_connection(DownstreamConnection *dconn)
                      << " from pool";
   }
   dconn_pool_.erase(dconn);
+  delete dconn;
 }
 
-DownstreamConnection* ClientHandler::get_downstream_connection()
+std::unique_ptr<DownstreamConnection>
+ClientHandler::get_downstream_connection()
 {
   if(dconn_pool_.empty()) {
     if(LOG_ENABLED(INFO)) {
@@ -475,19 +490,20 @@ DownstreamConnection* ClientHandler::get_downstream_connection()
                        << " Create new one";
     }
     if(http2session_) {
-      return new Http2DownstreamConnection(this);
+      return util::make_unique<Http2DownstreamConnection>(this);
     } else {
-      return new HttpDownstreamConnection(this);
+      return util::make_unique<HttpDownstreamConnection>(this);
     }
-  } else {
-    auto dconn = *std::begin(dconn_pool_);
-    dconn_pool_.erase(dconn);
-    if(LOG_ENABLED(INFO)) {
-      CLOG(INFO, this) << "Reuse downstream connection DCONN:" << dconn
-                       << " from pool";
-    }
-    return dconn;
   }
+
+  auto dconn = std::unique_ptr<DownstreamConnection>(*std::begin(dconn_pool_));
+  dconn_pool_.erase(dconn.get());
+  if(LOG_ENABLED(INFO)) {
+    CLOG(INFO, this) << "Reuse downstream connection DCONN:" << dconn.get()
+                     << " from pool";
+  }
+
+  return dconn;
 }
 
 size_t ClientHandler::get_outbuf_length()
@@ -508,6 +524,17 @@ void ClientHandler::set_http2_session(Http2Session *http2session)
 Http2Session* ClientHandler::get_http2_session() const
 {
   return http2session_;
+}
+
+void ClientHandler::set_http1_connect_blocker
+(ConnectBlocker *http1_connect_blocker)
+{
+  http1_connect_blocker_ = http1_connect_blocker;
+}
+
+ConnectBlocker* ClientHandler::get_http1_connect_blocker() const
+{
+  return http1_connect_blocker_;
 }
 
 size_t ClientHandler::get_left_connhd_len() const

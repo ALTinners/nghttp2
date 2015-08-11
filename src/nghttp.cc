@@ -54,6 +54,7 @@
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <openssl/conf.h>
 
 #include <event.h>
 #include <event2/event.h>
@@ -177,7 +178,6 @@ struct Request {
   Headers push_req_nva;
   // URI without fragment
   std::string uri;
-  std::string status;
   http_parser_url u;
   std::shared_ptr<Dependency> dep;
   nghttp2_priority_spec pri_spec;
@@ -188,10 +188,12 @@ struct Request {
   HtmlParser *html_parser;
   const nghttp2_data_provider *data_prd;
   int32_t stream_id;
+  int status;
   // Recursion level: 0: first entity, 1: entity linked from first entity
   int level;
   // RequestPriority value defined in HtmlParser.h
   int pri;
+  bool expect_final_response;
 
   // For pushed request, |uri| is empty and |u| is zero-cleared.
   Request(const std::string& uri, const http_parser_url &u,
@@ -208,8 +210,10 @@ struct Request {
       html_parser(nullptr),
       data_prd(data_prd),
       stream_id(-1),
+      status(0),
       level(level),
-      pri(pri)
+      pri(pri),
+      expect_final_response(false)
   {}
 
   ~Request()
@@ -313,6 +317,16 @@ struct Request {
     } else {
       return false;
     }
+  }
+
+  bool response_pseudo_header_allowed() const
+  {
+    return res_nva.empty() || res_nva.back().name.c_str()[0] == ':';
+  }
+
+  bool push_request_pseudo_header_allowed() const
+  {
+    return res_nva.empty() || push_req_nva.back().name.c_str()[0] == ':';
   }
 
   void record_request_time()
@@ -488,12 +502,12 @@ struct HttpClient {
     hints.ai_flags = AI_ADDRCONFIG;
     rv = getaddrinfo(host.c_str(), util::utos(port).c_str(), &hints, &addrs);
     if(rv != 0) {
-      std::cerr << "getaddrinfo() failed: "
+      std::cerr << "[ERROR] getaddrinfo() failed: "
                 << gai_strerror(rv) << std::endl;
       return -1;
     }
     if(addrs == nullptr) {
-      std::cerr << "No address returned" << std::endl;
+      std::cerr << "[ERROR] No address returned" << std::endl;
       return -1;
     }
     next_addr = addrs;
@@ -507,7 +521,7 @@ struct HttpClient {
       // We are establishing TLS connection.
       ssl = SSL_new(ssl_ctx);
       if(!ssl) {
-        std::cerr << "SSL_new() failed: "
+        std::cerr << "[ERROR] SSL_new() failed: "
                   << ERR_error_string(ERR_get_error(), nullptr) << std::endl;
         return -1;
       }
@@ -672,7 +686,7 @@ struct HttpClient {
       auto htperr = HTTP_PARSER_ERRNO(htp.get());
 
       if(htperr != HPE_OK) {
-        std::cerr << "Failed to parse HTTP Upgrade response header: "
+        std::cerr << "[ERROR] Failed to parse HTTP Upgrade response header: "
                   << "(" << http_errno_name(htperr) << ") "
                   << http_errno_description(htperr) << std::endl;
         return -1;
@@ -709,7 +723,7 @@ struct HttpClient {
           return 0;
         }
 
-        std::cerr << "HTTP Upgrade failed" << std::endl;
+        std::cerr << "[ERROR] HTTP Upgrade failed" << std::endl;
 
         return -1;
       }
@@ -739,7 +753,7 @@ struct HttpClient {
       rv = nghttp2_session_upgrade(session, settings_payload,
                                    settings_payloadlen, stream_user_data);
       if(rv != 0) {
-        std::cerr << "nghttp2_session_upgrade() returned error: "
+        std::cerr << "[ERROR] nghttp2_session_upgrade() returned error: "
                   << nghttp2_strerror(rv) << std::endl;
         return -1;
       }
@@ -807,7 +821,7 @@ struct HttpClient {
       rv = nghttp2_session_mem_recv(session, mem, inputlen);
 
       if(rv < 0) {
-        std::cerr << "nghttp2_session_mem_recv() returned error: "
+        std::cerr << "[ERROR] nghttp2_session_mem_recv() returned error: "
                   << nghttp2_strerror(rv) << std::endl;
         return -1;
       }
@@ -834,7 +848,7 @@ struct HttpClient {
       auto datalen = nghttp2_session_mem_send(session, &data);
 
       if(datalen < 0) {
-        std::cerr << "nghttp2_session_mem_send() returned error: "
+        std::cerr << "[ERROR] nghttp2_session_mem_send() returned error: "
                   << nghttp2_strerror(datalen) << std::endl;
         return -1;
       }
@@ -843,13 +857,13 @@ struct HttpClient {
       }
       rv = evbbuf.add(data, datalen);
       if(rv != 0) {
-        std::cerr << "evbuffer_add() failed" << std::endl;
+        std::cerr << "[ERROR] evbuffer_add() failed" << std::endl;
         return -1;
       }
     }
     rv = evbbuf.flush();
     if(rv != 0) {
-      std::cerr << "evbuffer_add() failed" << std::endl;
+      std::cerr << "[ERROR] evbuffer_add() failed" << std::endl;
       return -1;
     }
     if(nghttp2_session_want_read(session) == 0 &&
@@ -1042,13 +1056,7 @@ int submit_request
     build_headers.emplace_back(kv.first, kv.second, no_index);
   }
   std::stable_sort(std::begin(build_headers), std::end(build_headers),
-                   [](const Headers::value_type& lhs,
-                      const Headers::value_type& rhs)
-                   {
-                     return lhs.name < rhs.name;
-                   });
-
-  build_headers = http2::concat_norm_headers(std::move(build_headers));
+                   http2::name_less);
 
   auto nva = std::vector<nghttp2_nv>();
   nva.reserve(build_headers.size());
@@ -1061,7 +1069,7 @@ int submit_request
                                           nva.data(), nva.size(),
                                           req->data_prd, req);
   if(stream_id < 0) {
-    std::cerr << "nghttp2_submit_request() returned error: "
+    std::cerr << "[ERROR] nghttp2_submit_request() returned error: "
               << nghttp2_strerror(stream_id) << std::endl;
     return -1;
   }
@@ -1127,6 +1135,17 @@ int on_data_chunk_recv_callback
     return 0;
   }
 
+  if(config.verbose) {
+    verbose_on_data_chunk_recv_callback(session, flags, stream_id, data, len,
+                                        user_data);
+  }
+
+  if(req->status == 0) {
+    nghttp2_submit_rst_stream(session, NGHTTP2_FLAG_NONE,
+                              stream_id, NGHTTP2_PROTOCOL_ERROR);
+    return 0;
+  }
+
   if(req->inflater) {
     while(len > 0) {
       const size_t MAX_OUTLEN = 4096;
@@ -1186,6 +1205,9 @@ namespace {
 void check_response_header(nghttp2_session *session, Request* req)
 {
   bool gzip = false;
+
+  req->expect_final_response = false;
+
   for(auto& nv : req->res_nva) {
     if("content-encoding" == nv.name) {
       gzip = util::strieq("gzip", nv.value) ||
@@ -1193,9 +1215,32 @@ void check_response_header(nghttp2_session *session, Request* req)
       continue;
     }
     if(":status" == nv.name) {
-      req->status.assign(nv.value);
+      int status;
+      if(req->status != 0 ||
+         (status = http2::parse_http_status_code(nv.value)) == -1) {
+
+        nghttp2_submit_rst_stream(session, NGHTTP2_FLAG_NONE,
+                                  req->stream_id, NGHTTP2_PROTOCOL_ERROR);
+        return;
+      }
+
+      req->status = status;
     }
   }
+
+  if(req->status == 0) {
+    nghttp2_submit_rst_stream(session, NGHTTP2_FLAG_NONE, req->stream_id,
+                              NGHTTP2_PROTOCOL_ERROR);
+    return;
+  }
+
+  if(req->status / 100 == 1) {
+    req->expect_final_response = true;
+    req->status = 0;
+    req->res_nva.clear();
+    return;
+  }
+
   if(gzip) {
     if(!req->inflater) {
       req->init_inflater();
@@ -1253,29 +1298,63 @@ int on_header_callback(nghttp2_session *session,
     verbose_on_header_callback(session, frame, name, namelen, value, valuelen,
                                flags, user_data);
   }
+
+  if(!http2::check_nv(name, namelen, value, valuelen)) {
+    nghttp2_submit_rst_stream(session, NGHTTP2_FLAG_NONE, frame->hd.stream_id,
+                              NGHTTP2_PROTOCOL_ERROR);
+    return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
+  }
+
   switch(frame->hd.type) {
   case NGHTTP2_HEADERS: {
-    if(frame->headers.cat != NGHTTP2_HCAT_RESPONSE &&
-       frame->headers.cat != NGHTTP2_HCAT_PUSH_RESPONSE) {
-      break;
-    }
     auto req = (Request*)nghttp2_session_get_stream_user_data
       (session, frame->hd.stream_id);
+
     if(!req) {
       break;
     }
-    http2::split_add_header(req->res_nva, name, namelen, value, valuelen,
-                            flags & NGHTTP2_NV_FLAG_NO_INDEX);
+
+    if(frame->headers.cat != NGHTTP2_HCAT_RESPONSE &&
+       frame->headers.cat != NGHTTP2_HCAT_PUSH_RESPONSE &&
+       (frame->headers.cat != NGHTTP2_HCAT_HEADERS ||
+        !req->expect_final_response)) {
+      break;
+    }
+
+    if(namelen > 0 && name[0] == ':') {
+      if(!req->response_pseudo_header_allowed() ||
+         !http2::check_http2_response_pseudo_header(name, namelen)) {
+        nghttp2_submit_rst_stream(session, NGHTTP2_FLAG_NONE,
+                                  frame->hd.stream_id,
+                                  NGHTTP2_PROTOCOL_ERROR);
+        return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
+      }
+    }
+
+    http2::add_header(req->res_nva, name, namelen, value, valuelen,
+                      flags & NGHTTP2_NV_FLAG_NO_INDEX);
     break;
   }
   case NGHTTP2_PUSH_PROMISE: {
     auto req = (Request*)nghttp2_session_get_stream_user_data
       (session, frame->push_promise.promised_stream_id);
+
     if(!req) {
       break;
     }
-    http2::split_add_header(req->push_req_nva, name, namelen, value, valuelen,
-                            flags & NGHTTP2_NV_FLAG_NO_INDEX);
+
+    if(namelen > 0 && name[0] == ':') {
+      if(!req->push_request_pseudo_header_allowed() ||
+         !http2::check_http2_request_pseudo_header(name, namelen)) {
+        nghttp2_submit_rst_stream(session, NGHTTP2_FLAG_NONE,
+                                  frame->push_promise.promised_stream_id,
+                                  NGHTTP2_PROTOCOL_ERROR);
+        break;
+      }
+    }
+
+    http2::add_header(req->push_req_nva, name, namelen, value, valuelen,
+                      flags & NGHTTP2_NV_FLAG_NO_INDEX);
     break;
   }
   }
@@ -1289,21 +1368,45 @@ int on_frame_recv_callback2
 {
   int rv = 0;
 
+  if(config.verbose) {
+    verbose_on_frame_recv_callback(session, frame, user_data);
+  }
+
   auto client = get_session(user_data);
   switch(frame->hd.type) {
   case NGHTTP2_HEADERS: {
-    if(frame->headers.cat != NGHTTP2_HCAT_RESPONSE &&
-       frame->headers.cat != NGHTTP2_HCAT_PUSH_RESPONSE) {
-      break;
-    }
     auto req = (Request*)nghttp2_session_get_stream_user_data
       (session, frame->hd.stream_id);
     // If this is the HTTP Upgrade with OPTIONS method to avoid POST,
     // req is nullptr.
-    if(req) {
+    if(!req) {
+      break;
+    }
+
+    if(frame->headers.cat == NGHTTP2_HCAT_RESPONSE ||
+       frame->headers.cat == NGHTTP2_HCAT_PUSH_RESPONSE) {
       req->record_response_time();
       check_response_header(session, req);
+
+      break;
     }
+
+    if(frame->headers.cat == NGHTTP2_HCAT_HEADERS) {
+      if(req->expect_final_response) {
+        check_response_header(session, req);
+      } else {
+        nghttp2_submit_rst_stream(session, NGHTTP2_FLAG_NONE,
+                                  frame->hd.stream_id, NGHTTP2_PROTOCOL_ERROR);
+        break;
+      }
+    }
+
+    if(req->status == 0 && (frame->hd.flags & NGHTTP2_FLAG_END_STREAM)) {
+      nghttp2_submit_rst_stream(session, NGHTTP2_FLAG_NONE,
+                                frame->hd.stream_id, NGHTTP2_PROTOCOL_ERROR);
+      break;
+    }
+
     break;
   }
   case NGHTTP2_SETTINGS:
@@ -1365,16 +1468,13 @@ int on_frame_recv_callback2
     break;
   }
   }
-  if(config.verbose) {
-    verbose_on_frame_recv_callback(session, frame, user_data);
-  }
   return rv;
 }
 } // namespace
 
 namespace {
 int on_stream_close_callback
-(nghttp2_session *session, int32_t stream_id, nghttp2_error_code error_code,
+(nghttp2_session *session, int32_t stream_id, uint32_t error_code,
  void *user_data)
 {
   auto client = get_session(user_data);
@@ -1435,7 +1535,7 @@ void print_stats(const HttpClient& client)
 namespace {
 void print_protocol_nego_error()
 {
-  std::cerr << "HTTP/2 protocol was not selected."
+  std::cerr << "[ERROR] HTTP/2 protocol was not selected."
             << " (nghttp2 expects " << NGHTTP2_PROTO_VERSION_ID << ")"
             << std::endl;
 }
@@ -1516,7 +1616,7 @@ void eventcb(bufferevent *bev, short events, void *ptr)
     int val = 1;
     if(setsockopt(fd, IPPROTO_TCP, TCP_NODELAY,
                   reinterpret_cast<char *>(&val), sizeof(val)) == -1) {
-      std::cerr << "Setting option TCP_NODELAY failed: errno="
+      std::cerr << "[ERROR] Setting option TCP_NODELAY failed: errno="
                 << errno << std::endl;
     }
     if(client->need_upgrade()) {
@@ -1577,12 +1677,12 @@ void eventcb(bufferevent *bev, short events, void *ptr)
   if(events & (BEV_EVENT_ERROR | BEV_EVENT_TIMEOUT)) {
     if(events & BEV_EVENT_ERROR) {
       if(client->state == STATE_IDLE) {
-        std::cerr << "Could not connect to the host" << std::endl;
+        std::cerr << "[ERROR] Could not connect to the host" << std::endl;
       } else {
-        std::cerr << "Network error" << std::endl;
+        std::cerr << "[ERROR] Network error" << std::endl;
       }
     } else {
-      std::cerr << "Timeout" << std::endl;
+      std::cerr << "[ERROR] Timeout" << std::endl;
     }
     auto state = client->state;
     client->disconnect();
@@ -1610,7 +1710,7 @@ int communicate(const std::string& scheme, const std::string& host,
   if(scheme == "https") {
     ssl_ctx = SSL_CTX_new(SSLv23_client_method());
     if(!ssl_ctx) {
-      std::cerr << "Failed to create SSL_CTX: "
+      std::cerr << "[ERROR] Failed to create SSL_CTX: "
                 << ERR_error_string(ERR_get_error(), nullptr) << std::endl;
       result = -1;
       goto fin;
@@ -1624,7 +1724,8 @@ int communicate(const std::string& scheme, const std::string& host,
     if(!config.keyfile.empty()) {
       if(SSL_CTX_use_PrivateKey_file(ssl_ctx, config.keyfile.c_str(),
                                      SSL_FILETYPE_PEM) != 1) {
-        std::cerr << ERR_error_string(ERR_get_error(), nullptr) << std::endl;
+        std::cerr << "[ERROR] "
+                  << ERR_error_string(ERR_get_error(), nullptr) << std::endl;
         result = -1;
         goto fin;
       }
@@ -1632,7 +1733,8 @@ int communicate(const std::string& scheme, const std::string& host,
     if(!config.certfile.empty()) {
       if(SSL_CTX_use_certificate_chain_file(ssl_ctx,
                                             config.certfile.c_str()) != 1) {
-        std::cerr << ERR_error_string(ERR_get_error(), nullptr) << std::endl;
+        std::cerr << "[ERROR] "
+                  << ERR_error_string(ERR_get_error(), nullptr) << std::endl;
         result = -1;
         goto fin;
       }
@@ -1727,22 +1829,38 @@ ssize_t file_read_callback
 namespace {
 int run(char **uris, int n)
 {
-  nghttp2_session_callbacks callbacks;
-  memset(&callbacks, 0, sizeof(nghttp2_session_callbacks));
-  callbacks.on_stream_close_callback = on_stream_close_callback;
-  callbacks.on_frame_recv_callback = on_frame_recv_callback2;
+  nghttp2_session_callbacks *callbacks;
+
+  nghttp2_session_callbacks_new(&callbacks);
+  util::auto_delete<nghttp2_session_callbacks*> cbsdel
+    (callbacks, nghttp2_session_callbacks_del);
+
+  nghttp2_session_callbacks_set_on_stream_close_callback
+    (callbacks, on_stream_close_callback);
+
+  nghttp2_session_callbacks_set_on_frame_recv_callback
+    (callbacks, on_frame_recv_callback2);
+
   if(config.verbose) {
-    callbacks.on_frame_send_callback = verbose_on_frame_send_callback;
-    callbacks.on_invalid_frame_recv_callback =
-      verbose_on_invalid_frame_recv_callback;
-    callbacks.on_unknown_frame_recv_callback =
-      verbose_on_unknown_frame_recv_callback;
+    nghttp2_session_callbacks_set_on_frame_send_callback
+      (callbacks, verbose_on_frame_send_callback);
+
+    nghttp2_session_callbacks_set_on_invalid_frame_recv_callback
+      (callbacks, verbose_on_invalid_frame_recv_callback);
   }
-  callbacks.on_data_chunk_recv_callback = on_data_chunk_recv_callback;
-  callbacks.on_begin_headers_callback = on_begin_headers_callback;
-  callbacks.on_header_callback = on_header_callback;
+
+  nghttp2_session_callbacks_set_on_data_chunk_recv_callback
+    (callbacks, on_data_chunk_recv_callback);
+
+  nghttp2_session_callbacks_set_on_begin_headers_callback
+    (callbacks, on_begin_headers_callback);
+
+  nghttp2_session_callbacks_set_on_header_callback
+    (callbacks, on_header_callback);
+
   if(config.padding) {
-    callbacks.select_padding_callback = select_padding_callback;
+    nghttp2_session_callbacks_set_select_padding_callback
+      (callbacks, select_padding_callback);
   }
 
   std::string prev_scheme;
@@ -1756,12 +1874,14 @@ int run(char **uris, int n)
   if(!config.datafile.empty()) {
     data_fd = open(config.datafile.c_str(), O_RDONLY | O_BINARY);
     if(data_fd == -1) {
-      std::cerr << "Could not open file " << config.datafile << std::endl;
+      std::cerr << "[ERROR] Could not open file "
+                << config.datafile << std::endl;
       return 1;
     }
     if(fstat(data_fd, &data_stat) == -1) {
       close(data_fd);
-      std::cerr << "Could not stat file " << config.datafile << std::endl;
+      std::cerr << "[ERROR] Could not stat file "
+                << config.datafile << std::endl;
       return 1;
     }
     data_prd.source.fd = data_fd;
@@ -1782,7 +1902,7 @@ int run(char **uris, int n)
          port != prev_port) {
         if(!requests.empty()) {
           if (communicate(prev_scheme, prev_host, prev_port,
-                          std::move(requests), &callbacks) != 0) {
+                          std::move(requests), callbacks) != 0) {
             ++failures;
           }
           requests.clear();
@@ -1797,7 +1917,7 @@ int run(char **uris, int n)
   }
   if(!requests.empty()) {
     if (communicate(prev_scheme, prev_host, prev_port, std::move(requests),
-                    &callbacks) != 0) {
+                    callbacks) != 0) {
       ++failures;
     }
   }
@@ -2011,7 +2131,7 @@ int main(int argc, char **argv)
 #ifdef HAVE_LIBXML2
       config.get_assets = true;
 #else // !HAVE_LIBXML2
-      std::cerr << "Warning: -a, --get-assets option cannot be used because\n"
+      std::cerr << "[WARNING]: -a, --get-assets option cannot be used because\n"
                 << "the binary was not compiled with libxml2."
                 << std::endl;
 #endif // !HAVE_LIBXML2
@@ -2078,6 +2198,8 @@ int main(int argc, char **argv)
   memset(&act, 0, sizeof(struct sigaction));
   act.sa_handler = SIG_IGN;
   sigaction(SIGPIPE, &act, nullptr);
+  OPENSSL_config(nullptr);
+  OpenSSL_add_all_algorithms();
   SSL_load_error_strings();
   SSL_library_init();
   reset_timer();

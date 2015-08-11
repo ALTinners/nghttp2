@@ -29,13 +29,14 @@ namespace shrpx {
 WorkerConfig::WorkerConfig()
   : accesslog_fd(-1),
     errorlog_fd(-1),
-    errorlog_tty(false)
+    errorlog_tty(false),
+    graceful_shutdown(false)
 {}
 
 #ifndef NOTHREADS
 thread_local
 #endif // NOTHREADS
-WorkerConfig worker_config;
+WorkerConfig *worker_config = new WorkerConfig();
 
 } // namespace shrpx
 

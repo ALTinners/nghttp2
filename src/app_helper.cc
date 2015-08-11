@@ -52,7 +52,7 @@
 namespace nghttp2 {
 
 namespace {
-const char* strstatus(nghttp2_error_code error_code)
+const char* strstatus(uint32_t error_code)
 {
   switch(error_code) {
   case NGHTTP2_NO_ERROR:
@@ -99,6 +99,10 @@ const char* strsettingsid(int32_t id)
     return "SETTINGS_MAX_CONCURRENT_STREAMS";
   case NGHTTP2_SETTINGS_INITIAL_WINDOW_SIZE:
     return "SETTINGS_INITIAL_WINDOW_SIZE";
+  case NGHTTP2_SETTINGS_MAX_FRAME_SIZE:
+    return "SETTINGS_MAX_FRAME_SIZE";
+  case NGHTTP2_SETTINGS_MAX_HEADER_LIST_SIZE:
+    return "SETTINGS_MAX_HEADER_LIST_SIZE";
   default:
     return "UNKNOWN";
   }
@@ -187,10 +191,11 @@ void print_nv(nghttp2_nv *nv)
 namespace {
 void print_nv(nghttp2_nv *nva, size_t nvlen)
 {
-  for(auto& nv : http2::sort_nva(nva, nvlen)) {
+  auto end = nva + nvlen;
+  for(; nva != end; ++nva) {
     print_frame_attr_indent();
 
-    print_nv(&nv);
+    print_nv(nva);
   }
 }
 } // namelen
@@ -221,12 +226,6 @@ void print_flags(const nghttp2_frame_hd& hd)
     if(hd.flags & NGHTTP2_FLAG_END_STREAM) {
       s += "END_STREAM";
     }
-    if(hd.flags & NGHTTP2_FLAG_END_SEGMENT) {
-      if(!s.empty()) {
-        s += " | ";
-      }
-      s += "END_SEGMENT";
-    }
     if(hd.flags & NGHTTP2_FLAG_PADDED) {
       if(!s.empty()) {
         s += " | ";
@@ -237,12 +236,6 @@ void print_flags(const nghttp2_frame_hd& hd)
   case NGHTTP2_HEADERS:
     if(hd.flags & NGHTTP2_FLAG_END_STREAM) {
       s += "END_STREAM";
-    }
-    if(hd.flags & NGHTTP2_FLAG_END_SEGMENT) {
-      if(!s.empty()) {
-        s += " | ";
-      }
-      s += "END_SEGMENT";
     }
     if(hd.flags & NGHTTP2_FLAG_END_HEADERS) {
       if(!s.empty()) {
@@ -448,18 +441,17 @@ int verbose_on_header_callback(nghttp2_session *session,
                                uint8_t flags,
                                void *user_data)
 {
-  nghttp2_nv nva = {
+  nghttp2_nv nv = {
     const_cast<uint8_t*>(name), const_cast<uint8_t*>(value),
     namelen, valuelen
   };
 
-  for(auto& nv : http2::sort_nva(&nva, 1)) {
-    print_timer();
-    fprintf(outfile, " (stream_id=%d, noind=%d) ", frame->hd.stream_id,
-            (flags & NGHTTP2_NV_FLAG_NO_INDEX) != 0);
+  print_timer();
+  fprintf(outfile, " recv (stream_id=%d, noind=%d) ", frame->hd.stream_id,
+          (flags & NGHTTP2_NV_FLAG_NO_INDEX) != 0);
 
-    print_nv(&nv);
-  }
+  print_nv(&nv);
+  fflush(outfile);
 
   return 0;
 }
@@ -476,38 +468,11 @@ int verbose_on_frame_recv_callback
 
 int verbose_on_invalid_frame_recv_callback
 (nghttp2_session *session, const nghttp2_frame *frame,
- nghttp2_error_code error_code, void *user_data)
+ uint32_t error_code, void *user_data)
 {
   print_timer();
   fprintf(outfile, " [INVALID; status=%s] recv ", strstatus(error_code));
   print_frame(PRINT_RECV, frame);
-  fflush(outfile);
-  return 0;
-}
-
-namespace {
-void dump_header(const uint8_t *head, size_t headlen)
-{
-  size_t i;
-  print_frame_attr_indent();
-  fprintf(outfile, "Header dump: ");
-  for(i = 0; i < headlen; ++i) {
-    fprintf(outfile, "%02X ", head[i]);
-  }
-  fprintf(outfile, "\n");
-}
-} // namespace
-
-int verbose_on_unknown_frame_recv_callback(nghttp2_session *session,
-                                           const uint8_t *head,
-                                           size_t headlen,
-                                           const uint8_t *payload,
-                                           size_t payloadlen,
-                                           void *user_data)
-{
-  print_timer();
-  fprintf(outfile, " recv unknown frame\n");
-  dump_header(head, headlen);
   fflush(outfile);
   return 0;
 }
@@ -519,6 +484,23 @@ int verbose_on_frame_send_callback
   fprintf(outfile, " send ");
   print_frame(PRINT_SEND, frame);
   fflush(outfile);
+  return 0;
+}
+
+int verbose_on_data_chunk_recv_callback
+(nghttp2_session *session, uint8_t flags, int32_t stream_id,
+ const uint8_t *data, size_t len, void *user_data)
+{
+  print_timer();
+  auto srecv = nghttp2_session_get_stream_effective_recv_data_length
+    (session, stream_id);
+  auto crecv = nghttp2_session_get_effective_recv_data_length(session);
+
+  fprintf(outfile,
+          " recv (stream_id=%d, length=%zu, srecv=%d, crecv=%d) DATA\n",
+          stream_id, len, srecv, crecv);
+  fflush(outfile);
+
   return 0;
 }
 

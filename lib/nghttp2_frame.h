@@ -33,7 +33,6 @@
 #include "nghttp2_hd.h"
 #include "nghttp2_buf.h"
 
-#define NGHTTP2_FRAME_LENGTH_MASK ((1 << 14) - 1)
 #define NGHTTP2_STREAM_ID_MASK ((1u << 31) - 1)
 #define NGHTTP2_PRI_GROUP_ID_MASK ((1u << 31) - 1)
 #define NGHTTP2_PRIORITY_MASK ((1u << 31) - 1)
@@ -41,9 +40,12 @@
 #define NGHTTP2_SETTINGS_ID_MASK ((1 << 24) - 1)
 
 /* The number of bytes of frame header. */
-#define NGHTTP2_FRAME_HDLEN 8
+#define NGHTTP2_FRAME_HDLEN 9
 
-#define NGHTTP2_MAX_PAYLOADLEN 16383
+#define NGHTTP2_MAX_FRAME_SIZE_MAX ((1 << 24) - 1)
+#define NGHTTP2_MAX_FRAME_SIZE_MIN (1 << 14)
+
+#define NGHTTP2_MAX_PAYLOADLEN 16384
 /* The one frame buffer length for tranmission.  We may use several of
    them to support CONTINUATION.  To account for Pad Length field, we
    allocate extra 1 byte, which saves extra large memcopying. */
@@ -53,11 +55,12 @@
 /* Number of inbound buffer */
 #define NGHTTP2_FRAMEBUF_MAX_NUM 5
 
-/* The maximum length of DATA frame payload. */
-#define NGHTTP2_DATA_PAYLOADLEN 4096
+/* The default length of DATA frame payload. This should be small enough
+ * for the data payload and the header to fit into 1 TLS record */
+#define NGHTTP2_DATA_PAYLOADLEN ((NGHTTP2_MAX_FRAME_SIZE_MIN) - (NGHTTP2_FRAME_HDLEN))
 
 /* Maximum headers payload length, calculated in compressed form.
-   This applies to both transmission and reception. */
+   This applies to transmission only. */
 #define NGHTTP2_MAX_HEADERSLEN 65536
 
 /* The number of bytes for each SETTINGS entry */
@@ -76,6 +79,9 @@
 /* Minimum length of ALTSVC extension frame payload.
    NGHTTP2_ALTSVC_FIXED_PARTLEN + Host-Len. */
 #define NGHTTP2_ALTSVC_MINLEN 8
+
+/* Maximum length of padding in bytes. */
+#define NGHTTP2_MAX_PADLEN 256
 
 /* Category of frames. */
 typedef enum {
@@ -120,6 +126,14 @@ int nghttp2_frame_is_data_frame(uint8_t *head);
 void nghttp2_frame_pack_frame_hd(uint8_t *buf, const nghttp2_frame_hd *hd);
 
 void nghttp2_frame_unpack_frame_hd(nghttp2_frame_hd *hd, const uint8_t* buf);
+
+/**
+ * Initializes frame header |hd| with given parameters.  Reserved bit
+ * is set to 0.
+ */
+void nghttp2_frame_hd_init(nghttp2_frame_hd *hd, size_t length,
+                           uint8_t type, uint8_t flags,
+                           int32_t stream_id);
 
 /**
  * Returns the number of priority field depending on the |flags|.  If
@@ -471,7 +485,7 @@ void nghttp2_frame_priority_free(nghttp2_priority *frame);
 
 void nghttp2_frame_rst_stream_init(nghttp2_rst_stream *frame,
                                    int32_t stream_id,
-                                   nghttp2_error_code error_code);
+                                   uint32_t error_code);
 
 void nghttp2_frame_rst_stream_free(nghttp2_rst_stream *frame);
 
@@ -513,7 +527,7 @@ void nghttp2_frame_ping_free(nghttp2_ping *frame);
  * free it. If the |opaque_data_len| is 0, opaque_data could be NULL.
  */
 void nghttp2_frame_goaway_init(nghttp2_goaway *frame, int32_t last_stream_id,
-                               nghttp2_error_code error_code,
+                               uint32_t error_code,
                                uint8_t *opaque_data, size_t opaque_data_len);
 
 void nghttp2_frame_goaway_free(nghttp2_goaway *frame);
