@@ -27,7 +27,12 @@
 
 #include "shrpx.h"
 
+#include <sys/types.h>
+
 #include <sstream>
+#include <memory>
+#include <vector>
+#include <chrono>
 
 namespace shrpx {
 
@@ -40,55 +45,49 @@ class Downstream;
 #define LOG(SEVERITY) Log(SEVERITY, __FILE__, __LINE__)
 
 // Listener log
-#define LLOG(SEVERITY, LISTEN)                                       \
-  (Log(SEVERITY, __FILE__, __LINE__) << "[LISTEN:" << LISTEN         \
-   << "] ")
+#define LLOG(SEVERITY, LISTEN)                                                 \
+  (Log(SEVERITY, __FILE__, __LINE__) << "[LISTEN:" << LISTEN << "] ")
 
 // ThreadEventReceiver log
-#define TLOG(SEVERITY, THREAD_RECV)                                     \
-  (Log(SEVERITY, __FILE__, __LINE__) << "[THREAD_RECV:" << THREAD_RECV  \
-   << "] ")
+#define TLOG(SEVERITY, THREAD_RECV)                                            \
+  (Log(SEVERITY, __FILE__, __LINE__) << "[THREAD_RECV:" << THREAD_RECV << "]"  \
+                                                                          " ")
 
 // ClientHandler log
-#define CLOG(SEVERITY, CLIENT_HANDLER)                                  \
-  (Log(SEVERITY, __FILE__, __LINE__) << "[CLIENT_HANDLER:" << CLIENT_HANDLER \
-   << "] ")
+#define CLOG(SEVERITY, CLIENT_HANDLER)                                         \
+  (Log(SEVERITY, __FILE__, __LINE__) << "[CLIENT_HANDLER:" << CLIENT_HANDLER   \
+                                     << "] ")
 
 // Upstream log
-#define ULOG(SEVERITY, UPSTREAM)                                        \
+#define ULOG(SEVERITY, UPSTREAM)                                               \
   (Log(SEVERITY, __FILE__, __LINE__) << "[UPSTREAM:" << UPSTREAM << "] ")
 
 // Downstream log
-#define DLOG(SEVERITY, DOWNSTREAM)                                      \
+#define DLOG(SEVERITY, DOWNSTREAM)                                             \
   (Log(SEVERITY, __FILE__, __LINE__) << "[DOWNSTREAM:" << DOWNSTREAM << "] ")
 
 // Downstream connection log
-#define DCLOG(SEVERITY, DCONN)                                          \
+#define DCLOG(SEVERITY, DCONN)                                                 \
   (Log(SEVERITY, __FILE__, __LINE__) << "[DCONN:" << DCONN << "] ")
 
 // Downstream HTTP2 session log
-#define SSLOG(SEVERITY, HTTP2)                                           \
+#define SSLOG(SEVERITY, HTTP2)                                                 \
   (Log(SEVERITY, __FILE__, __LINE__) << "[DHTTP2:" << HTTP2 << "] ")
 
-enum SeverityLevel {
-  INFO, NOTICE, WARN, ERROR, FATAL
-};
+enum SeverityLevel { INFO, NOTICE, WARN, ERROR, FATAL };
 
 class Log {
 public:
   Log(int severity, const char *filename, int linenum);
   ~Log();
-  template<typename Type> Log& operator<<(Type s)
-  {
+  template <typename Type> Log &operator<<(Type s) {
     stream_ << s;
     return *this;
   }
   static void set_severity_level(int severity);
   static int set_severity_level_by_name(const char *name);
-  static bool log_enabled(int severity)
-  {
-    return severity >= severity_thres_;
-  }
+  static bool log_enabled(int severity) { return severity >= severity_thres_; }
+
 private:
   std::stringstream stream_;
   const char *filename_;
@@ -100,8 +99,45 @@ private:
 #define TTY_HTTP_HD (worker_config->errorlog_tty ? "\033[1;34m" : "")
 #define TTY_RST (worker_config->errorlog_tty ? "\033[0m" : "")
 
-void upstream_accesslog(const std::string& client_ip, unsigned int status_code,
-                        Downstream *downstream);
+enum LogFragmentType {
+  SHRPX_LOGF_NONE,
+  SHRPX_LOGF_LITERAL,
+  SHRPX_LOGF_REMOTE_ADDR,
+  SHRPX_LOGF_TIME_LOCAL,
+  SHRPX_LOGF_TIME_ISO8601,
+  SHRPX_LOGF_REQUEST,
+  SHRPX_LOGF_STATUS,
+  SHRPX_LOGF_BODY_BYTES_SENT,
+  SHRPX_LOGF_HTTP,
+  SHRPX_LOGF_REMOTE_PORT,
+  SHRPX_LOGF_SERVER_PORT,
+  SHRPX_LOGF_REQUEST_TIME,
+  SHRPX_LOGF_PID,
+  SHRPX_LOGF_ALPN,
+};
+
+struct LogFragment {
+  LogFragmentType type;
+  std::unique_ptr<char[]> value;
+};
+
+struct LogSpec {
+  Downstream *downstream;
+  const char *remote_addr;
+  const char *method;
+  const char *path;
+  const char *alpn;
+  std::chrono::high_resolution_clock::time_point request_start_time;
+  std::chrono::high_resolution_clock::time_point time_now;
+  int major, minor;
+  unsigned int status;
+  int64_t body_bytes_sent;
+  const char *remote_port;
+  uint16_t server_port;
+  pid_t pid;
+};
+
+void upstream_accesslog(const std::vector<LogFragment> &lf, LogSpec *lgsp);
 
 int reopen_log_files();
 

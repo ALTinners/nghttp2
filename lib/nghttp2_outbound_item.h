@@ -26,7 +26,7 @@
 #define NGHTTP2_OUTBOUND_ITEM_H
 
 #ifdef HAVE_CONFIG_H
-#  include <config.h>
+#include <config.h>
 #endif /* HAVE_CONFIG_H */
 
 #include <nghttp2/nghttp2.h>
@@ -43,6 +43,9 @@
 typedef struct {
   nghttp2_data_provider data_prd;
   void *stream_user_data;
+  /* nonzero if this item should be attached to stream object to make
+     it under priority control */
+  uint8_t attach_stream;
 } nghttp2_headers_aux_data;
 
 /* struct used for DATA frame */
@@ -66,10 +69,18 @@ typedef struct {
   uint8_t eof;
 } nghttp2_data_aux_data;
 
+/* struct used for GOAWAY frame */
+typedef struct {
+  /* nonzero if session should be terminated after the transmission of
+     this frame. */
+  int terminate_on_send;
+} nghttp2_goaway_aux_data;
+
 /* Additional data which cannot be stored in nghttp2_frame struct */
 typedef union {
   nghttp2_data_aux_data data;
   nghttp2_headers_aux_data headers;
+  nghttp2_goaway_aux_data goaway;
 } nghttp2_aux_data;
 
 typedef struct {

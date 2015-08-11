@@ -61,6 +61,7 @@ void test_nghttp2_session_send_push_promise(void);
 void test_nghttp2_session_is_my_stream_id(void);
 void test_nghttp2_session_upgrade(void);
 void test_nghttp2_session_reprioritize_stream(void);
+void test_nghttp2_session_reprioritize_stream_with_closed_stream_limit(void);
 void test_nghttp2_submit_data(void);
 void test_nghttp2_submit_data_read_length_too_large(void);
 void test_nghttp2_submit_data_read_length_smallest(void);
@@ -83,6 +84,7 @@ void test_nghttp2_submit_window_update_local_window_size(void);
 void test_nghttp2_submit_altsvc(void);
 void test_nghttp2_submit_invalid_nv(void);
 void test_nghttp2_session_open_stream(void);
+void test_nghttp2_session_open_stream_with_closed_stream_limit(void);
 void test_nghttp2_session_get_next_ob_item(void);
 void test_nghttp2_session_pop_next_ob_item(void);
 void test_nghttp2_session_reply_fail(void);
@@ -111,10 +113,12 @@ void test_nghttp2_session_stream_dep_all_your_stream_are_belong_to_us(void);
 void test_nghttp2_session_stream_attach_data(void);
 void test_nghttp2_session_stream_attach_data_subtree(void);
 void test_nghttp2_session_keep_closed_stream(void);
+void test_nghttp2_session_detach_closed_stream(void);
 void test_nghttp2_session_large_dep_tree(void);
 void test_nghttp2_session_graceful_shutdown(void);
 void test_nghttp2_session_on_header_temporal_failure(void);
 void test_nghttp2_session_recv_client_preface(void);
 void test_nghttp2_session_delete_data_item(void);
+void test_nghttp2_session_open_idle_stream(void);
 
 #endif /* NGHTTP2_SESSION_TEST_H */

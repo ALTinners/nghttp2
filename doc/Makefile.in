@@ -112,7 +112,7 @@ DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/Makefile.am \
 	$(srcdir)/python-apiref.rst.in \
 	$(srcdir)/building-android-binary.rst.in \
 	$(srcdir)/nghttp2.h.rst.in $(srcdir)/nghttp2ver.h.rst.in \
-	$(srcdir)/asio_http2.h.rst.in
+	$(srcdir)/asio_http2.h.rst.in $(srcdir)/contribute.rst.in
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/ax_boost_asio.m4 \
 	$(top_srcdir)/m4/ax_boost_base.m4 \
@@ -133,7 +133,7 @@ CONFIG_CLEAN_FILES = conf.py index.rst package_README.rst \
 	tutorial-client.rst tutorial-server.rst tutorial-hpack.rst \
 	nghttpx-howto.rst h2load-howto.rst libnghttp2_asio.rst \
 	python-apiref.rst building-android-binary.rst nghttp2.h.rst \
-	nghttp2ver.h.rst asio_http2.h.rst
+	nghttp2ver.h.rst asio_http2.h.rst contribute.rst
 CONFIG_CLEAN_VPATH_FILES =
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
@@ -374,6 +374,7 @@ EXTRA_DIST = \
 	sources/libnghttp2_asio.rst \
 	sources/python-apiref.rst \
 	sources/building-android-binary.rst \
+	sources/contribute.rst \
 	_themes/sphinx_rtd_theme/footer.html \
 	_themes/sphinx_rtd_theme/theme.conf \
 	_themes/sphinx_rtd_theme/layout_old.html \
@@ -467,6 +468,8 @@ nghttp2.h.rst: $(top_builddir)/config.status $(srcdir)/nghttp2.h.rst.in
 nghttp2ver.h.rst: $(top_builddir)/config.status $(srcdir)/nghttp2ver.h.rst.in
 	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
 asio_http2.h.rst: $(top_builddir)/config.status $(srcdir)/asio_http2.h.rst.in
+	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
+contribute.rst: $(top_builddir)/config.status $(srcdir)/contribute.rst.in
 	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
 
 mostlyclean-libtool:

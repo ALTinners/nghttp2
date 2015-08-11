@@ -32,6 +32,7 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include <chrono>
 
 #include <event.h>
 #include <event2/bufferevent.h>
@@ -53,7 +54,7 @@ public:
   Downstream(Upstream *upstream, int32_t stream_id, int32_t priority);
   ~Downstream();
   void reset_upstream(Upstream *upstream);
-  Upstream* get_upstream() const;
+  Upstream *get_upstream() const;
   void set_stream_id(int32_t stream_id);
   int32_t get_stream_id() const;
   void set_priority(int32_t pri);
@@ -65,12 +66,11 @@ public:
   void set_downstream_stream_id(int32_t stream_id);
   int32_t get_downstream_stream_id() const;
 
-  int attach_downstream_connection
-  (std::unique_ptr<DownstreamConnection> dconn);
+  int attach_downstream_connection(std::unique_ptr<DownstreamConnection> dconn);
   void detach_downstream_connection();
   // Releases dconn_, without freeing it.
   void release_downstream_connection();
-  DownstreamConnection* get_downstream_connection();
+  DownstreamConnection *get_downstream_connection();
   // Returns dconn_ and nullifies dconn_.
   std::unique_ptr<DownstreamConnection> pop_downstream_connection();
 
@@ -92,12 +92,12 @@ public:
   // Returns true if the request is HTTP Upgrade for HTTP/2
   bool get_http2_upgrade_request() const;
   // Returns the value of HTTP2-Settings request header field.
-  const std::string& get_http2_settings() const;
+  const std::string &get_http2_settings() const;
   // downstream request API
-  const Headers& get_request_headers() const;
+  const Headers &get_request_headers() const;
   void crumble_request_cookie();
   void assemble_request_cookie();
-  const std::string& get_assembled_request_cookie() const;
+  const std::string &get_assembled_request_cookie() const;
   // Makes key lowercase and sort headers by name using <
   void normalize_request_headers();
   // Returns iterator pointing to the request header with the name
@@ -105,8 +105,14 @@ public:
   // occurrence from the beginning. If no such header is found,
   // returns std::end(get_request_headers()). This function must be
   // called after calling normalize_request_headers().
-  Headers::const_iterator get_norm_request_header
-  (const std::string& name) const;
+  Headers::const_iterator
+  get_norm_request_header(const std::string &name) const;
+  // Returns iterator pointing to the request header with the name
+  // |name|.  This function acts like get_norm_request_header(), but
+  // if request_headers_ was not normalized, use linear search to find
+  // the header.  Otherwise, get_norm_request_header() is used.
+  Headers::const_iterator get_request_header(const std::string &name) const;
+  bool get_request_headers_normalized() const;
   void add_request_header(std::string name, std::string value);
   void set_last_request_header_value(std::string value);
 
@@ -123,17 +129,21 @@ public:
   size_t get_request_headers_sum() const;
 
   void set_request_method(std::string method);
-  const std::string& get_request_method() const;
+  const std::string &get_request_method() const;
   void set_request_path(std::string path);
+  void
+  set_request_start_time(std::chrono::high_resolution_clock::time_point time);
+  const std::chrono::high_resolution_clock::time_point &
+  get_request_start_time() const;
   void append_request_path(const char *data, size_t len);
   // Returns request path. For HTTP/1.1, this is request-target. For
   // HTTP/2, this is :path header field value.
-  const std::string& get_request_path() const;
+  const std::string &get_request_path() const;
   // Returns HTTP/2 :scheme header field value.
-  const std::string& get_request_http2_scheme() const;
+  const std::string &get_request_http2_scheme() const;
   void set_request_http2_scheme(std::string scheme);
   // Returns HTTP/2 :authority header field value.
-  const std::string& get_request_http2_authority() const;
+  const std::string &get_request_http2_authority() const;
   void set_request_http2_authority(std::string authority);
   void set_request_major(int major);
   void set_request_minor(int minor);
@@ -144,8 +154,6 @@ public:
   void set_chunked_request(bool f);
   bool get_request_connection_close() const;
   void set_request_connection_close(bool f);
-  void set_request_user_agent(std::string user_agent);
-  const std::string& get_request_user_agent() const;
   bool get_request_http2_expect_body() const;
   void set_request_http2_expect_body(bool f);
   int push_upload_data_chunk(const uint8_t *data, size_t datalen);
@@ -167,7 +175,7 @@ public:
   void set_request_state(int state);
   int get_request_state() const;
   // downstream response API
-  const Headers& get_response_headers() const;
+  const Headers &get_response_headers() const;
   // Makes key lowercase and sort headers by name using <
   void normalize_response_headers();
   // Returns iterator pointing to the response header with the name
@@ -175,14 +183,13 @@ public:
   // occurrence from the beginning. If no such header is found,
   // returns std::end(get_response_headers()). This function must be
   // called after calling normalize_response_headers().
-  Headers::const_iterator get_norm_response_header
-  (const std::string& name) const;
+  Headers::const_iterator
+  get_norm_response_header(const std::string &name) const;
   // Rewrites the location response header field. This function must
   // be called after calling normalize_response_headers() and
   // normalize_request_headers().
-  void rewrite_norm_location_response_header
-  (const std::string& upstream_scheme,
-   uint16_t upstream_port);
+  void rewrite_norm_location_response_header(const std::string &upstream_scheme,
+                                             uint16_t upstream_port);
   void add_response_header(std::string name, std::string value);
   void set_last_response_header_value(std::string value);
 
@@ -212,9 +219,11 @@ public:
   void set_response_state(int state);
   int get_response_state() const;
   int init_response_body_buf();
-  evbuffer* get_response_body_buf();
+  evbuffer *get_response_body_buf();
   void add_response_bodylen(size_t amount);
   int64_t get_response_bodylen() const;
+  void add_response_sent_bodylen(size_t amount);
+  int64_t get_response_sent_bodylen() const;
   uint32_t get_response_rst_stream_error_code() const;
   void set_response_rst_stream_error_code(uint32_t error_code);
   // Inspects HTTP/1 response.  This checks tranfer-encoding etc.
@@ -269,15 +278,19 @@ public:
   void ensure_downstream_wtimer();
   void disable_downstream_rtimer();
   void disable_downstream_wtimer();
+
+  // Returns true if accesslog can be written for this downstream.
+  bool accesslog_ready() const;
+
 private:
   Headers request_headers_;
   Headers response_headers_;
 
   std::string request_method_;
   std::string request_path_;
-  std::string request_user_agent_;
   std::string request_http2_scheme_;
   std::string request_http2_authority_;
+  std::chrono::high_resolution_clock::time_point request_start_time_;
   std::string assembled_request_cookie_;
   std::string http2_settings_;
 
@@ -285,6 +298,8 @@ private:
   int64_t request_bodylen_;
   // the length of response body
   int64_t response_bodylen_;
+  // the length of response body sent to upstream client
+  int64_t response_sent_bodylen_;
 
   Upstream *upstream_;
   std::unique_ptr<DownstreamConnection> dconn_;
@@ -340,6 +355,9 @@ private:
   bool response_connection_close_;
   bool response_header_key_prev_;
   bool expect_final_response_;
+
+  // true if request_headers_ is normalized
+  bool request_headers_normalized_;
 };
 
 } // namespace shrpx

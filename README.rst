@@ -47,8 +47,7 @@ implementation.
 
   NPN offer ``h2-14``, ``spdy/3.1`` and ``http/1.1``.
 
-  This endpoint requires TLSv1.2 and DHE or EDCHE with GCM cipher
-  suite for HTTP/2 connection.
+  This endpoint requires TLSv1.2 for HTTP/2 connection.
 
 * http://nghttp2.org/ (Upgrade / Direct)
 
@@ -997,18 +996,14 @@ HTTP/2 server looks like this:
     using namespace nghttp2::asio_http2;
     using namespace nghttp2::asio_http2::server;
 
-    int main(int argc, char* argv[])
-    {
+    int main(int argc, char *argv[]) {
       http2 server;
 
-      server.listen
-        ("*", 3000,
-         [](const std::shared_ptr<request>& req,
-            const std::shared_ptr<response>& res)
-         {
-           res->write_head(200);
-           res->end("hello, world");
-         });
+      server.listen("*", 3000, [](const std::shared_ptr<request> &req,
+                                  const std::shared_ptr<response> &res) {
+        res->write_head(200);
+        res->end("hello, world");
+      });
     }
 
 For more details, see the documentation of libnghttp2_asio.
@@ -1150,3 +1145,7 @@ to hand over that patch/code to us.  We will credit you for your
 changes as far as possible, to give credit but also to keep a trace
 back to who made what changes.  Please always provide us with your
 full real name when contributing!
+
+See `Contribution Guidelines
+<https://nghttp2.org/documentation/contribute.html>`_ for more
+details.

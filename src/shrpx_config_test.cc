@@ -30,8 +30,7 @@
 
 namespace shrpx {
 
-void test_shrpx_config_parse_config_str_list(void)
-{
+void test_shrpx_config_parse_config_str_list(void) {
   auto res = parse_config_str_list("a");
   CU_ASSERT(1 == res.size());
   CU_ASSERT(0 == strcmp("a", res[0]));
@@ -64,8 +63,7 @@ void test_shrpx_config_parse_config_str_list(void)
   clear_config_str_list(res);
 }
 
-void test_shrpx_config_parse_header(void)
-{
+void test_shrpx_config_parse_header(void) {
   auto p = parse_header("a: b");
   CU_ASSERT("a" == p.first);
   CU_ASSERT("b" == p.second);
@@ -88,6 +86,50 @@ void test_shrpx_config_parse_header(void)
   p = parse_header("alpha: bravo charlie");
   CU_ASSERT("alpha" == p.first);
   CU_ASSERT("bravo charlie" == p.second);
+}
+
+void test_shrpx_config_parse_log_format(void) {
+  auto res = parse_log_format("$remote_addr - $remote_user [$time_local] "
+                              "\"$request\" $status $body_bytes_sent "
+                              "\"$http_referer\" \"$http_user_agent\"");
+  CU_ASSERT(14 == res.size());
+
+  CU_ASSERT(SHRPX_LOGF_REMOTE_ADDR == res[0].type);
+
+  CU_ASSERT(SHRPX_LOGF_LITERAL == res[1].type);
+  CU_ASSERT(0 == strcmp(" - $remote_user [", res[1].value.get()));
+
+  CU_ASSERT(SHRPX_LOGF_TIME_LOCAL == res[2].type);
+
+  CU_ASSERT(SHRPX_LOGF_LITERAL == res[3].type);
+  CU_ASSERT(0 == strcmp("] \"", res[3].value.get()));
+
+  CU_ASSERT(SHRPX_LOGF_REQUEST == res[4].type);
+
+  CU_ASSERT(SHRPX_LOGF_LITERAL == res[5].type);
+  CU_ASSERT(0 == strcmp("\" ", res[5].value.get()));
+
+  CU_ASSERT(SHRPX_LOGF_STATUS == res[6].type);
+
+  CU_ASSERT(SHRPX_LOGF_LITERAL == res[7].type);
+  CU_ASSERT(0 == strcmp(" ", res[7].value.get()));
+
+  CU_ASSERT(SHRPX_LOGF_BODY_BYTES_SENT == res[8].type);
+
+  CU_ASSERT(SHRPX_LOGF_LITERAL == res[9].type);
+  CU_ASSERT(0 == strcmp(" \"", res[9].value.get()));
+
+  CU_ASSERT(SHRPX_LOGF_HTTP == res[10].type);
+  CU_ASSERT(0 == strcmp("referer", res[10].value.get()));
+
+  CU_ASSERT(SHRPX_LOGF_LITERAL == res[11].type);
+  CU_ASSERT(0 == strcmp("\" \"", res[11].value.get()));
+
+  CU_ASSERT(SHRPX_LOGF_HTTP == res[12].type);
+  CU_ASSERT(0 == strcmp("user-agent", res[12].value.get()));
+
+  CU_ASSERT(SHRPX_LOGF_LITERAL == res[13].type);
+  CU_ASSERT(0 == strcmp("\"", res[13].value.get()));
 }
 
 } // namespace shrpx
