@@ -1,196 +1,64 @@
-commit cc3b41ec96fd724869146d11129cd77e2d090033
+commit 19c2805d0d1efaeb24635597d538b843da9f0c0a
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-14
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-14
+
+    Update man pages
+
+commit df078dc004dd67756b15eb9e69a27766afd654e4
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-14
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-14
+
+    Bump up version number to 0.6.4
+    
+    Library code has not changed at all since the last release, so LT
+    revision stays the same.
+
+commit e570225e97bceaba2cb2b5a5c6edf4fdcdb61887
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-14
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-14
+
+    tiny-nghttpd: Simplify timer event handling
+
+commit 8fffa055139031331f1a069be2554b15b5511bbe
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-14
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-14
+
+    src: Fix possible heap-use-after free for OpenSSL global locking
+    
+    This is simply programming error, but it is interesting that using
+    libstdc++ does not reveal this error.  With clang++-libc++, we got
+    std::system_error: mutex lock faild: Invalid argument.  This is
+    because we did not give a name to lock object, so it is immediately
+    destructed.  I think this will fix the reported crash on Mac OSX.
+
+commit 0d4120ce2ce35a04199bc1a37b90aa5bc0123c1e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-13
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-13
+
+    nghttpx: Apply same fix from a225bb2 to spdy upstream
+
+commit 20de432725f9b39f71a899fe4b394e622c0dc7b9
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-10-13
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-10-13
+
+    nghttpx: Pool http downstream connection per thread
+
+commit 325bb0115ec48db0e76db2f405b44193ec33f04c
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
 AuthorDate: 2014-10-11
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
 CommitDate: 2014-10-11
 
-    Bump up version number to 0.6.3, LT revision to 6:1:1
-
-commit 225b90eefdeaac9073348b4f014544f60ebffbe6
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-10
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-10
-
-    Use switch-case instead of if
-
-commit 3931a0b04dbf3af609c7863cd08a68474fd01686
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-10
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-10
-
-    Fix bugs found by coverity scan
-
-commit 70c0558443e8faa475896dfd70ef3bf193b31c28
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-10
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-10
-
-    Set payload length when expected SETTINGS is not received
-
-commit f2bfe623fc74ca776b89e071462e5388d5627c6e
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-09
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-09
-
-    Update doc
-
-commit 80dcb565ebb154207f2bfbf266a629ecd53ee533
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-09
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-09
-
-    Check first SETTINGS strictly
-
-commit 6d42b6697bc5293f77999df5552bbfa9760bd167
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-09
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-09
-
-    examples: Disable tiny-nghttpd if timerfd_create is not available
-
-commit bcbb2e8649fb36bb1e38449506fbb4411e5d3847
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-08
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-08
-
-    src: Use fcntl and FD_CLOEXEC if O_CLOEXEC is undefined
-    
-    We may run into race condition if execve is called at the same time
-    when fcntl is called.  But we just does this for now to compile
-    nghttp2 applications under older kernel.
-
-commit ba92935f64627f77d3b9a1439766d83dc0c9f679
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-08
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-08
-
-    Define NOTHREADS if std:future is not available
-
-commit 402c262de544e2fddf7151496a7bc5a039f5f5d0
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-08
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-08
-
-    Push stream to queue after effective weight was calculated
-
-commit 03c4092862dc64a1e8e90b40a13b78d4792da7ae
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-07
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-07
-
-    Distribute closed or blocked stream's weight to its siblings
-    
-    This also means that at least one stream whose dpri is
-    NGHTTP2_STREAM_DPRI_TOP exists, its siblings descendants have no
-    chance to send streams, even if their parent stream has
-    NGHTTP2_STREAM_DPRI_NODATA.
-
-commit a225bb29df73a889b8e4e4468765c255548015a4
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-07
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-07
-
-    nghttpx: Fix request is sent to backend prematurely with http2 upstream
-
-commit f3a76d84f1fa5005145f695ff8e035fee99260d4
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-06
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-06
-
-    Document that only one data is allowed for one stream at a time
-
-commit 7a09feebc3dac0bc76770cd16e63d2c2692496f6
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-05
-
-    h2load: Don't use std::future with --disable-threads
-    
-    Now we don't use std::future with --disable-threads, checking
-    std::future in configure.ac was removed and building h2load is always
-    enabled.
-
-commit 32ddca532aff85d85b5f9892ecac4547aa66c32b
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-04
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-04
-
-    Use 256 elements table in nghttp2_downcast
-
-commit df875db9895d5593efc2ed9b0a8e9cf1495a35be
-Author:     Svante Signell <svante.signell@gmail.com>
-AuthorDate: 2014-09-30
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-03
-
-    Avoid PATH_MAX by using getcwd(nullptr, 0) as supported by modern glibc-based OSes.
-
-commit 1d138accb97650b9d49dee6d8267fe9d5a649562
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-03
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-03
-
-    Unify DATA and other frames in nghttp2_outbound_item and save malloc()
-
-commit 7e6019aef1ec6450472327f710631523fdef6918
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-09-30
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-09-30
-
-    nghttp2_hd: Don't malloc if name/value is in first chunk without indexing
-
-commit e20b417b8451b96b528efef10627d126283450a6
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-09-30
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-09-30
-
-    Embed aux_data to nghttp2_outbound_item so that we can save some malloc() calls
-
-commit df56b69060d8d866f67b6f13029ed7e121d8c5e9
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-09-29
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-09-29
-
-    nghttp2_map: Use initial size 256 so that we don't resize it until 100 streams
-
-commit b6d0a32d0e0c634ffba8a98c8b0db6a21d6c4c4e
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-09-29
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-09-29
-
-    tiny-nghttpd: Save number of read(2) calls using file size
-
-commit a82956d1d649e3932bfbf4d08aa3f8910e7e2ce8
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-09-29
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-09-29
-
-    nghttp2_hd: Use binary search to lookup static table (again)
-
-commit 9c0760e3c13548afda078bb884dafc7278921557
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-09-29
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-09-29
-
-    Bump up version number to 0.6.3-DEV
+    Bump up version number to 0.6.4-DEV

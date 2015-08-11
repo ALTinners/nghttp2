@@ -1,7 +1,7 @@
 /*
  * nghttp2 - HTTP/2 C Library
  *
- * Copyright (c) 2012, 2013 Tatsuhiro Tsujikawa
+ * Copyright (c) 2014 Tatsuhiro Tsujikawa
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -22,21 +22,30 @@
  * OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-#ifndef NGHTTP2VER_H
-#define NGHTTP2VER_H
+#ifndef SHRPX_DOWNSTREAM_CONNECTION_POOL_H
+#define SHRPX_DOWNSTREAM_CONNECTION_POOL_H
 
-/**
- * @macro
- * Version number of the nghttp2 library release
- */
-#define NGHTTP2_VERSION "0.6.4"
+#include "shrpx.h"
 
-/**
- * @macro
- * Numerical representation of the version number of the nghttp2 library
- * release. This is a 24 bit number with 8 bits for major number, 8 bits
- * for minor and 8 bits for patch. Version 1.2.3 becomes 0x010203.
- */
-#define NGHTTP2_VERSION_NUM 0x000604
+#include <memory>
+#include <set>
 
-#endif /* NGHTTP2VER_H */
+namespace shrpx {
+
+class DownstreamConnection;
+
+class DownstreamConnectionPool {
+public:
+  DownstreamConnectionPool();
+  ~DownstreamConnectionPool();
+
+  void add_downstream_connection(std::unique_ptr<DownstreamConnection> dconn);
+  std::unique_ptr<DownstreamConnection> pop_downstream_connection();
+  void remove_downstream_connection(DownstreamConnection *dconn);
+private:
+  std::set<DownstreamConnection*> pool_;
+};
+
+} // namespace shrpx
+
+#endif // SHRPX_DOWNSTREAM_CONNECTION_POOL_H
