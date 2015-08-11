@@ -1,0 +1,2504 @@
+commit 474b7fd4beb307e48862b13dcebba37a14fdb88a
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-02-05
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-02-05
+
+    Update release script
+
+commit 81a2359012affacfab7dcf673372309cd64906b1
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-02-05
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-02-05
+
+    Bump up version number to 0.3.0, LT revision to 2:0:0
+
+commit 5f3c4ed74077e7bae5af5b23dcda45b2d88eb52d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-02-05
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-02-05
+
+    Update doc
+
+commit 9fcd35d0637b64419abbbfa030800c0bdcae30aa
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-02-05
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-02-05
+
+    Update doc
+
+commit 1e063ca54b12d4551bc3605836e917ab058832e1
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-02-04
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-02-04
+
+    Update sphinx_rtd_theme
+
+commit 318bf987d7842f1a0c15071d27c5eafd30e8db19
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-02-02
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-02-02
+
+    Add missing sphinx_rtd_theme fonts
+
+commit 2b30820de3fe10270cf881f3ee492902278f7b41
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-02-02
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-02-02
+
+    Update sphinx_rtd_theme
+
+commit 8c0730c281dc3e6be414ebebd23c5d23e75209e0
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-02-01
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-02-01
+
+    Update doc
+
+commit 8be17f077ab7a0f222df137b091ade6dfb528335
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-02-01
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-02-01
+
+    Add nghttp2_check_header_name and nghttp2_check_header_value APIs
+    
+    These are promoted to public API from src/http2.h
+
+commit 08ff95d40222f3034e449209be5421c58cfcc155
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-02-01
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-02-01
+
+    Detect frame reception for idle stream and make it connection error
+    
+    Only stream ID which larger than currently used stream ID is
+    detected as idle.
+
+commit 2402b46cf3027d57842136336a48d8386a681ca8
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-30
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-30
+
+    Fix bug header block is not ignored as properly
+
+commit ab684a9f306220701785c6109ec7e2eee93797c6
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-29
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-29
+
+    Remove nghttp2_on_request_recv_callback
+    
+    It is easy enough to check the end of incoming data by evaluating
+    frame->hd.flags & NGHTTP2_FLAG_END_STREAM in on_frame_recv_callback
+
+commit 03a94ecca7409a2bb8263edf1931dbc265d0bc7c
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-29
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-29
+
+    Update tutorial
+
+commit 652228a9d2daf4fb0d1befcc191cff0c10d238e2
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-29
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-29
+
+    Update doc
+
+commit bbdc015e842a218909dbc6370ee3ec0980dca5c5
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-29
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-29
+
+    Call on_frame_recv_callback for DATA even if stream has been closed
+    
+    This makes the callback semantics consistent with the other
+    frames like HEADERS/PUSH_PROMISE.
+
+commit e186e0193394038422e7b49efd4952c57b6cd4b8
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-29
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-29
+
+    Replace on_end_headers_callback with on_begin_headers_callback
+    
+    Previously, there is inconsistency when on_frame_recv_callback
+    is called between HEADERS/PUSH_PROMISE and the other frames.
+    For former case, it is called before header block, in latter
+    case, it is called after whole frame is received. To make it
+    consistent, we call on_frame_recv_callback for HEADERS/PUSH_PROMISE
+    after its frame is fully received. Since on_frame_recv_callback
+    can signal the end of header block, we replaced on_end_headers_callback
+    with on_begin_headers_callback, which is called when the reception
+    of the header block is started.
+
+commit ff475104ab9a4b2cbf249ca12a1d77f16ced16cd
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-29
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-29
+
+    nghttpx: Fix runtime errors due to uninitialized values
+
+commit 4a56c0ae3db8510ffd36afa37642f408dc6fd068
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-28
+
+    Update doc
+
+commit 878afd7df12f054d56711512c67b9cee74445b1f
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-28
+
+    nghttp: Fix bad handling of addrinfo
+
+commit 864789ca6578c98849ce2c491e56bcba5e6618b0
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-28
+
+    nghttpx: Limit the maximum header block size (again)
+
+commit f308b7b5122406cd32238ba1e33816a289429a3b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-28
+
+    Allow NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE return from on_headers_callback
+
+commit ce434d56a71c814e00b03068b48268a2833f11bd
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-28
+
+    src: Print header emission with stream_id
+    
+    Since all headers are not always longer available on one
+    nghttp2_session_mem_recv call, received headers may be interleaved
+    with transmission log of the other frames. To make it clear that
+    each header belongs to which stream, each header is printed with
+    stream_id.
+
+commit 138206797616322cf7859ef43e7e56cdaed86e9b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-27
+
+    Update doc
+
+commit 7f5a87395ee1336af5c7ce97b70be6af3b934872
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-27
+
+    Refactor a bit
+
+commit a3193bee698b44b82f75625b4bf14877942c5017
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-27
+
+    Code cleanup
+
+commit a3082b7c1e0987d4bd8a8d43583972c57ae31c1f
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-27
+
+    Remove nghttp2_on_data_recv_callback and nghttp2_on_data_send_callback
+    
+    nghttp2_data is added to nghttp2_frame union. When DATA is
+    received, nghttp2_on_frame_recv_callback is called. When DATA is
+    sent, nghttp2_on_frame_send_callback is called.
+
+commit fc07a62337999ae954df389057ede5f50b5f6dde
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-27
+
+    Rename nghttp2_data as nghttp2_private_data
+    
+    This is a preparation to add public nghttp2_data struct to
+    nghttp2_frame union.
+
+commit 04b7350719653f1bd2aa38348d3ed3ed35513985
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-27
+
+    Fix compile error
+
+commit 58cbecbf95da17a624ce5f630ad760f98323c106
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-27
+
+    nghttp2_buffer: Set minimum buffer size to 8
+
+commit fbffd2c923b6f8bdc7704a9dc3e4f1ba75fbdcd0
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-27
+
+    nghttpx: Limit the number of receiving headers
+
+commit bf99da4ffbce131b22aaca91d7fd76f24a17dbdc
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-26
+
+    Update doc
+
+commit 545f24bc1b18362e0895172812de27cff1be0c59
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-26
+
+    Remove nghttp2_on_frame_recv_parse_error_callback
+
+commit 6e6127037be00ad240bbd16741877e497c23f456
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-26
+
+    src: Fix compiler warning
+
+commit 9314e30987d13250b1c3041522ad80e56625cd74
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-26
+
+    Support transmission of CONTINUATION, change nghttp2_frame_hd
+    
+    The maximum frame size including header block is still limited
+    to NGHTTP2_HD_MAX_BUFFER_LENGTH, which is 32KB.
+
+commit 91401cfe26fd5501807646ac74e96a2ef67f1d68
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-26
+
+    Support CONTINUATION frame reception
+
+commit e7fc2951b86b1b618ba3485dd6e888f1844fd94e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-26
+
+    nghttp2_hd: Define dedicated struct for HPACK deflater and inflater
+
+commit 45a9f0b637f4353f19341a301d1a272af3b24773
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-26
+
+    Remove nghttp2_frame_unpack_* functions
+
+commit dba2406aba593e747379c137afdd3aa892137408
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-26
+
+    nghttp2_sesson_mem_recv: Process incoming data in streaming fashion
+    
+    Now incoming data is processed in very small buffer (up to 8 bytes)
+    using state machine. GOAWAY debug data can get to 16K - 1, and we
+    don't have callback for it. Since we don't want to buffer that
+    amount of data just for debugging, we currently discard it.
+    This change also makes parse_error callback not function.
+    It probably be removed from API.
+
+commit 8317559090a994eec534d7da823a2b75ed2ad69f
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-25
+
+    nghttp2_hd: Implement stream header inflater
+    
+    This stream inflater can inflate incoming header block in streaming
+    fashion. Currently, we buffer up single name/value pair, but we chose
+    far more smaller buffer size than HTTP/2 frame size.
+
+commit f8a446fbebc97460ae7588a18eebda01afbaf5fd
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-24
+
+    nghttp2_hd: Rewrite huffman decoding
+
+commit a8e4da80583e01e226f94a3f5d1ccffc1cc080c5
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-24
+
+    deflatehd: Fix wire is not written if length is 0
+
+commit 6540ac1babec2cb0a7942d60459dd1e05e1cb56f
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-23
+
+    Fix crash
+
+commit 1f4577adb91ac65f851e09f9c39b5260c236a551
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-23
+
+    nghttp: Use getaddrnfo directly instead of using evdns_base
+    
+    evdns_base uses /etc/resolve.conf for *nix like systems,
+    but all platforms don't have the file (e.g., android device).
+    For such platforms, address resolution fails.
+    To fix this problem we use getaddrinfo() directly.
+
+commit 62e394b3e34e2c1018dc06aa09df25d7c0f09208
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-23
+
+    Fix memory leak
+
+commit 9cd90bcff25bd0c6451d5f019e971acbae71b94b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-22
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-22
+
+    nghttp: Fix host to connect when SSL/TLS is used
+
+commit be71e1f11cbd3e2404cd401f044b926751b3bbac
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-21
+
+    nghttp: Update doc
+
+commit 5082ce5107ef97b4c656a457e1b1b795c55a79ae
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-21
+
+    hpackmake.py: Add --deflate-table-size option
+
+commit a42cb136288bf728cd12423d1a7c6cda5055a8b8
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-21
+
+    hpackmake.py: Add option parser
+
+commit 201ab1a1404445344226cac9fb21545e82436b17
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-21
+
+    nghttp2_hd: Adjust maximum size to index based on table size
+
+commit 72aef67cca7fba89dcfaab8fa9d0cf32a7ac6f3b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-20
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-20
+
+    nghttp: Replace build-in headers completely with -H option
+
+commit d647799c6fb8974973704b8fdf99112aa5ce1d08
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-20
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-20
+
+    Take int account received data length to check flow control error
+
+commit 594e1caad67c87ec9495e517d6aef1eb5a1a6c2a
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-20
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-20
+
+    Code cleanup
+
+commit 16497d91c192d1aae2e9b4f6196ffaac1c0f943a
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-19
+
+    nghttpx: Call upstream_writecb when underlying bufferevent buffer gets empty
+
+commit dfbea797bd058e6b833e088a269a704f1a635c47
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-19
+
+    src: Use static_cast instead of reinterpret_cast if possible
+
+commit 660e1ec44d4cd956fe72fd206c9b6dae0693c7f4
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-19
+
+    nghttpx: Move backend outbuf threshold to each downstream type
+
+commit a37bc88f403de89693649d1aa16a23ddb59c30ad
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-19
+
+    nghttpx: Rename ClientHandler::get_pending_write_length to get_outbuf_length
+    
+    And other renames.
+
+commit bacea078dab53a68746637d030b27991ce942eec
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-19
+
+    nghttpx: Take into account both frontend buffer and body buffer length
+
+commit f59a9c5c5869be3176fed49b16c4e7e0290f9343
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-19
+
+    nghttpx: Disable TLS renegotiation properly
+    
+    4ed4efc does not disable TLS renegotiation at all, if client keeps
+    rengotiations without sending application data. In this change,
+    we intercept the raw incoming data from the client and if it is a
+    renegotiation, drop the connection immediately.
+
+commit 6f5e1662c6eab46077ccee23673513f1afeee2c9
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-19
+
+    nghttpx: Handle error from Downstream::resume_read()
+
+commit becc206ba94f8929a2a06bec0b7cde2be2418c7f
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-19
+
+    nghttpx: Don't show warning WINDOW_UPDATE failure for HTTP/1 downstream
+
+commit d0968ea60933574f419afc12347746362e56a7ac
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-19
+
+    Tear down session if GOAWAY with stream ID != 0
+
+commit 4ed4efc24113c25d7f59aab42bcccd406f7e708e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-18
+
+    nghttpx: Disable TLS renegotiation
+
+commit 8f3d4fdeecbec16be615e58acd7c65baa4f6a0d0
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-18
+
+    nghttpx: Remove deprecated evbuffer_setcb, send WU before buffer gets empty
+
+commit 0872ce27f456d1cd541ebbf3be53ebf728bfbc35
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-18
+
+    nghttpx: Use nghttp2_session_mem_recv instead of nghttp2_session_recv
+
+commit 50dd7ada50fb80ca28078b64711ff5b7f5bacaf2
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-18
+
+    nghttpx: Code cleanup
+
+commit 2a95da6bee0c3c786a45adeb88851df17f8eb6d5
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-18
+
+    Code cleanup
+
+commit b6d039e88881ef4303726c5785d1846d5243c209
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-18
+
+    Make nghttp2_is_fatal public API
+
+commit 2222b5ab0d925d92e7154cfec0243c8e9005e6d2
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-18
+
+    Don't return NGHTTP2_ERR_STREAM_CLOSED when submitting DATA, PRIORITY, WU
+    
+    Remove the check to see that stream exists at the time when submitting
+    DATA, PRIORITY and WINDOW_UPDATE. We will do this check when we actually
+    serialize and send them off to the network (or application provided
+    buffer).
+
+commit 59ff0b2f77de143d9fbec8a3dddb4ba1f01c04a9
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-18
+
+    nghttpx: Propagate upstream priority change to downstream
+
+commit 68b5204f29c1dde5ae03604807f715684a5cb594
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-18
+
+    src: Set errno = 0 before calling strtol
+
+commit 67d4cb6367300611a7acb83bca965f51967c9a4a
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-18
+
+    examples: Log disconnected in delete_http2_session_data
+
+commit 2cc28863e9afefc8d279865637206e55ed730fc7
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-18
+
+    examples: Fix crash if port is not in request URI
+
+commit 6cd20c55d46f3f7f283d841266cb451bce3b5687
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-18
+
+    tests: Fix compile error with --enable-maintainer-mode
+
+commit 0f30fb98a980b4ff98ea4600cf90f768c5470964
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-18
+
+    Update doc
+
+commit 0b14319675f0d1934d79d6124a97d30ba4d4edcd
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-18
+
+    doc, examples: Update tutorial and examples
+
+commit e960c56aad6ee8bd33c01e8dbd3f3d9c4c00a416
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-17
+
+    Don't call on_request_recv_callback if header decompression failed
+
+commit 3882bbebdc62875934d672e0b0d98e48fe1c17dd
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-17
+
+    Update doc
+
+commit 22a4e3eab83ef81c798ba3fe2fe632d3113f152d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-17
+
+    Remove nghttp2_session_continue
+    
+    nghttp2_session_continue is removed. Now just call
+    nghttp2_session_mem_recv to continue after NGHTTP2_ERR_PAUSE.
+
+commit b2bf18d40f168ae97f73c2d4a4ea109b2bbce313
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-17
+
+    Code cleanup
+
+commit 5d535766bfd855add6852b8640809b7d3b01433c
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-17
+
+    inflate_header_block: Terminate session on compression error
+    
+    Code cleanup is done as well
+
+commit 1daf6de1023c805313facbc926280c51bea4e8fc
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-17
+
+    Update doc
+
+commit 073e6d3a01aabf6c6bf255cf567453299890fac9
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-17
+
+    nghttp2_hd: Remove unused variables
+
+commit 7048c565831dd8d640a2853a4d421a792650049d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-17
+
+    python: Update to latest nghttp2_hd spec
+
+commit 707a0b4103e5ee54d7e3c815987be623a0c8d892
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-17
+
+    Move name/value validation functions to src
+    
+    nghttp2 library itself now accept octet header/value pairs,
+    completely not restricted by HTTP/1 header name/value rule.
+    The applications may impose restriction about them using
+    validators.
+
+commit 0e4b3d435ed30c6f3add95bb3cb6fc1864739979
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-17
+
+    Emit header name/value pair using callback functions
+    
+    Now, in nghttp2_on_frame_recv_callback, nva and nvlen in
+    HEADERS and PUSH_PROMISE frames are always NULL and 0 respectively.
+    The header name/value pairs are emitted successive
+    nghttp2_on_header_callback functions. The end of header fields are
+    signaled with nghttp2_on_end_headers_callback function.
+    
+    Since NGHTTP2_ERR_PAUSE for nghttp2_on_frame_recv_callback is
+    introduced to handle header block, it is now deprecated.
+    Instead, nghttp2_on_header_callback can be paused using
+    NGHTTP2_ERR_PAUSE.
+
+commit 8fdc37ab1339143e611542020317cee4f67bf852
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-13
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-13
+
+    src: Don't show option candidates if full-match or single prefix-match
+
+commit a54c5bef54300d4deec2fbf3ccaa924f525f518d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-13
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-13
+
+    src: Must suffix-match at least 3 characters to be a option candidate
+
+commit 8c6f3d10540203930b94ea7932a44621015c1099
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-13
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-13
+
+    nghttpx: Set our own default cipher list
+
+commit 59c10ea4c291e2c1f0f04f5178c36905a1f3c71a
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-12
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-12
+
+    src: Make the cost of suffix matched option 0
+
+commit 37d41313d3521a80c37ecd8d223e544065785559
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-12
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-12
+
+    examples: Fix build failure with android NDK
+
+commit e4801ca6f2957711f9be7ab528b5be400d9d09d5
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-12
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-12
+
+    Don't fail if python-dev is not found unless request_python_binding=yes
+
+commit 5d788e9753afa421f14240b22348272905724c3b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-12
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-12
+
+    nghttp2_hd: Move pointer variables before size_t
+
+commit 2e11f01ae6312ad24d283a013eb9ad14fb70b690
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-11
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-11
+
+    python: Add -fno-strict-aliasing flag
+
+commit c3949b0d7feac9ef1240ff9edfe0c59ccc3965ff
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-11
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-11
+
+    Fix compiler warning
+
+commit 3f4162451497a8a246405d9f650e74bb0d07b0e1
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-11
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-11
+
+    Update doc
+
+commit fd07247a48dd834e69573750f4c8584fa751a178
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-11
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-11
+
+    Update doc
+
+commit da9bbb58fb3cfc87f5b20f13c72320097a3642b6
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-11
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-11
+
+    HPACK tools: Use JSON data format used in hpack-test-case
+    
+    The input and output data format now use same JSON format used in
+    hpack-test-case.
+
+commit 331a2f891806e9958efb5055bb8f022458d204dc
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-11
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-11
+
+    Update doc
+
+commit 9218d5d071e67f891364fb03a7f2b2df15f515ac
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-11
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-11
+
+    Add AC_HEADER_ASSERT for benchmark
+
+commit a37c1379e6f081c55245c1490f310b42128976fc
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-11
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-11
+
+    Remove m4/README
+
+commit a47abdba9b1e18f923e4dccf78bc8af74916a54c
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-11
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-11
+
+    Update .gitignore
+
+commit 47f20d5e83639c9745d44383ef9b4e7c22107661
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-11
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-11
+
+    Integrate Python bindings build into `make`
+    
+    Now require python >= 2.7
+
+commit 0e9390d5ada3f8995d0c587f9cc391848a2d62f7
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-11
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-11
+
+    Move http-parser to third-party dir and fix `make distcheck`
+
+commit 46b3a7e1b3642b737f2f4d09c1bebd6ae80d3df2
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-11
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-11
+
+    examples: Remove EXTRA_DIST
+
+commit c230f4ff97b114e6b66bec1420e9e02acf1aa13f
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-11
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-11
+
+    doc: Fix EXTRA_DIST
+
+commit 47080a1cc60c21f9839ceeef4a47a3a4f11cad51
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-10
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-10
+
+    Remove hdtest/.gitignore
+
+commit 505d607b221f7b0b6a55cd01129b6542f91696ed
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-10
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-10
+
+    src: Update .gitignore
+
+commit 9dcd6b003d38016016d97088ae5d0b14c1116efa
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-10
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-10
+
+    Refactor configure options
+    
+    --enable-src is renamed as --enable-app. Fix build failure if
+    libxml2 is not available.
+
+commit d1c109f59e28f203db20fc3c9f6b14d147f946b5
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-10
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-10
+
+    Fix typo
+
+commit 0f1dea4f42e85bf7a0e918fd068fc15c60bd5c9e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-10
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-10
+
+    Move HPACK tools from hdtest to src
+
+commit 25a6596e779bc5c2147d251c51c50babed230449
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-10
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-10
+
+    nghttpx: Call Http2Session::disconnect() if initiate_connection() failed
+    
+    This will clean up resources allocated in initiate_connection()
+    properly.
+
+commit 872163128701671c4ea27196e64c3c65b4d26591
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-10
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-10
+
+    nghttp: Fix port checking to share connection
+
+commit 88d31ada75b70ce793bf0f799052ba638c54228a
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-09
+
+    src: Handle PUSH_PROMISE from client and request HEADERS from server
+    
+    They are just RST_STREAMed for now
+
+commit a85a11c1d9ce51cb216ad68e7273d6b037e31d20
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-09
+
+    Update priority for the stream to get response only
+
+commit 5aa487c5baf92af3b5cb201ee6ead27ead0dd067
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-09
+
+    nghttp2_stream: flags is now nghttp2_stream_flags
+    
+    We use this flag to know whether it is pushed or not
+
+commit 45837a2cfad8303f179743dcf781c3606010faaa
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-09
+
+    Ensure PRIORITY frame reception/transmission rule
+
+commit 95b0b6cb793f9681871fa71e87bf664bb042e943
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-09
+
+    Update doc
+
+commit fe1a39ed106e9334e6767ab68ae4d430402c6755
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-09
+
+    Allow client side to send PUSH_PROMISE
+
+commit b4058d150ad4ece42b3a206bd2ee42944a755628
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-09
+
+    Update doc
+
+commit 90ea7ba92a7948a1fd8b96740e6990a557ec2d79
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-09
+
+    src: Add command-line option guess
+
+commit a15fc5fbb47548712c85b816c5936ef5d11183e6
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-09
+
+    nghttpx: Send acceptable list of CAs when client cert auth is enabled
+
+commit c36ce28f696363557764d495caf8af718fd7c8d9
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-08
+
+    src: Call SSL_set_shutdown(ssl, SSL_RECEIVED_SHUTDOWN)
+
+commit dacfecf41a9ad36c24acb2716b9a8e5c2293c095
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-08
+
+    lib, src, hdtest: Ensure that config.h is included
+
+commit 64647f8b76fbc87222408d155812632359cc401e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-08
+
+    hdtest: Remove HPACK draft numbers
+
+commit 63e7b21b35c1f94511bf82c61ea95e6805f58c18
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-08
+
+    nghttp2_hd: Fix lower bound search in static table
+
+commit ecc4290d3dba768aa5abb224afdfc5955224c0a5
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-08
+
+    nghttp: Fix crash on plain HTTP
+
+commit 0fb4d32d6a514e1c1b08dce9f948011ca3b88569
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-07
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-07
+
+    nghttp2_hd: Binary search static table
+
+commit 468d0fccd3402a178e2d30e5b5001d805237675d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-07
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-07
+
+    nghttp2_hd: Use hash to speed up name/value pair search
+
+commit d703197a502180dcab4d38dfb404590cb95dda1c
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-07
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-07
+
+    nghttp2_hd: Mitigate timing attack
+
+commit 9eb031ce837883233a30b19317f32acb920be62b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-07
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-07
+
+    nghttp2_hd: Avoid nghttp2_hd_huff_decode_count
+    
+    Huffman decoding is costly. It is faster to do geometric realloc
+    than calling nghttp2_hd_huff_decode_count to know the length in
+    advance.
+
+commit ccd0f830189d3e817a54f2f5329a69cba932d45c
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-07
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-07
+
+    Revert e812f3b9f712c1a2a3bc317153c33714d3a17468
+    
+    We need jansson >= 2.5 because of s# conversion
+
+commit 4ac1652c7086f121f646db08dfc4ceff6a008791
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-07
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-07
+
+    nghttp2_hd: Remove invalid nghttp2_downcase call
+
+commit c531e691fc31a2dc8e489f9b0b85f2bc690aebe7
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-06
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-06
+
+    src: Use SSLv23_method for tests
+
+commit f2e830309ef20cdab1c56f5ba9270ccb02095578
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-06
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-06
+
+    src: Add test for shrpx_config
+
+commit 0f89a19fa08dcb2e555147321c5f93d1d80c2230
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-05
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-05
+
+    python: Add python script to generate hpack-test-case json files
+    
+    See https://github.com/Jxck/hpack-test-case for the json file
+    format.
+
+commit 5c88e92e96068217af8865e7b500e135280d1d67
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-05
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-05
+
+    python: Add python script to check hpack-test-case json files
+    
+    See https://github.com/Jxck/hpack-test-case for the json file
+    format.
+
+commit df0b59cc94139760411cba2820fe07c016ed1591
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-05
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-05
+
+    Update copyright year to 2014
+
+commit 295a01ef911bea75da5f466940b1f452020b8030
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-04
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-04
+
+    Reformat valid character table for header field name/value pair
+
+commit 9776fb19c68d629c615dcba073aae98b1b4d31db
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-04
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-04
+
+    Update doc
+
+commit 888792a949857a79a1708410a5d7ed83631db74e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-03
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-03
+
+    nghttp2_hd: Allow HTAB and obs-text characters for field-content
+
+commit f319d6e4755f3ee635b4b384caaa352a553ee704
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-02
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-02
+
+    Update doc
+
+commit e812f3b9f712c1a2a3bc317153c33714d3a17468
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-02
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-02
+
+    Require jansson >= 2.4
+
+commit 7ce3065f3255047ffca6fd3b1b09939db0d07c19
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-02
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-02
+
+    nghttpx: Add --tls-proto-list option to enable SSL/TLS protocol selectively
+
+commit 3e21bed4f9ab5aca9f602b01e9080a298f0b2bdb
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-02
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-02
+
+    nghttpx: Make parse_config_npn_list generic
+
+commit 74d82aac56d031f020c14de724874da709b8a797
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-02
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-02
+
+    Update doc
+
+commit 20877b1107877310907dc4b78e3bfb7fe287c4b6
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-02
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-02
+
+    nghttpx: Don't allow application protocol not listed in --npn-list option
+
+commit 78e514949514bb429019902f323ebe973db6345d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-01
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-02
+
+    src: Support ALPN
+    
+    Requires unreleased OpenSSL >= 1.0.2
+
+commit f0d732390283cb6bf5f5cd6fc7c782e24fd1875e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-01-01
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-01-01
+
+    nghttpx: Use SSL_CTX_set_ecdh_auto for OpenSSL >= 1.0.2
+
+commit 87f4f1d4f581c2d78cdfb256b6ef67c8f578329d
+Author:     MATSUMOTO Ryosuke <matsumoto_r@net.ist.i.kyoto-u.ac.jp>
+AuthorDate: 2013-12-31
+Commit:     MATSUMOTO Ryosuke <matsumoto_r@net.ist.i.kyoto-u.ac.jp>
+CommitDate: 2013-12-31
+
+    Fix :host header bug
+
+commit 73866124f3f6326c71e233147eabdeef49db3ad4
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-31
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-31
+
+    nghttp: Untabify
+
+commit 19e187cd92d11b7934045b771207ec382d579c6c
+Author:     David Weekly <david@weekly.org>
+AuthorDate: 2013-12-31
+Commit:     David Weekly <david@weekly.org>
+CommitDate: 2013-12-31
+
+    More useful warning on NPN negotiation failure due to draft version mismatch
+
+commit cc954e077f2b6b2702e34fb96021ef0d0a8fa931
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-28
+
+    Update doc
+
+commit 1c43cdbbc89fd5b004e3ce701fe81c62c2045e67
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-28
+
+    nghttpx: Don't rewrite location if proxy mode is used
+
+commit c0726036b18791684334b208375a6cd346c63812
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-27
+
+    nghttpd: Use -1 as backlog
+
+commit 0921e364d78b7a8850deecff6daca5242b39e8a7
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-26
+
+    doc: Add server tutorial, which is still in draft status
+
+commit a94fb43bb91b41b9b254a345ab1b6ad525954b66
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-26
+
+    examples: Code cleanup, cut request path after '?'
+
+commit ad369ec299916cbb456dc81eebc96f14217d8c68
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-26
+
+    nghttpx: Use -1 as default value of --backlog
+
+commit 67b265f737d1aa1962206d00dbb345c0c690f31b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-26
+
+    Update doc
+
+commit 9cb8754d09a37e5bd52f0c17045292852dd7a9fe
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-26
+
+    Rename nghttp2_session_fail_session as nghttp2_session_terminate_session
+
+commit a14cfa59df43ff8a94cd6c1b846b25a897641067
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-26
+
+    configure.ac: Print out spdylay availability
+
+commit 5bb1c653ef36011941889a8436a501be8bc19e43
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-26
+
+    src: Omit \r\n sanitization on header value
+    
+    This is because nghttp2 and spdylay now don't allow \r\n in header
+    value. Require spdylay >= 1.2.3.
+
+commit dfcdea894be54444dd826034df469d21c3ef3521
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-25
+
+    Move header name/value pair validation to on_*_received functions
+
+commit 04e496d7bd174053c66c1dbb7c12481e645b4add
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-25
+
+    nghttpd: Use nghttp2_session_fail_session instead of nghttp2_submit_goaway
+
+commit ee6df1f065b05fe02fd8ea9e209803c4abb507d8
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-25
+
+    doc: Include libevent-client.c source code in the tutorial
+
+commit 50333cb57058ecf1ad9bfd8c4a3a2f816086ae95
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-25
+
+    doc: Add client tutorial
+
+commit 286345a2efcd0ab7f8d4aebf8a048253c2ede9e8
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-25
+
+    examples/libevent-client.c: Fix memory leak, use nghttp2_session_fail_session
+
+commit f8356dd037dc864019ce2beae46055c7909e7986
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-25
+
+    nghttp: Use nghttp2_session_fail_session instead of nghttp2_submit_goaway
+
+commit 946d3150bac8690f9e4100951d34bc2c0eeb55ed
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-24
+
+    examples: Add minimum error handling for API functions
+
+commit 9fc9ef9a40c6885148dcf7624758d62e4a8ea3fd
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-24
+
+    examples: Refactor a bit
+
+commit 779366640abad9432e93c27e8e2ea8b0b82bcc61
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-24
+
+    Update doc
+
+commit 0fb7e430d7fba2e619719061060fb7540bb464ca
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-24
+
+    examples: Set TCP_NODELAY option
+
+commit 4e01ed1a95852541b22c6dd0bbaefbf6539eb6f9
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-23
+
+    examples: Add libevent-server.c
+
+commit 794633f894472c70f058317ed61195073316e004
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-23
+
+    Add nghttp2_session_set_stream_user_data API function
+
+commit e04e6ccdf99591fa5575b46e42eb03397f6347f1
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-22
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-22
+
+    examples: Remove false README.rst
+
+commit dcfd9b22fc9c3a4e691c1d4dacc7355a2285051f
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-22
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-22
+
+    examples: Add libevent-client, requires libevent for examples
+
+commit 2c1739a24ef305abe8e1fe95855386929457bc63
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-22
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-22
+
+    Add comment to category in HEADERS and reorder
+
+commit 53271e1e52be96d8747228870338ee8d81e01ce9
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-22
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-22
+
+    nghttp: Close fd on disconnect
+
+commit c4539046be2994fca498e1f1d103b54d8e7feb02
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-22
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-22
+
+    nghttpx: No string copy if no cookie crumbling occurs
+
+commit 2af9a3764375c65320c39bfc37d9895835933db6
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-22
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-22
+
+    src: Code cleanup
+
+commit d4b18900544f7cc77f31e49c40e5566a28879f0d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-21
+
+    Update README.rst
+
+commit a2ceae23a355ea2e402409c805fc9c791eafa3f4
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-21
+
+    python: Handle name/value is NULL but its length is positive
+    
+    This happens when deflater local header table is smaller than
+    inflater header table size. We use the same notation
+    "**DEALLOCATED**" for such name/values with hdtest programs.
+
+commit c24215009297d23ef961fb839cfe9a38dbe27a52
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-21
+
+    hdtest: Only show "**DEALLOCATED**" for NULL value but positive length
+
+commit e955598923bf126ec8eebedf9876749b2efb3d36
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-21
+
+    nghttpx: Remove downstream_port from location rewrite code
+
+commit 9afebcb229a80a6a163bc93b2683ee28e875fbf8
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-21
+
+    nghttpx: Ignore port when rewriting location header
+
+commit ccfa13cd5bbe1f65093c0033f2fd5fffe95bc850
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-21
+
+    nghttpx: Rewrite location header field
+    
+    We thought that this kind of rewrite can be achieved by the configuration
+    of the backend severs, but in some configuration, however, it may get
+    complicated. So we decided to implement at least location rewrite in
+    nghttpx.
+    
+    This commit also contains a fix to the bug which prevents the http2
+    backend request from concatenating header fields with the same value.
+
+commit bb70cdf6ad7541e0a995ea725407086cf9c7ed8b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-20
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-20
+
+    src: Rename verbose callback functions
+
+commit 9f7b231c2ca6afdecd571058e3a8cbce6575e666
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-20
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-20
+
+    nghttpx: Code cleanup
+
+commit b38b233aa60e0d992a9457dde3abc4fef4d075ec
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-20
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-20
+
+    nghttpx: Check failure of evbuffer_* and bufferevent_* functions
+
+commit 873d457dd221259561a50757865d1bb390987a14
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-20
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-20
+
+    nghttpx: Fix log message
+
+commit efb25f723f5160a9fa674d9c498d6041d5fe10be
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-20
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-20
+
+    Update README.rst in python dir
+
+commit d49f520dff45c62153a0eb94ffe259d1760763cc
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-19
+
+    Update doc
+
+commit 7c4dbb6ffc6cf135b14e89ed91d309eadb6fe171
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-19
+
+    nghttp2_hd: Don't malloc if huffman encoded string has 0 length
+
+commit 7a9eca1f7df17037a307ce2ea3027b2214976fb4
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-19
+
+    nghttp2_hd: Simplify huffman encode
+
+commit 0af0bd4362fd03805c897419fc1f5bd9c4a16b6e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-19
+
+    doc/mkapiref.py: Support python3.3
+
+commit 6039e6b9c739902c097957bb9b0bc44d2f6b0fd4
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-18
+
+    Update doc
+
+commit 5ca0cfa0185912ca2ff1e96a76a20b31beb58e6f
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-18
+
+    nghttp2_hd: Search hd table once
+
+commit 12144acf4d41debc645f30e818ee695ee91f1536
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-18
+
+    nghttp2_hd: Check last byte of huffman encoded byte string strictly
+
+commit cd5043f68c8e7132785a1f8d0f135acc6dfe2ed1
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-18
+
+    python: Remove unnecessary variables
+
+commit bddfa3c0b6a453e3ef14477c11b314b440d6db68
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-18
+
+    python: Add method to get/print header table
+
+commit 415b9d07d88a5b15a8d16934c806a16834f93b3f
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-17
+
+    python: Refactor class
+
+commit 01266182e9d8b6622450d913e4a6f22f28a6cc6b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-17
+
+    nghttp2_hd: Match deflate_hd_tablelen to hd_table.len on decoder side
+
+commit 595493a0eca3e2a4c18097cd4405bc3698fc7e9e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-16
+
+    Add debug output in nghttp2_hd
+
+commit 9d630901fa6df602f2c924077f3c77e275f1627c
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-16
+
+    Add check for cython and substitute python and cython in Makefile.am
+
+commit ff2eb0de814892e9109a8a698392bd9381358c0e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-16
+
+    Update doc
+
+commit 7222f63dbd1babf2d2581050d65538595159d7b0
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-16
+
+    Revert 3c57327274cff04b3583118bef75690f69f0b0c7
+    
+    It may violate draft-09 section 8.1.3.1. Proxy should perseve
+    host header field.
+
+commit 3c57327274cff04b3583118bef75690f69f0b0c7
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-15
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-15
+
+    nghttpx: Remove host if :authority is available on HTTP2 downstream request
+
+commit 3c63936d3ad85ad86de07678084e28adc2d62603
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-15
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-15
+
+    Fix error on `make distcheck`
+
+commit 650f63c7283949f8dcfcdc14d8e432785512af01
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-15
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-15
+
+    Fail session on the reception of DATA in closed stream or illegal state
+
+commit 4e0ca71ef0dc7acc1541e49b6a0c62c49ce77bbf
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-14
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-14
+
+    python: Add experimental python extension module
+    
+    To build extension module, cython is required.
+    The module is not built with `make` in the top directory.
+    A user has to run `make build_ext` in python directory.
+    Currently header compression objects are available for testing.
+
+commit 65e54ca7b0458d2c8d42b15acfbf1eecdb41316b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-14
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-14
+
+    Add nghttp2_free()
+
+commit bc7473182ce7212e9b3849d25068af6a60425a7a
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-14
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-14
+
+    Update doc
+
+commit 0867b57c39a6e6357a546afad0ae22f29ea042d9
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-14
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-14
+
+    Update doc
+
+commit e61876ccbdf41b6c2f4eda1392cc3a6b7b01bde9
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-14
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-14
+
+    nghttp2_hd: Provide dedicated function to enable no reference set feature
+
+commit 41104f7b6359e98989e50121e331be39be5ec02e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-14
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-14
+
+    Abandon DATA frame priority adjustment (again)
+    
+    We tried several times about this subject, but for the current
+    HTTP/2.0 priority scheme, we think it is best to serve the highest
+    priroty streams first (interleaving streams if there are several
+    higest ones). There are an issue when aggregating several frontend
+    connections to one connection in backend, but it is HTTP/2.0
+    spec issue, rather than implementation.
+
+commit 364501a2cde9bfe446fb763c054692bcbcf18beb
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-13
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-13
+
+    Get rid of magic value NGHTTP2_PRI_DECAY
+    
+    For now we just double the priority value on each DATA frame
+    transmission. If priority is 0, it becomes to 1 and goes all
+    the way to (1 << 30) - 1.
+
+commit f4ae707bf2960229998520543d67663e4c27020c
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-13
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-13
+
+    Revert 0b7b95923eea0007bd47b1fb504c74da06d3eba2
+
+commit bcee1b27a72b584e0e5d294ced9db6799891d250
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-12
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-12
+
+    Update doc
+
+commit 0b7b95923eea0007bd47b1fb504c74da06d3eba2
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-11
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-11
+
+    nghttp: Adjust relative priority with -a
+
+commit e17f88894486d7b153a04c4f339d3367ef8d0b67
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-11
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-11
+
+    Lower priority by constant value
+
+commit 9d49f9a356d2d9eb7e54bf942aacfd0b017d3e86
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-09
+
+    Add copyright notice
+
+commit 09ba2e8c78c40a5180068f5b45129774bcc31fff
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-09
+
+    nghttp: Ensure that all settings can be encoded in settings_payload
+
+commit c3a361fb529316ec80531fb3e2a71127887ad6df
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-09
+
+    nghttpd: Create Request object in hd_before_frame_send_callback
+    
+    This is pathological case, but we may get RST_STREAM to the promised
+    stream while we are sending PUSH_PROMISE. To handle this case,
+    instantiate Request object before transmission.
+
+commit 50cda96fa510e2ad3aa8f24402b9836016c3e7da
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-09
+
+    Update README.rst
+
+commit ed1d7cdea496a2fd505927145f0effc5a052d861
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-09
+
+    nghttpd: Fix allow_push is not used
+
+commit 47f53940da301e0322e37de0918fd11911839fd0
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-09
+
+    nghttpd: Add -p, --push option to configure server push
+    
+    The option syntax is <PATH>=<PUSH_PATH,...>.
+    Push resources PUSH_PATHs when PATH is requested. This option can be used
+    repeatedly to specify multiple push configurations. For example,
+      -p/=/foo.png -p/doc=/bar.css
+    PATH and PUSH_PATHs are relative to document root.
+
+commit 658b7d0727f17109618cbfc576a7884ee2d4152b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-08
+
+    src: Replace MAKE_NV macros with function templates
+
+commit 6c77cec27070f5d168df84598cfaf1fabb99239b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-08
+
+    Remove nghttp2_submit_* API functions which has char **nv parameter
+    
+    The nghttp2_submit_{request,response}2 functions are renamed as
+    nghttp2_submit_{request, response}.
+
+commit d6212a6055e89808ab1393d3d26a14a9d4ec9b42
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-08
+
+    Fix doc
+
+commit d773b42a2d5b0500588e26998cd446c0f423b13d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-07
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-07
+
+    Ensure that pri goes to the lowest value
+
+commit ffed4f003192567fba100318534a1a4df4fbc7e8
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-07
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-07
+
+    doc: Add link to github pages
+
+commit 9aba2130a1aef2560cc145d2feaa421a35fa7612
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-07
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-07
+
+    doc: Remove menu, write github URI in index.rst
+
+commit 061176850657d4a305661870f0d5f39984657c79
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-07
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-07
+
+    doc: Use Read The Docs sphinx theme
+
+commit baa2272b0a2a0880cc9e7c1694b8318f2c662e15
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-07
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-07
+
+    src: Concatenate header fields with same name by NULL as delimiter
+    
+    cookie and set-cookie are treated specially and won't be concatenated.
+
+commit 6ea91e57e07dd4a4ab74867138a7fb99337e5eca
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-06
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-06
+
+    Adjust struct/class alignment
+
+commit 58dd118c8971027e41987c78f0a11cc86c3b0639
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-06
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-06
+
+    Update doc
+
+commit 72da72f814ebbfa1d73cb0d2f50eff2fd436c5f0
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-05
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-05
+
+    Update README.rst
+
+commit 84d1fffb3f5c99faacada7aed65e7429974415d0
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-05
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-05
+
+    Announce HTTP-draft-09/2.0
+
+commit 8a94bc90b8352626afecf2cd8429b8e511bf791c
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-05
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-05
+
+    deflatehd: Add -c option to disable reference set
+
+commit 1dea4e154b3ae3633419b603f9e0ccec2964ddaf
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-05
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-05
+
+    Reintroduce priority adjustment for DATA frame
+    
+    This mechanism existed but was deleted. We bring it back in order to
+    prevent lower priority streams from starving.
+
+commit e596385fc0558a2496c1a2b66f7d9a5d412618d3
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-05
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-05
+
+    src: Split NULL-separated values
+
+commit 3fde4c7669fad0d0cff463ff978962daa1dcd707
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-05
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-05
+
+    nghttp2_map: Code cleanup
+
+commit a3c888d7d1d0496f05c7a644b71b63691d44d76f
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-05
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-05
+
+    nghttp2_map: Implement hash table
+
+commit 1f0dfd43165d6efa987619635901d5189a747eec
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-12-01
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-12-01
+
+    nghttpx: Update doc
+
+commit 93ad48fe6c6e65fb9abd1e0e97318019b16e7652
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-29
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-29
+
+    nghttpx: Update usage
+
+commit d0d0009a50eafb905ca53137d14b7cc290722f8c
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-28
+
+    Use largest valid stream ID which passed to callback as last-stream-ID
+    
+    Previously we use largest stream ID received so far as last-stream-ID,
+    and it is irrevant that it is passed to the callback (thus upper layer).
+    Now the stream ID which is passed to callback is eligible to
+    last-stream-ID.
+
+commit 40a666e7d1d89d1f0d58f508158a1b8c46cd936d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-28
+
+    Add nghttp2_submit_response2 tests
+
+commit d1049f389f56075ae8a879dfde6213383e310753
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-28
+
+    nghttpx: Use nghttp2_submit_{request, response}2 API
+
+commit 2a83fc75590fa16f6f7abdab5ee9a4b1e99ca738
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-28
+
+    Add nghttp2_submit_response2
+
+commit 679a389bd3db62f825d1306ddc0b1466c534e592
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-26
+
+    nghttpx: Code cleanup
+
+commit 888e6f01939a42cfd7dd380ad5eb47f0cfe50678
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-22
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-22
+
+    Update doc
+
+commit 0e1ade815a7dc35a4626f87deed22d06f33e1193
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-21
+
+    Update README.rst
+
+commit e57b3a21390770440b23f0aee1a9f190b80bec4a
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-21
+
+    Set protocol ID to draft-08 temporarily
+
+commit bbebc4ad8dda2c41307f23664967b63b1a0c7ecb
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-21
+
+    nghttpx: Fix crash on CONNECT or downstream failure
+
+commit 01f7162be3e59106b04b64fe6ccb3fa07ab3dd39
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-21
+
+    nghttpx: Add connection-level flow control window size options
+    
+    This commit also changes SPDY's flow control size. Previously,
+    the size for SPDY is the same amount of bytes with HTTP/2.
+    For example, --frontend-http2-upstream-window-bits=N,
+    the window size is 2**N - 1. Now SPDY code uses 2**N.
+
+commit bc21edf5b6b579525122822fe46a502826857cda
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-19
+
+    Interleave streams with the same priority
+
+commit e5e4fc9d14fb828ba3c425c20937e66f48dcd6e5
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-19
+
+    nghttp2_hd: Define some headers not for indexing based on our research
+
+commit b71bb6dcd90bd548a201969764b2a5a555c53be9
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-18
+
+    deflatehd: Print overall input, output length and compression ratio
+
+commit 53b3fba05bdfbbb3b377c78e1e423220ccf44c04
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-18
+
+    nghttpx: Add --http2-no-cookie-crumbling option
+
+commit faedc4381dbeb4d2fc865ba8b1555bb1f21e9f11
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-17
+
+    nghttpx: Add options to dump HTTP headers in HTTP/2.0 upstream
+
+commit c22cb53b5e0e377fc82aa9d73ca9aa5ce6a8a77c
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-17
+
+    deflatehd: Require empty line for each HTTP/1 style header set
+
+commit 8915e91b177f61082f4181c0139e24ab14295843
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-16
+
+    nghttp2_hd: Enlarge buffers used in inflation process dynamically
+
+commit e14baf134c69100aa1f3e74a5fec9fc0d688e2d4
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-16
+
+    nghttpx: Implement cookie crumbling
+
+commit 0c669898a4ec8969e911fcd8afe658b5832285fc
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-16
+
+    nghttp: Allow multiple same headers in -H
+
+commit 3d863ed254f1a5d92a0e49c93ef633ff5beb9731
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-16
+
+    nghttp2_hd: Clear reference set with index 0
+
+commit 5696a65c5e8b31938c47c1ec24cfba081917339d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-16
+
+    nghttp2_hd: Update doc
+
+commit 94ec4dbe429f121586058152b3634456522ad135
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-16
+
+    nghttpd_hd: Update static table and use 1-based index
+    
+    The specification now says that index to the header table entry is
+    1-based. Since 0-based index is very handy to access arrays, we
+    internally uses 0-based index. We just convert it to 1-based when
+    we emit to the block and convert 1-based to 0-based on decoding.
+
+commit a255e4efa6cdc4d60acfc28fb818ef4cc091c5c5
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-16
+
+    nghttpx: Use same priority in frontend and backend HTTP2
+
+commit 81cf484124ba12525d35125bdced4755112c112e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-16
+
+    Don't DIE when establishing backend HTTP2 connection failed
+
+commit 1f3840f4a2573c69654b99c9a1d7b784ea665e6b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-15
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-15
+
+    Update doc
+
+commit 9bb0eb32bdc6fc32ffa13c0140adf7fc0017dedf
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-15
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-15
+
+    Update README.rst
+
+commit d946b06e515eca8cd4e77c06b56db37d9380573d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-14
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-14
+
+    src/http-parser: Update to latest HEAD
+
+commit 40347487c95678388a2fb9b521f8ff093545bb85
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-13
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-13
+
+    Don't sort headers in library code
+    
+    Remove sorting headers from library code. The application must sort
+    them if necessary. nghttpx and nghttpd do the sorting of the headers
+    in stable way if names are equal.
+
+commit 0ba2883940be8bcc42580f1b79afeab39020e49a
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-12
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-12
+
+    nghttpx: Use initial window size in config directly
+
+commit 58beaa371d6388c5708a6ebf454cb87c0ac3209d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-12
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-12
+
+    nghttpx: Support spdy/3.1, require spdylay >= 1.2.0
+
+commit 45c3c5b80f476dfafbdfab9b86e1f780c2fe46d4
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-12
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-12
+
+    Cleanup nghttp2_session_mem_recv
+
+commit a39a816a63fbcd96a72e602bb396422ac41908c3
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-12
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-12
+
+    Cleanup nghttp2_session_next_data_read
+
+commit 5044b59453f2ba0b351e76cd6a6579252d11007a
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-12
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-12
+
+    Handle error from nghttp2_session_push_back_deferred_data
+
+commit 1e5f4cadde65e78b38af87336cc038aa03f1f7bb
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-10
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-10
+
+    hdtest: Add copyright notice
+
+commit b405b4bc9f4eba554e4682affa7cc3eed0cb86ed
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-09
+
+    src: Fix token68 decoding
+
+commit 415b8ed674323287e1f6e43c44ab0c6d977c0883
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-08
+
+    Code cleanup
+
+commit ac354d3b91359888a7ffce8b2a2e2c77982e8bb3
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-08
+
+    Fix compile error with --enable-maintainer-mode
+
+commit 873477d9bd52e216025cc57702b21beb9d7c952b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-08
+
+    mkapiref.py: Handle enum value with spaces (e.g., 1 << 2)
+
+commit 2ae788eddd4b842d3e6e5521c87e1c3239e188df
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-08
+
+    Replace nghttp2_set_option with nghttp2_session_{client,server}_new2
+    
+    nghttp2_session_client_new2 and nghttp2_session_server_new2 take
+    additional parameters which specifies session options.
+    nghttp2_set_option is somewhat crumsy because of type checking.
+    Now we use nghttp2_opt_set, which specifies individual options with
+    types. We changed the value of nghttp2_opt, so this change will
+    require re-compile.
+
+commit e684b8149bbb733fc193c414cf4633312e03a337
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-06
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-06
+
+    nghttpd: Fix -c option
+
+commit bc03007d4de05a3f6d706d31e6dbf103690b26d4
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-06
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-06
+
+    Update README.rst
+
+commit be5d08647eb4f388210c0c03811cb4d7f0f487e7
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-05
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-05
+
+    nghttpd: Add -c, --header-table-size option
+
+commit d92a161c46fcb46afd1ba9c5167043fce71c3ed7
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-05
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-05
+
+    nghttp2_hd_huffman: Code cleanup
+
+commit bc347d6bb90ee964bffef1366dcfb817b17527d1
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-05
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-05
+
+    Update doc
+
+commit 2d286348265b50b6b069c83e04062906e886da90
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2013-11-05
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2013-11-05
+
+    Bump up version number to 0.3.0-DEV
