@@ -37,8 +37,6 @@
 #include <sstream>
 #include <memory>
 
-#include <event2/buffer.h>
-
 #include "http-parser/http_parser.h"
 
 namespace nghttp2 {
@@ -51,46 +49,26 @@ constexpr size_t array_size(T (&)[N])
   return N;
 }
 
-template<typename T>
-class auto_delete {
-private:
-  T obj_;
-  void (*deleter_)(T);
-public:
-  auto_delete(T obj, void (*deleter)(T)):obj_(obj), deleter_(deleter) {}
+template<typename T, typename F>
+struct Defer {
+  Defer(T t, F f)
+    : t(t), f(std::move(f))
+  {}
 
-  ~auto_delete()
+  ~Defer()
   {
-    deleter_(obj_);
+    f(t);
   }
+
+  T t;
+  F f;
 };
 
-template<typename T>
-class auto_delete_d {
-private:
-  T obj_;
-public:
-  auto_delete_d(T obj):obj_(obj) {}
-
-  ~auto_delete_d()
-  {
-    delete obj_;
-  }
-};
-
-template<typename T, typename R>
-class auto_delete_r {
-private:
-  T obj_;
-  R (*deleter_)(T);
-public:
-  auto_delete_r(T obj, R (*deleter)(T)):obj_(obj), deleter_(deleter) {}
-
-  ~auto_delete_r()
-  {
-    (void)deleter_(obj_);
-  }
-};
+template<typename T, typename F>
+Defer<T, F> defer(T&& t, F f)
+{
+  return Defer<T, F>(std::forward<T>(t), std::forward<F>(f));
+}
 
 extern const char DEFAULT_STRIP_CHARSET[];
 
@@ -467,21 +445,6 @@ void write_uri_field(std::ostream& o,
                      const char *uri, const http_parser_url &u,
                      http_parser_url_fields field);
 
-class EvbufferBuffer {
-public:
-  EvbufferBuffer();
-  EvbufferBuffer(evbuffer *evbuffer, uint8_t *buf, size_t bufmax);
-  void reset(evbuffer *evbuffer, uint8_t *buf, size_t bufmax);
-  int flush();
-  int add(const uint8_t *data, size_t datalen);
-  size_t get_buflen() const;
-private:
-  evbuffer *evbuffer_;
-  uint8_t *buf_;
-  size_t bufmax_;
-  size_t buflen_;
-};
-
 bool numeric_host(const char *hostname);
 
 // Opens |path| with O_APPEND enabled.  If file does not exist, it is
@@ -500,6 +463,12 @@ std::string ascii_dump(const uint8_t *data, size_t len);
 // dynamically allocated by malloc.  The caller is responsible to free
 // it.
 char* get_exec_path(int argc, char **const argv, const char *cwd);
+
+// Validates path so that it does not contain directory traversal
+// vector.  Returns true if path is safe.  The |path| must start with
+// "/" otherwise returns false.  This function should be called after
+// percent-decode was performed.
+bool check_path(const std::string& path);
 
 } // namespace util
 

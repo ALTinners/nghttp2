@@ -38,6 +38,7 @@
 #include "shrpx_worker_config.h"
 #include "http2.h"
 #include "util.h"
+#include "libevent_util.h"
 #include "base64.h"
 #include "app_helper.h"
 
@@ -627,8 +628,7 @@ Http2Upstream::Http2Upstream(ClientHandler *handler)
     session_(nullptr),
     settings_timerev_(nullptr)
 {
-  handler->set_upstream_timeouts(&get_config()->http2_upstream_read_timeout,
-                                 &get_config()->upstream_write_timeout);
+  reset_timeouts();
 
   int rv;
 
@@ -637,8 +637,8 @@ Http2Upstream::Http2Upstream(ClientHandler *handler)
 
   assert(rv == 0);
 
-  util::auto_delete<nghttp2_session_callbacks*> callbacks_deleter
-    (callbacks, nghttp2_session_callbacks_del);
+  auto callbacks_deleter =
+    util::defer(callbacks, nghttp2_session_callbacks_del);
 
   nghttp2_session_callbacks_set_on_stream_close_callback
     (callbacks, on_stream_close_callback);
@@ -1434,6 +1434,12 @@ int Http2Upstream::on_timeout(Downstream *downstream)
   rst_stream(downstream, NGHTTP2_NO_ERROR);
 
   return 0;
+}
+
+void Http2Upstream::reset_timeouts()
+{
+  handler_->set_upstream_timeouts(&get_config()->http2_upstream_read_timeout,
+                                  &get_config()->upstream_write_timeout);
 }
 
 } // namespace shrpx

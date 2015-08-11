@@ -405,7 +405,8 @@ int Http2DownstreamConnection::push_request_headers()
     nva.push_back(http2::make_nv_ls("x-forwarded-for", (*xff).value));
   }
 
-  if(downstream_->get_request_method() != "CONNECT") {
+  if(!get_config()->http2_proxy && !get_config()->client_proxy &&
+     downstream_->get_request_method() != "CONNECT") {
     // We use same protocol with :scheme header field
     if(scheme.empty()) {
       if(client_handler_->get_ssl()) {
@@ -583,7 +584,7 @@ StreamData* Http2DownstreamConnection::detach_stream_data()
 bool Http2DownstreamConnection::get_output_buffer_full()
 {
   if(request_body_buf_) {
-    return http2session_->get_outbuf_length() +
+    return
       evbuffer_get_length(request_body_buf_) >= Http2Session::OUTBUF_MAX_THRES;
   } else {
     return false;

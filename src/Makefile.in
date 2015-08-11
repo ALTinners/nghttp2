@@ -29,13 +29,7 @@
 # The above copyright notice and this permission notice shall be
 # included in all copies or substantial portions of the Software.
 
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-# MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-# LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-# WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 
 
 VPATH = @srcdir@
@@ -116,10 +110,16 @@ TESTS = $(am__EXEEXT_4)
 @ENABLE_HPACK_TOOLS_TRUE@am__append_8 = inflatehd deflatehd
 subdir = src
 DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/Makefile.am \
-	$(top_srcdir)/depcomp $(top_srcdir)/test-driver
+	$(srcdir)/libnghttp2_asio.pc.in $(top_srcdir)/depcomp \
+	$(top_srcdir)/test-driver
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/m4/ax_check_compile_flag.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/m4/ax_boost_asio.m4 \
+	$(top_srcdir)/m4/ax_boost_base.m4 \
+	$(top_srcdir)/m4/ax_boost_system.m4 \
+	$(top_srcdir)/m4/ax_boost_thread.m4 \
+	$(top_srcdir)/m4/ax_check_compile_flag.m4 \
 	$(top_srcdir)/m4/ax_cxx_compile_stdcxx_11.m4 \
+	$(top_srcdir)/m4/ax_have_epoll.m4 \
 	$(top_srcdir)/m4/ax_python_devel.m4 \
 	$(top_srcdir)/m4/libtool.m4 $(top_srcdir)/m4/ltoptions.m4 \
 	$(top_srcdir)/m4/ltsugar.m4 $(top_srcdir)/m4/ltversion.m4 \
@@ -128,7 +128,7 @@ am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 mkinstalldirs = $(install_sh) -d
 CONFIG_HEADER = $(top_builddir)/config.h
-CONFIG_CLEAN_FILES =
+CONFIG_CLEAN_FILES = libnghttp2_asio.pc
 CONFIG_CLEAN_VPATH_FILES =
 LIBRARIES = $(noinst_LIBRARIES)
 ARFLAGS = cru
@@ -139,16 +139,16 @@ am__v_AR_1 =
 libnghttpx_a_AR = $(AR) $(ARFLAGS)
 libnghttpx_a_LIBADD =
 am__libnghttpx_a_SOURCES_DIST = util.cc util.h http2.cc http2.h \
-	timegm.c timegm.h base64.h app_helper.cc app_helper.h ssl.cc \
-	ssl.h shrpx_config.cc shrpx_config.h shrpx_error.h \
-	shrpx_listen_handler.cc shrpx_listen_handler.h \
-	shrpx_client_handler.cc shrpx_client_handler.h \
-	shrpx_upstream.h shrpx_http2_upstream.cc \
-	shrpx_http2_upstream.h shrpx_https_upstream.cc \
-	shrpx_https_upstream.h shrpx_downstream_queue.cc \
-	shrpx_downstream_queue.h shrpx_downstream.cc \
-	shrpx_downstream.h shrpx_downstream_connection.cc \
-	shrpx_downstream_connection.h \
+	timegm.c timegm.h base64.h libevent_util.cc libevent_util.h \
+	app_helper.cc app_helper.h ssl.cc ssl.h shrpx_config.cc \
+	shrpx_config.h shrpx_error.h shrpx_listen_handler.cc \
+	shrpx_listen_handler.h shrpx_client_handler.cc \
+	shrpx_client_handler.h shrpx_upstream.h \
+	shrpx_http2_upstream.cc shrpx_http2_upstream.h \
+	shrpx_https_upstream.cc shrpx_https_upstream.h \
+	shrpx_downstream_queue.cc shrpx_downstream_queue.h \
+	shrpx_downstream.cc shrpx_downstream.h \
+	shrpx_downstream_connection.cc shrpx_downstream_connection.h \
 	shrpx_http_downstream_connection.cc \
 	shrpx_http_downstream_connection.h \
 	shrpx_http2_downstream_connection.cc \
@@ -162,8 +162,9 @@ am__libnghttpx_a_SOURCES_DIST = util.cc util.h http2.cc http2.h \
 	shrpx_spdy_upstream.cc shrpx_spdy_upstream.h
 @ENABLE_APP_TRUE@@HAVE_SPDYLAY_TRUE@am__objects_1 = shrpx_spdy_upstream.$(OBJEXT)
 @ENABLE_APP_TRUE@am__objects_2 = util.$(OBJEXT) http2.$(OBJEXT) \
-@ENABLE_APP_TRUE@	timegm.$(OBJEXT) app_helper.$(OBJEXT) \
-@ENABLE_APP_TRUE@	ssl.$(OBJEXT) shrpx_config.$(OBJEXT) \
+@ENABLE_APP_TRUE@	timegm.$(OBJEXT) libevent_util.$(OBJEXT) \
+@ENABLE_APP_TRUE@	app_helper.$(OBJEXT) ssl.$(OBJEXT) \
+@ENABLE_APP_TRUE@	shrpx_config.$(OBJEXT) \
 @ENABLE_APP_TRUE@	shrpx_listen_handler.$(OBJEXT) \
 @ENABLE_APP_TRUE@	shrpx_client_handler.$(OBJEXT) \
 @ENABLE_APP_TRUE@	shrpx_http2_upstream.$(OBJEXT) \
@@ -184,12 +185,65 @@ am__libnghttpx_a_SOURCES_DIST = util.cc util.h http2.cc http2.h \
 @ENABLE_APP_TRUE@	$(am__objects_1)
 @ENABLE_APP_TRUE@am_libnghttpx_a_OBJECTS = $(am__objects_2)
 libnghttpx_a_OBJECTS = $(am_libnghttpx_a_OBJECTS)
+am__vpath_adj_setup = srcdirstrip=`echo "$(srcdir)" | sed 's|.|.|g'`;
+am__vpath_adj = case $$p in \
+    $(srcdir)/*) f=`echo "$$p" | sed "s|^$$srcdirstrip/||"`;; \
+    *) f=$$p;; \
+  esac;
+am__strip_dir = f=`echo $$p | sed -e 's|^.*/||'`;
+am__install_max = 40
+am__nobase_strip_setup = \
+  srcdirstrip=`echo "$(srcdir)" | sed 's/[].[^$$\\*|]/\\\\&/g'`
+am__nobase_strip = \
+  for p in $$list; do echo "$$p"; done | sed -e "s|$$srcdirstrip/||"
+am__nobase_list = $(am__nobase_strip_setup); \
+  for p in $$list; do echo "$$p $$p"; done | \
+  sed "s| $$srcdirstrip/| |;"' / .*\//!s/ .*/ ./; s,\( .*\)/[^/]*$$,\1,' | \
+  $(AWK) 'BEGIN { files["."] = "" } { files[$$2] = files[$$2] " " $$1; \
+    if (++n[$$2] == $(am__install_max)) \
+      { print $$2, files[$$2]; n[$$2] = 0; files[$$2] = "" } } \
+    END { for (dir in files) print dir, files[dir] }'
+am__base_list = \
+  sed '$$!N;$$!N;$$!N;$$!N;$$!N;$$!N;$$!N;s/\n/ /g' | \
+  sed '$$!N;$$!N;$$!N;$$!N;s/\n/ /g'
+am__uninstall_files_from_dir = { \
+  test -z "$$files" \
+    || { test ! -d "$$dir" && test ! -f "$$dir" && test ! -r "$$dir"; } \
+    || { echo " ( cd '$$dir' && rm -f" $$files ")"; \
+         $(am__cd) "$$dir" && rm -f $$files; }; \
+  }
+am__installdirs = "$(DESTDIR)$(libdir)" "$(DESTDIR)$(bindir)" \
+	"$(DESTDIR)$(pkgconfigdir)"
+LTLIBRARIES = $(lib_LTLIBRARIES)
+@ENABLE_ASIO_LIB_TRUE@libnghttp2_asio_la_DEPENDENCIES =  \
+@ENABLE_ASIO_LIB_TRUE@	$(top_builddir)/lib/libnghttp2.la
+am__libnghttp2_asio_la_SOURCES_DIST = asio_connection.h asio_server.cc \
+	asio_server.h asio_io_service_pool.cc asio_io_service_pool.h \
+	asio_http2_handler.cc asio_http2_handler.h asio_http2_impl.cc \
+	asio_http2_impl.h util.cc util.h http2.cc http2.h ssl.cc ssl.h
+@ENABLE_ASIO_LIB_TRUE@am_libnghttp2_asio_la_OBJECTS =  \
+@ENABLE_ASIO_LIB_TRUE@	libnghttp2_asio_la-asio_server.lo \
+@ENABLE_ASIO_LIB_TRUE@	libnghttp2_asio_la-asio_io_service_pool.lo \
+@ENABLE_ASIO_LIB_TRUE@	libnghttp2_asio_la-asio_http2_handler.lo \
+@ENABLE_ASIO_LIB_TRUE@	libnghttp2_asio_la-asio_http2_impl.lo \
+@ENABLE_ASIO_LIB_TRUE@	libnghttp2_asio_la-util.lo \
+@ENABLE_ASIO_LIB_TRUE@	libnghttp2_asio_la-http2.lo \
+@ENABLE_ASIO_LIB_TRUE@	libnghttp2_asio_la-ssl.lo
+libnghttp2_asio_la_OBJECTS = $(am_libnghttp2_asio_la_OBJECTS)
+AM_V_lt = $(am__v_lt_@AM_V@)
+am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
+am__v_lt_0 = --silent
+am__v_lt_1 = 
+libnghttp2_asio_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CXX \
+	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CXXLD) \
+	$(AM_CXXFLAGS) $(CXXFLAGS) $(libnghttp2_asio_la_LDFLAGS) \
+	$(LDFLAGS) -o $@
+@ENABLE_ASIO_LIB_TRUE@am_libnghttp2_asio_la_rpath = -rpath $(libdir)
 @ENABLE_APP_TRUE@am__EXEEXT_1 = nghttp$(EXEEXT) nghttpd$(EXEEXT) \
 @ENABLE_APP_TRUE@	nghttpx$(EXEEXT)
 @ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@am__EXEEXT_2 = h2load$(EXEEXT)
 @ENABLE_HPACK_TOOLS_TRUE@am__EXEEXT_3 = inflatehd$(EXEEXT) \
 @ENABLE_HPACK_TOOLS_TRUE@	deflatehd$(EXEEXT)
-am__installdirs = "$(DESTDIR)$(bindir)"
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@am__EXEEXT_4 =  \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	nghttpx-unittest$(EXEEXT)
 PROGRAMS = $(bin_PROGRAMS)
@@ -201,17 +255,15 @@ deflatehd_OBJECTS = $(am_deflatehd_OBJECTS)
 deflatehd_LDADD = $(LDADD)
 deflatehd_DEPENDENCIES = $(top_builddir)/lib/libnghttp2.la \
 	$(top_builddir)/third-party/libhttp-parser.la
-AM_V_lt = $(am__v_lt_@AM_V@)
-am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
-am__v_lt_0 = --silent
-am__v_lt_1 = 
-am__h2load_SOURCES_DIST = util.cc util.h http2.cc http2.h h2load.cc \
-	h2load.h timegm.c timegm.h ssl.cc ssl.h h2load_session.h \
-	h2load_http2_session.cc h2load_http2_session.h \
-	h2load_spdy_session.cc h2load_spdy_session.h
+am__h2load_SOURCES_DIST = util.cc util.h libevent_util.cc \
+	libevent_util.h http2.cc http2.h h2load.cc h2load.h timegm.c \
+	timegm.h ssl.cc ssl.h h2load_session.h h2load_http2_session.cc \
+	h2load_http2_session.h h2load_spdy_session.cc \
+	h2load_spdy_session.h
 @ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@@HAVE_SPDYLAY_TRUE@am__objects_4 = h2load_spdy_session.$(OBJEXT)
 @ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@am_h2load_OBJECTS =  \
 @ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	util.$(OBJEXT) \
+@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	libevent_util.$(OBJEXT) \
 @ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	http2.$(OBJEXT) \
 @ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	h2load.$(OBJEXT) \
 @ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	timegm.$(OBJEXT) \
@@ -229,11 +281,12 @@ inflatehd_OBJECTS = $(am_inflatehd_OBJECTS)
 inflatehd_LDADD = $(LDADD)
 inflatehd_DEPENDENCIES = $(top_builddir)/lib/libnghttp2.la \
 	$(top_builddir)/third-party/libhttp-parser.la
-am__nghttp_SOURCES_DIST = util.cc http2.cc timegm.c app_helper.cc \
-	nghttp2_gzip.c util.h http2.h timegm.h app_helper.h \
-	nghttp2_config.h nghttp2_gzip.h nghttp.cc HtmlParser.cc \
-	HtmlParser.h
-@ENABLE_APP_TRUE@am__objects_5 = util.$(OBJEXT) http2.$(OBJEXT) \
+am__nghttp_SOURCES_DIST = util.cc libevent_util.cc http2.cc timegm.c \
+	app_helper.cc nghttp2_gzip.c util.h libevent_util.h http2.h \
+	timegm.h app_helper.h nghttp2_config.h nghttp2_gzip.h \
+	nghttp.cc HtmlParser.cc HtmlParser.h
+@ENABLE_APP_TRUE@am__objects_5 = util.$(OBJEXT) \
+@ENABLE_APP_TRUE@	libevent_util.$(OBJEXT) http2.$(OBJEXT) \
 @ENABLE_APP_TRUE@	timegm.$(OBJEXT) app_helper.$(OBJEXT) \
 @ENABLE_APP_TRUE@	nghttp2_gzip.$(OBJEXT)
 am__objects_6 =
@@ -247,10 +300,10 @@ nghttp_OBJECTS = $(am_nghttp_OBJECTS)
 nghttp_LDADD = $(LDADD)
 nghttp_DEPENDENCIES = $(top_builddir)/lib/libnghttp2.la \
 	$(top_builddir)/third-party/libhttp-parser.la
-am__nghttpd_SOURCES_DIST = util.cc http2.cc timegm.c app_helper.cc \
-	nghttp2_gzip.c util.h http2.h timegm.h app_helper.h \
-	nghttp2_config.h nghttp2_gzip.h nghttpd.cc ssl.cc ssl.h \
-	HttpServer.cc HttpServer.h
+am__nghttpd_SOURCES_DIST = util.cc libevent_util.cc http2.cc timegm.c \
+	app_helper.cc nghttp2_gzip.c util.h libevent_util.h http2.h \
+	timegm.h app_helper.h nghttp2_config.h nghttp2_gzip.h \
+	nghttpd.cc ssl.cc ssl.h HttpServer.cc HttpServer.h
 @ENABLE_APP_TRUE@am_nghttpd_OBJECTS = $(am__objects_5) \
 @ENABLE_APP_TRUE@	$(am__objects_6) nghttpd.$(OBJEXT) \
 @ENABLE_APP_TRUE@	ssl.$(OBJEXT) HttpServer.$(OBJEXT)
@@ -341,20 +394,38 @@ AM_V_CXXLD = $(am__v_CXXLD_@AM_V@)
 am__v_CXXLD_ = $(am__v_CXXLD_@AM_DEFAULT_V@)
 am__v_CXXLD_0 = @echo "  CXXLD   " $@;
 am__v_CXXLD_1 = 
-SOURCES = $(libnghttpx_a_SOURCES) $(deflatehd_SOURCES) \
-	$(h2load_SOURCES) $(inflatehd_SOURCES) $(nghttp_SOURCES) \
-	$(nghttpd_SOURCES) $(nghttpx_SOURCES) \
+SOURCES = $(libnghttpx_a_SOURCES) $(libnghttp2_asio_la_SOURCES) \
+	$(deflatehd_SOURCES) $(h2load_SOURCES) $(inflatehd_SOURCES) \
+	$(nghttp_SOURCES) $(nghttpd_SOURCES) $(nghttpx_SOURCES) \
 	$(nghttpx_unittest_SOURCES)
 DIST_SOURCES = $(am__libnghttpx_a_SOURCES_DIST) \
+	$(am__libnghttp2_asio_la_SOURCES_DIST) \
 	$(am__deflatehd_SOURCES_DIST) $(am__h2load_SOURCES_DIST) \
 	$(am__inflatehd_SOURCES_DIST) $(am__nghttp_SOURCES_DIST) \
 	$(am__nghttpd_SOURCES_DIST) $(am__nghttpx_SOURCES_DIST) \
 	$(am__nghttpx_unittest_SOURCES_DIST)
+RECURSIVE_TARGETS = all-recursive check-recursive cscopelist-recursive \
+	ctags-recursive dvi-recursive html-recursive info-recursive \
+	install-data-recursive install-dvi-recursive \
+	install-exec-recursive install-html-recursive \
+	install-info-recursive install-pdf-recursive \
+	install-ps-recursive install-recursive installcheck-recursive \
+	installdirs-recursive pdf-recursive ps-recursive \
+	tags-recursive uninstall-recursive
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
     *) (install-info --version) >/dev/null 2>&1;; \
   esac
+DATA = $(pkgconfig_DATA)
+RECURSIVE_CLEAN_TARGETS = mostlyclean-recursive clean-recursive	\
+  distclean-recursive maintainer-clean-recursive
+am__recursive_targets = \
+  $(RECURSIVE_TARGETS) \
+  $(RECURSIVE_CLEAN_TARGETS) \
+  $(am__extra_recursive_targets)
+AM_RECURSIVE_TARGETS = $(am__recursive_targets:-recursive=) TAGS CTAGS \
+	check recheck distdir
 am__tagged_files = $(HEADERS) $(SOURCES) $(TAGS_FILES) $(LISP)
 # Read a list of newline-separated strings from the standard input,
 # and print each of them once, without duplicates.  Input order is
@@ -396,33 +467,6 @@ am__tty_colors = { \
     std='[m'; \
   fi; \
 }
-am__vpath_adj_setup = srcdirstrip=`echo "$(srcdir)" | sed 's|.|.|g'`;
-am__vpath_adj = case $$p in \
-    $(srcdir)/*) f=`echo "$$p" | sed "s|^$$srcdirstrip/||"`;; \
-    *) f=$$p;; \
-  esac;
-am__strip_dir = f=`echo $$p | sed -e 's|^.*/||'`;
-am__install_max = 40
-am__nobase_strip_setup = \
-  srcdirstrip=`echo "$(srcdir)" | sed 's/[].[^$$\\*|]/\\\\&/g'`
-am__nobase_strip = \
-  for p in $$list; do echo "$$p"; done | sed -e "s|$$srcdirstrip/||"
-am__nobase_list = $(am__nobase_strip_setup); \
-  for p in $$list; do echo "$$p $$p"; done | \
-  sed "s| $$srcdirstrip/| |;"' / .*\//!s/ .*/ ./; s,\( .*\)/[^/]*$$,\1,' | \
-  $(AWK) 'BEGIN { files["."] = "" } { files[$$2] = files[$$2] " " $$1; \
-    if (++n[$$2] == $(am__install_max)) \
-      { print $$2, files[$$2]; n[$$2] = 0; files[$$2] = "" } } \
-    END { for (dir in files) print dir, files[dir] }'
-am__base_list = \
-  sed '$$!N;$$!N;$$!N;$$!N;$$!N;$$!N;$$!N;s/\n/ /g' | \
-  sed '$$!N;$$!N;$$!N;$$!N;s/\n/ /g'
-am__uninstall_files_from_dir = { \
-  test -z "$$files" \
-    || { test ! -d "$$dir" && test ! -f "$$dir" && test ! -r "$$dir"; } \
-    || { echo " ( cd '$$dir' && rm -f" $$files ")"; \
-         $(am__cd) "$$dir" && rm -f $$files; }; \
-  }
 am__recheck_rx = ^[ 	]*:recheck:[ 	]*
 am__global_test_result_rx = ^[ 	]*:global-test-result:[ 	]*
 am__copy_in_global_log_rx = ^[ 	]*:copy-in-global-log:[ 	]*
@@ -557,7 +601,6 @@ am__set_TESTS_bases = \
   bases=`for i in $$bases; do echo $$i; done | sed 's/\.log$$//'`; \
   bases=`echo $$bases`
 RECHECK_LOGS = $(TEST_LOGS)
-AM_RECURSIVE_TARGETS = check recheck
 TEST_SUITE_LOG = test-suite.log
 TEST_EXTENSIONS = @EXEEXT@ .test
 LOG_DRIVER = $(SHELL) $(top_srcdir)/test-driver
@@ -578,7 +621,33 @@ TEST_LOGS = $(am__test_logs2:.test.log=.log)
 TEST_LOG_DRIVER = $(SHELL) $(top_srcdir)/test-driver
 TEST_LOG_COMPILE = $(TEST_LOG_COMPILER) $(AM_TEST_LOG_FLAGS) \
 	$(TEST_LOG_FLAGS)
+DIST_SUBDIRS = $(SUBDIRS)
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
+am__relativize = \
+  dir0=`pwd`; \
+  sed_first='s,^\([^/]*\)/.*$$,\1,'; \
+  sed_rest='s,^[^/]*/*,,'; \
+  sed_last='s,^.*/\([^/]*\)$$,\1,'; \
+  sed_butlast='s,/*[^/]*$$,,'; \
+  while test -n "$$dir1"; do \
+    first=`echo "$$dir1" | sed -e "$$sed_first"`; \
+    if test "$$first" != "."; then \
+      if test "$$first" = ".."; then \
+        dir2=`echo "$$dir0" | sed -e "$$sed_last"`/"$$dir2"; \
+        dir0=`echo "$$dir0" | sed -e "$$sed_butlast"`; \
+      else \
+        first2=`echo "$$dir2" | sed -e "$$sed_first"`; \
+        if test "$$first2" = "$$first"; then \
+          dir2=`echo "$$dir2" | sed -e "$$sed_rest"`; \
+        else \
+          dir2="../$$dir2"; \
+        fi; \
+        dir0="$$dir0"/"$$first"; \
+      fi; \
+    fi; \
+    dir1=`echo "$$dir1" | sed -e "$$sed_rest"`; \
+  done; \
+  reldir="$$dir2"
 ACLOCAL = @ACLOCAL@
 AMTAR = @AMTAR@
 AM_DEFAULT_VERBOSITY = @AM_DEFAULT_VERBOSITY@
@@ -587,6 +656,11 @@ AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
 AWK = @AWK@
+BOOST_ASIO_LIB = @BOOST_ASIO_LIB@
+BOOST_CPPFLAGS = @BOOST_CPPFLAGS@
+BOOST_LDFLAGS = @BOOST_LDFLAGS@
+BOOST_SYSTEM_LIB = @BOOST_SYSTEM_LIB@
+BOOST_THREAD_LIB = @BOOST_THREAD_LIB@
 CC = @CC@
 CCDEPMODE = @CCDEPMODE@
 CFLAGS = @CFLAGS@
@@ -743,11 +817,21 @@ target_vendor = @target_vendor@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
+
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+# MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+# LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+# WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+SUBDIRS = includes
 AM_CPPFLAGS = \
 	-Wall \
 	-I$(top_srcdir)/lib/includes \
 	-I$(top_builddir)/lib/includes \
 	-I$(top_srcdir)/lib \
+	-I$(top_srcdir)/src/includes \
 	-I$(top_srcdir)/third-party \
 	@LIBSPDYLAY_CFLAGS@ \
 	@XML_CPPFLAGS@	\
@@ -771,8 +855,11 @@ LDADD = \
 	$(top_builddir)/lib/libnghttp2.la \
 	$(top_builddir)/third-party/libhttp-parser.la
 
-@ENABLE_APP_TRUE@HELPER_OBJECTS = util.cc http2.cc timegm.c app_helper.cc nghttp2_gzip.c
-@ENABLE_APP_TRUE@HELPER_HFILES = util.h http2.h timegm.h app_helper.h nghttp2_config.h \
+@ENABLE_APP_TRUE@HELPER_OBJECTS = util.cc libevent_util.cc \
+@ENABLE_APP_TRUE@	http2.cc timegm.c app_helper.cc nghttp2_gzip.c
+
+@ENABLE_APP_TRUE@HELPER_HFILES = util.h libevent_util.h \
+@ENABLE_APP_TRUE@	http2.h timegm.h app_helper.h nghttp2_config.h \
 @ENABLE_APP_TRUE@	nghttp2_gzip.h
 
 @ENABLE_APP_TRUE@HTML_PARSER_OBJECTS = $(am__append_2)
@@ -785,18 +872,20 @@ LDADD = \
 @ENABLE_APP_TRUE@	HttpServer.cc HttpServer.h
 
 @ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@h2load_SOURCES = util.cc util.h \
-@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	http2.cc http2.h \
-@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	h2load.cc h2load.h \
-@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	timegm.c timegm.h ssl.cc \
-@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	ssl.h h2load_session.h \
+@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	libevent_util.cc \
+@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	libevent_util.h http2.cc \
+@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	http2.h h2load.cc \
+@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	h2load.h timegm.c \
+@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	timegm.h ssl.cc ssl.h \
+@ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	h2load_session.h \
 @ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	h2load_http2_session.cc \
 @ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	h2load_http2_session.h \
 @ENABLE_APP_TRUE@@ENABLE_H2LOAD_TRUE@	$(am__append_4)
 @ENABLE_APP_TRUE@NGHTTPX_SRCS = util.cc util.h http2.cc http2.h \
-@ENABLE_APP_TRUE@	timegm.c timegm.h base64.h app_helper.cc \
-@ENABLE_APP_TRUE@	app_helper.h ssl.cc ssl.h shrpx_config.cc \
-@ENABLE_APP_TRUE@	shrpx_config.h shrpx_error.h \
-@ENABLE_APP_TRUE@	shrpx_listen_handler.cc \
+@ENABLE_APP_TRUE@	timegm.c timegm.h base64.h libevent_util.cc \
+@ENABLE_APP_TRUE@	libevent_util.h app_helper.cc app_helper.h \
+@ENABLE_APP_TRUE@	ssl.cc ssl.h shrpx_config.cc shrpx_config.h \
+@ENABLE_APP_TRUE@	shrpx_error.h shrpx_listen_handler.cc \
 @ENABLE_APP_TRUE@	shrpx_listen_handler.h \
 @ENABLE_APP_TRUE@	shrpx_client_handler.cc \
 @ENABLE_APP_TRUE@	shrpx_client_handler.h shrpx_upstream.h \
@@ -847,7 +936,31 @@ LDADD = \
 @ENABLE_HPACK_TOOLS_TRUE@HPACK_TOOLS_COMMON_SRCS = comp_helper.c comp_helper.h
 @ENABLE_HPACK_TOOLS_TRUE@inflatehd_SOURCES = inflatehd.cc $(HPACK_TOOLS_COMMON_SRCS)
 @ENABLE_HPACK_TOOLS_TRUE@deflatehd_SOURCES = deflatehd.cc $(HPACK_TOOLS_COMMON_SRCS)
-all: all-am
+@ENABLE_ASIO_LIB_TRUE@pkgconfigdir = $(libdir)/pkgconfig
+@ENABLE_ASIO_LIB_TRUE@pkgconfig_DATA = libnghttp2_asio.pc
+@ENABLE_ASIO_LIB_TRUE@DISTCLEANFILES = $(pkgconfig_DATA)
+@ENABLE_ASIO_LIB_TRUE@lib_LTLIBRARIES = libnghttp2_asio.la
+@ENABLE_ASIO_LIB_TRUE@libnghttp2_asio_la_SOURCES = \
+@ENABLE_ASIO_LIB_TRUE@	asio_connection.h \
+@ENABLE_ASIO_LIB_TRUE@	asio_server.cc asio_server.h \
+@ENABLE_ASIO_LIB_TRUE@	asio_io_service_pool.cc asio_io_service_pool.h \
+@ENABLE_ASIO_LIB_TRUE@	asio_http2_handler.cc asio_http2_handler.h \
+@ENABLE_ASIO_LIB_TRUE@	asio_http2_impl.cc asio_http2_impl.h \
+@ENABLE_ASIO_LIB_TRUE@	util.cc util.h http2.cc http2.h \
+@ENABLE_ASIO_LIB_TRUE@	ssl.cc ssl.h
+
+@ENABLE_ASIO_LIB_TRUE@libnghttp2_asio_la_CPPFLAGS = ${BOOST_CPPFLAGS} ${AM_CPPFLAGS}
+@ENABLE_ASIO_LIB_TRUE@libnghttp2_asio_la_LDFLAGS = \
+@ENABLE_ASIO_LIB_TRUE@	${BOOST_LDFLAGS} \
+@ENABLE_ASIO_LIB_TRUE@	${BOOST_ASIO_LIB} \
+@ENABLE_ASIO_LIB_TRUE@	${BOOST_THREAD_LIB} \
+@ENABLE_ASIO_LIB_TRUE@	${BOOST_SYSTEM_LIB} \
+@ENABLE_ASIO_LIB_TRUE@	@OPENSSL_LIBS@ \
+@ENABLE_ASIO_LIB_TRUE@	-no-undefined \
+@ENABLE_ASIO_LIB_TRUE@	-version-info 0:0:0
+
+@ENABLE_ASIO_LIB_TRUE@libnghttp2_asio_la_LIBADD = $(top_builddir)/lib/libnghttp2.la
+all: all-recursive
 
 .SUFFIXES:
 .SUFFIXES: .c .cc .lo .log .o .obj .test .test$(EXEEXT) .trs
@@ -881,6 +994,8 @@ $(top_srcdir)/configure:  $(am__configure_deps)
 $(ACLOCAL_M4):  $(am__aclocal_m4_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
 $(am__aclocal_m4_deps):
+libnghttp2_asio.pc: $(top_builddir)/config.status $(srcdir)/libnghttp2_asio.pc.in
+	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
 
 clean-noinstLIBRARIES:
 	-test -z "$(noinst_LIBRARIES)" || rm -f $(noinst_LIBRARIES)
@@ -889,6 +1004,44 @@ libnghttpx.a: $(libnghttpx_a_OBJECTS) $(libnghttpx_a_DEPENDENCIES) $(EXTRA_libng
 	$(AM_V_at)-rm -f libnghttpx.a
 	$(AM_V_AR)$(libnghttpx_a_AR) libnghttpx.a $(libnghttpx_a_OBJECTS) $(libnghttpx_a_LIBADD)
 	$(AM_V_at)$(RANLIB) libnghttpx.a
+
+install-libLTLIBRARIES: $(lib_LTLIBRARIES)
+	@$(NORMAL_INSTALL)
+	@list='$(lib_LTLIBRARIES)'; test -n "$(libdir)" || list=; \
+	list2=; for p in $$list; do \
+	  if test -f $$p; then \
+	    list2="$$list2 $$p"; \
+	  else :; fi; \
+	done; \
+	test -z "$$list2" || { \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(libdir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(libdir)" || exit 1; \
+	  echo " $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=install $(INSTALL) $(INSTALL_STRIP_FLAG) $$list2 '$(DESTDIR)$(libdir)'"; \
+	  $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=install $(INSTALL) $(INSTALL_STRIP_FLAG) $$list2 "$(DESTDIR)$(libdir)"; \
+	}
+
+uninstall-libLTLIBRARIES:
+	@$(NORMAL_UNINSTALL)
+	@list='$(lib_LTLIBRARIES)'; test -n "$(libdir)" || list=; \
+	for p in $$list; do \
+	  $(am__strip_dir) \
+	  echo " $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=uninstall rm -f '$(DESTDIR)$(libdir)/$$f'"; \
+	  $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=uninstall rm -f "$(DESTDIR)$(libdir)/$$f"; \
+	done
+
+clean-libLTLIBRARIES:
+	-test -z "$(lib_LTLIBRARIES)" || rm -f $(lib_LTLIBRARIES)
+	@list='$(lib_LTLIBRARIES)'; \
+	locs=`for p in $$list; do echo $$p; done | \
+	      sed 's|^[^/]*$$|.|; s|/[^/]*$$||; s|$$|/so_locations|' | \
+	      sort -u`; \
+	test -z "$$locs" || { \
+	  echo rm -f $${locs}; \
+	  rm -f $${locs}; \
+	}
+
+libnghttp2_asio.la: $(libnghttp2_asio_la_OBJECTS) $(libnghttp2_asio_la_DEPENDENCIES) $(EXTRA_libnghttp2_asio_la_DEPENDENCIES) 
+	$(AM_V_CXXLD)$(libnghttp2_asio_la_LINK) $(am_libnghttp2_asio_la_rpath) $(libnghttp2_asio_la_OBJECTS) $(libnghttp2_asio_la_LIBADD) $(LIBS)
 install-binPROGRAMS: $(bin_PROGRAMS)
 	@$(NORMAL_INSTALL)
 	@list='$(bin_PROGRAMS)'; test -n "$(bindir)" || list=; \
@@ -992,6 +1145,14 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/h2load_spdy_session.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/http2.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/inflatehd.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libevent_util.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttp2_asio_la-asio_http2_handler.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttp2_asio_la-asio_http2_impl.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttp2_asio_la-asio_io_service_pool.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttp2_asio_la-asio_server.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttp2_asio_la-http2.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttp2_asio_la-ssl.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttp2_asio_la-util.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_gzip.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttpd.Po@am__quote@
@@ -1104,6 +1265,55 @@ nghttpx_unittest-nghttp2_gzip.obj: nghttp2_gzip.c
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(LTCXXCOMPILE) -c -o $@ $<
 
+libnghttp2_asio_la-asio_server.lo: asio_server.cc
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttp2_asio_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libnghttp2_asio_la-asio_server.lo -MD -MP -MF $(DEPDIR)/libnghttp2_asio_la-asio_server.Tpo -c -o libnghttp2_asio_la-asio_server.lo `test -f 'asio_server.cc' || echo '$(srcdir)/'`asio_server.cc
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libnghttp2_asio_la-asio_server.Tpo $(DEPDIR)/libnghttp2_asio_la-asio_server.Plo
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='asio_server.cc' object='libnghttp2_asio_la-asio_server.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttp2_asio_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libnghttp2_asio_la-asio_server.lo `test -f 'asio_server.cc' || echo '$(srcdir)/'`asio_server.cc
+
+libnghttp2_asio_la-asio_io_service_pool.lo: asio_io_service_pool.cc
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttp2_asio_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libnghttp2_asio_la-asio_io_service_pool.lo -MD -MP -MF $(DEPDIR)/libnghttp2_asio_la-asio_io_service_pool.Tpo -c -o libnghttp2_asio_la-asio_io_service_pool.lo `test -f 'asio_io_service_pool.cc' || echo '$(srcdir)/'`asio_io_service_pool.cc
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libnghttp2_asio_la-asio_io_service_pool.Tpo $(DEPDIR)/libnghttp2_asio_la-asio_io_service_pool.Plo
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='asio_io_service_pool.cc' object='libnghttp2_asio_la-asio_io_service_pool.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttp2_asio_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libnghttp2_asio_la-asio_io_service_pool.lo `test -f 'asio_io_service_pool.cc' || echo '$(srcdir)/'`asio_io_service_pool.cc
+
+libnghttp2_asio_la-asio_http2_handler.lo: asio_http2_handler.cc
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttp2_asio_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libnghttp2_asio_la-asio_http2_handler.lo -MD -MP -MF $(DEPDIR)/libnghttp2_asio_la-asio_http2_handler.Tpo -c -o libnghttp2_asio_la-asio_http2_handler.lo `test -f 'asio_http2_handler.cc' || echo '$(srcdir)/'`asio_http2_handler.cc
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libnghttp2_asio_la-asio_http2_handler.Tpo $(DEPDIR)/libnghttp2_asio_la-asio_http2_handler.Plo
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='asio_http2_handler.cc' object='libnghttp2_asio_la-asio_http2_handler.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttp2_asio_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libnghttp2_asio_la-asio_http2_handler.lo `test -f 'asio_http2_handler.cc' || echo '$(srcdir)/'`asio_http2_handler.cc
+
+libnghttp2_asio_la-asio_http2_impl.lo: asio_http2_impl.cc
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttp2_asio_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libnghttp2_asio_la-asio_http2_impl.lo -MD -MP -MF $(DEPDIR)/libnghttp2_asio_la-asio_http2_impl.Tpo -c -o libnghttp2_asio_la-asio_http2_impl.lo `test -f 'asio_http2_impl.cc' || echo '$(srcdir)/'`asio_http2_impl.cc
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libnghttp2_asio_la-asio_http2_impl.Tpo $(DEPDIR)/libnghttp2_asio_la-asio_http2_impl.Plo
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='asio_http2_impl.cc' object='libnghttp2_asio_la-asio_http2_impl.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttp2_asio_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libnghttp2_asio_la-asio_http2_impl.lo `test -f 'asio_http2_impl.cc' || echo '$(srcdir)/'`asio_http2_impl.cc
+
+libnghttp2_asio_la-util.lo: util.cc
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttp2_asio_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libnghttp2_asio_la-util.lo -MD -MP -MF $(DEPDIR)/libnghttp2_asio_la-util.Tpo -c -o libnghttp2_asio_la-util.lo `test -f 'util.cc' || echo '$(srcdir)/'`util.cc
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libnghttp2_asio_la-util.Tpo $(DEPDIR)/libnghttp2_asio_la-util.Plo
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='util.cc' object='libnghttp2_asio_la-util.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttp2_asio_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libnghttp2_asio_la-util.lo `test -f 'util.cc' || echo '$(srcdir)/'`util.cc
+
+libnghttp2_asio_la-http2.lo: http2.cc
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttp2_asio_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libnghttp2_asio_la-http2.lo -MD -MP -MF $(DEPDIR)/libnghttp2_asio_la-http2.Tpo -c -o libnghttp2_asio_la-http2.lo `test -f 'http2.cc' || echo '$(srcdir)/'`http2.cc
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libnghttp2_asio_la-http2.Tpo $(DEPDIR)/libnghttp2_asio_la-http2.Plo
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='http2.cc' object='libnghttp2_asio_la-http2.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttp2_asio_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libnghttp2_asio_la-http2.lo `test -f 'http2.cc' || echo '$(srcdir)/'`http2.cc
+
+libnghttp2_asio_la-ssl.lo: ssl.cc
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttp2_asio_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libnghttp2_asio_la-ssl.lo -MD -MP -MF $(DEPDIR)/libnghttp2_asio_la-ssl.Tpo -c -o libnghttp2_asio_la-ssl.lo `test -f 'ssl.cc' || echo '$(srcdir)/'`ssl.cc
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libnghttp2_asio_la-ssl.Tpo $(DEPDIR)/libnghttp2_asio_la-ssl.Plo
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='ssl.cc' object='libnghttp2_asio_la-ssl.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttp2_asio_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libnghttp2_asio_la-ssl.lo `test -f 'ssl.cc' || echo '$(srcdir)/'`ssl.cc
+
 nghttpx_unittest-shrpx-unittest.o: shrpx-unittest.cc
 @am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(nghttpx_unittest_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT nghttpx_unittest-shrpx-unittest.o -MD -MP -MF $(DEPDIR)/nghttpx_unittest-shrpx-unittest.Tpo -c -o nghttpx_unittest-shrpx-unittest.o `test -f 'shrpx-unittest.cc' || echo '$(srcdir)/'`shrpx-unittest.cc
 @am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/nghttpx_unittest-shrpx-unittest.Tpo $(DEPDIR)/nghttpx_unittest-shrpx-unittest.Po
@@ -1193,15 +1403,83 @@ mostlyclean-libtool:
 
 clean-libtool:
 	-rm -rf .libs _libs
+install-pkgconfigDATA: $(pkgconfig_DATA)
+	@$(NORMAL_INSTALL)
+	@list='$(pkgconfig_DATA)'; test -n "$(pkgconfigdir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(pkgconfigdir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(pkgconfigdir)" || exit 1; \
+	fi; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(pkgconfigdir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(pkgconfigdir)" || exit $$?; \
+	done
+
+uninstall-pkgconfigDATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(pkgconfig_DATA)'; test -n "$(pkgconfigdir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	dir='$(DESTDIR)$(pkgconfigdir)'; $(am__uninstall_files_from_dir)
+
+# This directory's subdirectories are mostly independent; you can cd
+# into them and run 'make' without going through this Makefile.
+# To change the values of 'make' variables: instead of editing Makefiles,
+# (1) if the variable is set in 'config.status', edit 'config.status'
+#     (which will cause the Makefiles to be regenerated when you run 'make');
+# (2) otherwise, pass the desired values on the 'make' command line.
+$(am__recursive_targets):
+	@fail=; \
+	if $(am__make_keepgoing); then \
+	  failcom='fail=yes'; \
+	else \
+	  failcom='exit 1'; \
+	fi; \
+	dot_seen=no; \
+	target=`echo $@ | sed s/-recursive//`; \
+	case "$@" in \
+	  distclean-* | maintainer-clean-*) list='$(DIST_SUBDIRS)' ;; \
+	  *) list='$(SUBDIRS)' ;; \
+	esac; \
+	for subdir in $$list; do \
+	  echo "Making $$target in $$subdir"; \
+	  if test "$$subdir" = "."; then \
+	    dot_seen=yes; \
+	    local_target="$$target-am"; \
+	  else \
+	    local_target="$$target"; \
+	  fi; \
+	  ($(am__cd) $$subdir && $(MAKE) $(AM_MAKEFLAGS) $$local_target) \
+	  || eval $$failcom; \
+	done; \
+	if test "$$dot_seen" = "no"; then \
+	  $(MAKE) $(AM_MAKEFLAGS) "$$target-am" || exit 1; \
+	fi; test -z "$$fail"
 
 ID: $(am__tagged_files)
 	$(am__define_uniq_tagged_files); mkid -fID $$unique
-tags: tags-am
+tags: tags-recursive
 TAGS: tags
 
 tags-am: $(TAGS_DEPENDENCIES) $(am__tagged_files)
 	set x; \
 	here=`pwd`; \
+	if ($(ETAGS) --etags-include --version) >/dev/null 2>&1; then \
+	  include_option=--etags-include; \
+	  empty_fix=.; \
+	else \
+	  include_option=--include; \
+	  empty_fix=; \
+	fi; \
+	list='$(SUBDIRS)'; for subdir in $$list; do \
+	  if test "$$subdir" = .; then :; else \
+	    test ! -f $$subdir/TAGS || \
+	      set "$$@" "$$include_option=$$here/$$subdir/TAGS"; \
+	  fi; \
+	done; \
 	$(am__define_uniq_tagged_files); \
 	shift; \
 	if test -z "$(ETAGS_ARGS)$$*$$unique"; then :; else \
@@ -1214,7 +1492,7 @@ tags-am: $(TAGS_DEPENDENCIES) $(am__tagged_files)
 	      $$unique; \
 	  fi; \
 	fi
-ctags: ctags-am
+ctags: ctags-recursive
 
 CTAGS: ctags
 ctags-am: $(TAGS_DEPENDENCIES) $(am__tagged_files)
@@ -1227,7 +1505,7 @@ GTAGS:
 	here=`$(am__cd) $(top_builddir) && pwd` \
 	  && $(am__cd) $(top_srcdir) \
 	  && gtags -i $(GTAGS_ARGS) "$$here"
-cscopelist: cscopelist-am
+cscopelist: cscopelist-recursive
 
 cscopelist-am: $(am__tagged_files)
 	list='$(am__tagged_files)'; \
@@ -1439,24 +1717,52 @@ distdir: $(DISTFILES)
 	    || exit 1; \
 	  fi; \
 	done
+	@list='$(DIST_SUBDIRS)'; for subdir in $$list; do \
+	  if test "$$subdir" = .; then :; else \
+	    $(am__make_dryrun) \
+	      || test -d "$(distdir)/$$subdir" \
+	      || $(MKDIR_P) "$(distdir)/$$subdir" \
+	      || exit 1; \
+	    dir1=$$subdir; dir2="$(distdir)/$$subdir"; \
+	    $(am__relativize); \
+	    new_distdir=$$reldir; \
+	    dir1=$$subdir; dir2="$(top_distdir)"; \
+	    $(am__relativize); \
+	    new_top_distdir=$$reldir; \
+	    echo " (cd $$subdir && $(MAKE) $(AM_MAKEFLAGS) top_distdir="$$new_top_distdir" distdir="$$new_distdir" \\"; \
+	    echo "     am__remove_distdir=: am__skip_length_check=: am__skip_mode_fix=: distdir)"; \
+	    ($(am__cd) $$subdir && \
+	      $(MAKE) $(AM_MAKEFLAGS) \
+	        top_distdir="$$new_top_distdir" \
+	        distdir="$$new_distdir" \
+		am__remove_distdir=: \
+		am__skip_length_check=: \
+		am__skip_mode_fix=: \
+	        distdir) \
+	      || exit 1; \
+	  fi; \
+	done
 check-am: all-am
 	$(MAKE) $(AM_MAKEFLAGS) $(check_PROGRAMS)
 	$(MAKE) $(AM_MAKEFLAGS) check-TESTS
-check: check-am
-all-am: Makefile $(LIBRARIES) $(PROGRAMS)
-installdirs:
-	for dir in "$(DESTDIR)$(bindir)"; do \
+check: check-recursive
+all-am: Makefile $(LIBRARIES) $(LTLIBRARIES) $(PROGRAMS) $(DATA)
+install-binPROGRAMS: install-libLTLIBRARIES
+
+installdirs: installdirs-recursive
+installdirs-am:
+	for dir in "$(DESTDIR)$(libdir)" "$(DESTDIR)$(bindir)" "$(DESTDIR)$(pkgconfigdir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
-install: install-am
-install-exec: install-exec-am
-install-data: install-data-am
-uninstall: uninstall-am
+install: install-recursive
+install-exec: install-exec-recursive
+install-data: install-data-recursive
+uninstall: uninstall-recursive
 
 install-am: all-am
 	@$(MAKE) $(AM_MAKEFLAGS) install-exec-am install-data-am
 
-installcheck: installcheck-am
+installcheck: installcheck-recursive
 install-strip:
 	if test -z '$(STRIP)'; then \
 	  $(MAKE) $(AM_MAKEFLAGS) INSTALL_PROGRAM="$(INSTALL_STRIP_PROGRAM)" \
@@ -1477,98 +1783,104 @@ clean-generic:
 distclean-generic:
 	-test -z "$(CONFIG_CLEAN_FILES)" || rm -f $(CONFIG_CLEAN_FILES)
 	-test . = "$(srcdir)" || test -z "$(CONFIG_CLEAN_VPATH_FILES)" || rm -f $(CONFIG_CLEAN_VPATH_FILES)
+	-test -z "$(DISTCLEANFILES)" || rm -f $(DISTCLEANFILES)
 
 maintainer-clean-generic:
 	@echo "This command is intended for maintainers to use"
 	@echo "it deletes files that may require special tools to rebuild."
-clean: clean-am
+clean: clean-recursive
 
 clean-am: clean-binPROGRAMS clean-checkPROGRAMS clean-generic \
-	clean-libtool clean-noinstLIBRARIES mostlyclean-am
+	clean-libLTLIBRARIES clean-libtool clean-noinstLIBRARIES \
+	mostlyclean-am
 
-distclean: distclean-am
+distclean: distclean-recursive
 	-rm -rf ./$(DEPDIR)
 	-rm -f Makefile
 distclean-am: clean-am distclean-compile distclean-generic \
 	distclean-tags
 
-dvi: dvi-am
+dvi: dvi-recursive
 
 dvi-am:
 
-html: html-am
+html: html-recursive
 
 html-am:
 
-info: info-am
+info: info-recursive
 
 info-am:
 
-install-data-am:
+install-data-am: install-pkgconfigDATA
 
-install-dvi: install-dvi-am
+install-dvi: install-dvi-recursive
 
 install-dvi-am:
 
-install-exec-am: install-binPROGRAMS
+install-exec-am: install-binPROGRAMS install-libLTLIBRARIES
 
-install-html: install-html-am
+install-html: install-html-recursive
 
 install-html-am:
 
-install-info: install-info-am
+install-info: install-info-recursive
 
 install-info-am:
 
 install-man:
 
-install-pdf: install-pdf-am
+install-pdf: install-pdf-recursive
 
 install-pdf-am:
 
-install-ps: install-ps-am
+install-ps: install-ps-recursive
 
 install-ps-am:
 
 installcheck-am:
 
-maintainer-clean: maintainer-clean-am
+maintainer-clean: maintainer-clean-recursive
 	-rm -rf ./$(DEPDIR)
 	-rm -f Makefile
 maintainer-clean-am: distclean-am maintainer-clean-generic
 
-mostlyclean: mostlyclean-am
+mostlyclean: mostlyclean-recursive
 
 mostlyclean-am: mostlyclean-compile mostlyclean-generic \
 	mostlyclean-libtool
 
-pdf: pdf-am
+pdf: pdf-recursive
 
 pdf-am:
 
-ps: ps-am
+ps: ps-recursive
 
 ps-am:
 
-uninstall-am: uninstall-binPROGRAMS
+uninstall-am: uninstall-binPROGRAMS uninstall-libLTLIBRARIES \
+	uninstall-pkgconfigDATA
 
-.MAKE: check-am install-am install-strip
+.MAKE: $(am__recursive_targets) check-am install-am install-strip
 
-.PHONY: CTAGS GTAGS TAGS all all-am check check-TESTS check-am clean \
-	clean-binPROGRAMS clean-checkPROGRAMS clean-generic \
+.PHONY: $(am__recursive_targets) CTAGS GTAGS TAGS all all-am check \
+	check-TESTS check-am clean clean-binPROGRAMS \
+	clean-checkPROGRAMS clean-generic clean-libLTLIBRARIES \
 	clean-libtool clean-noinstLIBRARIES cscopelist-am ctags \
 	ctags-am distclean distclean-compile distclean-generic \
 	distclean-libtool distclean-tags distdir dvi dvi-am html \
 	html-am info info-am install install-am install-binPROGRAMS \
 	install-data install-data-am install-dvi install-dvi-am \
 	install-exec install-exec-am install-html install-html-am \
-	install-info install-info-am install-man install-pdf \
-	install-pdf-am install-ps install-ps-am install-strip \
-	installcheck installcheck-am installdirs maintainer-clean \
+	install-info install-info-am install-libLTLIBRARIES \
+	install-man install-pdf install-pdf-am install-pkgconfigDATA \
+	install-ps install-ps-am install-strip installcheck \
+	installcheck-am installdirs installdirs-am maintainer-clean \
 	maintainer-clean-generic mostlyclean mostlyclean-compile \
 	mostlyclean-generic mostlyclean-libtool pdf pdf-am ps ps-am \
 	recheck tags tags-am uninstall uninstall-am \
-	uninstall-binPROGRAMS
+	uninstall-binPROGRAMS uninstall-libLTLIBRARIES \
+	uninstall-pkgconfigDATA
 
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
