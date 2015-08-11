@@ -38,7 +38,6 @@
 #include "shrpx_worker_config.h"
 #include "http2.h"
 #include "util.h"
-#include "libevent_util.h"
 #include "base64.h"
 #include "app_helper.h"
 
@@ -126,8 +125,8 @@ int Http2Upstream::upgrade_upstream(HttpsUpstream *http)
      settings_payload.size(),
      nullptr);
   if(rv != 0) {
-    ULOG(WARNING, this) << "nghttp2_session_upgrade() returned error: "
-                        << nghttp2_strerror(rv);
+    ULOG(WARN, this) << "nghttp2_session_upgrade() returned error: "
+                     << nghttp2_strerror(rv);
     return -1;
   }
   pre_upstream_.reset(http);
@@ -604,10 +603,10 @@ int on_frame_not_send_callback(nghttp2_session *session,
                                int lib_error_code, void *user_data)
 {
   auto upstream = static_cast<Http2Upstream*>(user_data);
-  ULOG(WARNING, upstream) << "Failed to send control frame type="
-                          << static_cast<uint32_t>(frame->hd.type)
-                          << ", lib_error_code=" << lib_error_code << ":"
-                          << nghttp2_strerror(lib_error_code);
+  ULOG(WARN, upstream) << "Failed to send control frame type="
+                       << static_cast<uint32_t>(frame->hd.type)
+                       << ", lib_error_code=" << lib_error_code << ":"
+                       << nghttp2_strerror(lib_error_code);
   if(frame->hd.type == NGHTTP2_HEADERS &&
      frame->headers.cat == NGHTTP2_HCAT_RESPONSE) {
     // To avoid stream hanging around, issue RST_STREAM.
@@ -785,10 +784,11 @@ int Http2Upstream::send()
   uint8_t buf[16384];
   auto bev = handler_->get_bev();
   auto output = bufferevent_get_output(bev);
-  util::EvbufferBuffer evbbuf(output, buf, sizeof(buf));
+
+  sendbuf.reset(output, buf, sizeof(buf), handler_->get_write_limit());
   for(;;) {
     // Check buffer length and break if it is large enough.
-    if(handler_->get_outbuf_length() + evbbuf.get_buflen() >=
+    if(handler_->get_outbuf_length() + sendbuf.get_buflen() >=
        OUTBUF_MAX_THRES) {
       break;
     }
@@ -804,18 +804,20 @@ int Http2Upstream::send()
     if(datalen == 0) {
       break;
     }
-    rv = evbbuf.add(data, datalen);
+    rv = sendbuf.add(data, datalen);
     if(rv != 0) {
       ULOG(FATAL, this) << "evbuffer_add() failed";
       return -1;
     }
   }
 
-  rv = evbbuf.flush();
+  rv = sendbuf.flush();
   if(rv != 0) {
     ULOG(FATAL, this) << "evbuffer_add() failed";
     return -1;
   }
+
+  handler_->update_warmup_writelen(sendbuf.get_writelen());
 
   if(nghttp2_session_want_read(session_) == 0 &&
      nghttp2_session_want_write(session_) == 0 &&
@@ -922,8 +924,8 @@ void downstream_eventcb(bufferevent *bev, short events, void *ptr)
     int val = 1;
     if(setsockopt(fd, IPPROTO_TCP, TCP_NODELAY,
                   reinterpret_cast<char*>(&val), sizeof(val)) == -1) {
-      DCLOG(WARNING, dconn) << "Setting option TCP_NODELAY failed: errno="
-                            << errno;
+      DCLOG(WARN, dconn) << "Setting option TCP_NODELAY failed: errno="
+                         << errno;
     }
 
     return;
@@ -1078,7 +1080,18 @@ ssize_t downstream_data_read_callback(nghttp2_session *session,
   auto downstream = static_cast<Downstream*>(source->ptr);
   auto upstream = static_cast<Http2Upstream*>(downstream->get_upstream());
   auto body = downstream->get_response_body_buf();
+  auto handler = upstream->get_client_handler();
   assert(body);
+
+  auto limit = handler->get_write_limit();
+
+  if(limit != -1) {
+    // 9 is HTTP/2 frame header length.  Make DATA frame also under
+    // certain limit, so that application layer can flush at DATA
+    // frame boundary, instead of buffering large frame.
+    assert(limit > 9);
+    length = std::min(length, static_cast<size_t>(limit - 9));
+  }
 
   int nread = evbuffer_remove(body, buf, length);
   if(nread == -1) {
@@ -1412,8 +1425,8 @@ int Http2Upstream::consume(int32_t stream_id, size_t len)
   rv = nghttp2_session_consume(session_, stream_id, len);
 
   if(rv != 0) {
-    ULOG(WARNING, this) << "nghttp2_session_consume() returned error: "
-                        << nghttp2_strerror(rv);
+    ULOG(WARN, this) << "nghttp2_session_consume() returned error: "
+                     << nghttp2_strerror(rv);
     return -1;
   }
 

@@ -384,9 +384,9 @@ void on_ctrl_not_send_callback(spdylay_session *session,
                                int error_code, void *user_data)
 {
   auto upstream = static_cast<SpdyUpstream*>(user_data);
-  ULOG(WARNING, upstream) << "Failed to send control frame type=" << type
-                          << ", error_code=" << error_code << ":"
-                          << spdylay_strerror(error_code);
+  ULOG(WARN, upstream) << "Failed to send control frame type=" << type
+                       << ", error_code=" << error_code << ":"
+                       << spdylay_strerror(error_code);
   if(type == SPDYLAY_SYN_REPLY) {
     // To avoid stream hanging around, issue RST_STREAM.
     auto stream_id = frame->syn_reply.stream_id;
@@ -537,7 +537,8 @@ int SpdyUpstream::send()
   int rv = 0;
   uint8_t buf[16384];
 
-  sendbuf.reset(bufferevent_get_output(handler_->get_bev()), buf, sizeof(buf));
+  sendbuf.reset(bufferevent_get_output(handler_->get_bev()), buf, sizeof(buf),
+                handler_->get_write_limit());
 
   rv = spdylay_session_send(session_);
   if(rv != 0) {
@@ -551,6 +552,8 @@ int SpdyUpstream::send()
     ULOG(FATAL, this) << "evbuffer_add() failed";
     return -1;
   }
+
+  handler_->update_warmup_writelen(sendbuf.get_writelen());
 
   if(spdylay_session_want_read(session_) == 0 &&
      spdylay_session_want_write(session_) == 0 &&
@@ -655,8 +658,8 @@ void spdy_downstream_eventcb(bufferevent *bev, short events, void *ptr)
     int val = 1;
     if(setsockopt(fd, IPPROTO_TCP, TCP_NODELAY,
                   reinterpret_cast<char *>(&val), sizeof(val)) == -1) {
-      DCLOG(WARNING, dconn) << "Setting option TCP_NODELAY failed: errno="
-                            << errno;
+      DCLOG(WARN, dconn) << "Setting option TCP_NODELAY failed: errno="
+                         << errno;
     }
     return;
   }
@@ -796,7 +799,19 @@ ssize_t spdy_data_read_callback(spdylay_session *session,
   auto downstream = static_cast<Downstream*>(source->ptr);
   auto upstream = static_cast<SpdyUpstream*>(downstream->get_upstream());
   auto body = downstream->get_response_body_buf();
+  auto handler = upstream->get_client_handler();
   assert(body);
+
+  auto limit = handler->get_write_limit();
+
+  if(limit != -1) {
+    // 9 is HTTP/2 frame header length.  Make DATA frame also under
+    // certain limit, so that application layer can flush at DATA
+    // frame boundary, instead of buffering large frame.
+    assert(limit > 9);
+    length = std::min(length, static_cast<size_t>(limit - 9));
+  }
+
   int nread = evbuffer_remove(body, buf, length);
   if(nread == -1) {
     ULOG(FATAL, upstream) << "evbuffer_remove() failed";
@@ -1119,8 +1134,8 @@ int SpdyUpstream::consume(int32_t stream_id, size_t len)
   rv = spdylay_session_consume(session_, stream_id, len);
 
   if(rv != 0) {
-    ULOG(WARNING, this) << "spdylay_session_consume() returned error: "
-                        << spdylay_strerror(rv);
+    ULOG(WARN, this) << "spdylay_session_consume() returned error: "
+                     << spdylay_strerror(rv);
     return -1;
   }
 

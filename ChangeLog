@@ -1,462 +1,244 @@
-commit 14e56fcd815c7961025476a10153d11c560d967f
+commit efa344be98b032b25fcacedae9fc2a45990eeb9c
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-31
+AuthorDate: 2014-11-08
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-31
+CommitDate: 2014-11-08
+
+    Add assert to ensure non-null dep_stream
+
+commit 2ba9a009fe5fcab0bd1be5551c76815944c29bc6
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-11-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-11-08
+
+    nghttpd: Fix resource leak
+
+commit c59ffa09e07ea0a8cb34e41ccf2428a25d9c5793
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-11-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-11-08
 
     Update man pages
 
-commit db6741251156458988dce81ae325d0995b0168bb
+commit 72f5e028d097260aa91ff52d50bf03389b728b53
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-31
+AuthorDate: 2014-11-08
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-31
+CommitDate: 2014-11-08
 
-    Bump up version number to 0.6.5, LT revision to 7:0:2
+    Bump up version number to 0.6.6, LT revision to 7:1:2
 
-commit 76800dc8e7afdb4af8906ef57e248d027189d0a7
+commit 80b361dbb07f9d91cf7982ba2b9247bd99562cca
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-30
+AuthorDate: 2014-11-08
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-30
+CommitDate: 2014-11-08
 
-    Remove unused functions
+    nghttpx: Use exit instead of abort for DIE macro
 
-commit 7d282cd0bdb1b9e6f2a4e687e7bd7d3227d9d184
+commit 58254adb11b39b94e7db19266196260419c8ae6f
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-30
+AuthorDate: 2014-11-08
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-30
+CommitDate: 2014-11-08
 
-    Code cleanup
+    h2load: Print used SSL/TLS cipher name and parameters
 
-commit 49b8d1d88c25e991402be3bab07d28e082edbdc9
+commit 7f60e8a3074ee310c9e6c4ca4b9ee18c39202ae8
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-28
+AuthorDate: 2014-11-08
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-30
+CommitDate: 2014-11-08
 
-    Rename max_header_set_size as max_header_list_size
+    Fix C++ lib sample
 
-commit 4d93dd9d9176d03c07ee57aa5cf03983f311bee2
+commit c31be5af4d0bc2a4aceb173da9d802e4f8e20f49
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-28
+AuthorDate: 2014-11-08
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-30
+CommitDate: 2014-11-08
 
-    Upate to draft-15
+    Assign default priority if dep_stream in PRIORITY does not exist
+
+commit 292c01fda21feb76dd47d0a30e122a899fcc9571
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-11-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-11-08
+
+    Add test to make sure that default priority is assigned
+
+commit 91f7d43e847e49d2ca1e3671c13b5308ebb50390
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-11-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-11-08
+
+    Assign default priority if dependency parent stream does not exist
+
+commit ce71e65aee625117cf55f7cf0a2f293088662650
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-11-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-11-08
+
+    nghttpx: Replace WARNING with WARN for consistency
+
+commit 11197010716c2bfa02f5868b0d6c174c57877aef
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-11-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-11-08
+
+    nghttpx: Fix -L option help message
     
-    * Add NGHTTP2_HTTP_1_1_REQUIRED error code
-    * Allow transmission of WINDOW_UPDATE on reserved (remote)
-    * Allow reception of WINDOW_UPDATE on reserved (local)
-    * Treat frame larger than MAX_FRAME_SIZE as FRAME_SIZE_ERROR
+    WARNING should be WARN.
+
+commit 42122c270a06583acdd79992e9257e02d253d008
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2014-11-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2014-11-08
+
+    Don't reprioritize stream if it is not in dependency tree
     
-    ALPN identifier is still h2-14 to continue interop, since draft-14 and
-    -15 are binary compatible.  The new error code was added in draft-15,
-    but HTTP/2 allows extensions can freely add new error code, so it is
-    not a problem.
+    Normally stream is in dependency tree, but sometimes it isn't.  For
+    example, client does not put pushed reserved stream in dependency
+    tree.
 
-commit be1a513c597399c8237659f6025869c5ddbdcb82
+commit 1348621d9ea021bfc0a85e092e6936ea2428b286
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-30
+AuthorDate: 2014-11-08
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-30
+CommitDate: 2014-11-08
 
-    nghttpx: Shut up scan-build
+    Fix bug that priority is ignored if dependency parent does not exist
 
-commit 20900b133ec8b0b8455d8ed7310741d578f936c8
+commit 8c5ea613767b29a05ab507bf852014a1f21dbe8e
+Merge: 1e86635 c410f40
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-30
+AuthorDate: 2014-11-07
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-30
+CommitDate: 2014-11-07
 
-    nghttpx: Fix heap-use-after-free in ClientHandler object
-    
-    This bug was found by scan-build
+    Merge branch 'LPardue-log_notice'
 
-commit 279fc2ad3727c188bf792a188c12a9062f3939ee
+commit c410f4055fc8d8eee7416ffdd3cf882578f7dfdb
+Merge: 1e86635 a067eb0
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-30
+AuthorDate: 2014-11-07
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-30
+CommitDate: 2014-11-07
 
-    Update doc
+    Merge branch 'log_notice' of https://github.com/LPardue/nghttp2 into LPardue-log_notice
 
-commit 0ef99b90d9baf4718221ccbffe91d598f2d4cd26
+commit 1e8663557262b71b4faa4dea42f2f3d2217ccec3
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-28
+AuthorDate: 2014-11-07
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-28
+CommitDate: 2014-11-07
 
-    asio-lib: Make request_cb take const ref and use int64_t as http_date arg
+    h2load: Make shutdown sequence simpler
 
-commit 1bd8f6a0e2d274a8d681ff56395aa6d862a251a4
+commit 62ede05c09f68ad883dcde9455bd4a6941f30819
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-28
+AuthorDate: 2014-11-06
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-28
+CommitDate: 2014-11-06
 
-    Update doc
+    Fix heap-use-after-free due to duplicated push of DATA item
 
-commit f70c142e107e367c36aff988d6be760759bd623d
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-28
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-28
-
-    doc: Remove note about legacy NULL concatenation of header field
-
-commit b3fbf047b21d590447b8fb4c92fefb8846bbaa69
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-28
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-28
-
-    Update man pages
-
-commit 0cd8da2cd9f95fa8255668d299fed643d6fd9614
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-28
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-28
-
-    Update doc
-
-commit 7fa0f2763efeda94d3894f8b99c1fd42ad44f3ae
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-28
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-28
-
-    nghttpx: Update Alt-Svc header field spec to alt-svc-04
-
-commit f381b13c91aabef6bbceb0bc6cde4f788edda146
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-27
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-27
-
-    mod a+x to auto-gen scripts
-
-commit 6b9382d865c2cd83e05e576c42735414f2867245
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-27
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-27
-
-    Add comments to the auto-generated table
-
-commit 2c335dbc7ae1a1724d715e051cc49cc3298fe8fb
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-26
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-27
-
-    Add more comment about local window size adjustment
-
-commit b3463b20a33b022a11894d0914ba184032a47ba7
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-25
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-27
-
-    Update doc
-
-commit 15bdf048ccde9db896d80d43456aeb34a3af84b3
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-25
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-27
-
-    mkstatictbl.py: Update doc
-
-commit 992ca9353357f9efe7ec9580c540b12960d44c4e
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-25
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-27
-
-    mkhufftbl.py: Update doc
-
-commit b4ed3324c05b0616cfac6cbf8f46d75bca1888b6
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-25
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-27
-
-    mkcipherlist.py: Update doc
-
-commit 98fd6019cf4e4bab264c3a88072ba650c896d7f1
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-25
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-27
-
-    man2rst.py: Add purpose of the script
-
-commit 6ccae48f7c29f85a748a4aab11d8b95e2ae1f62c
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-25
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-27
-
-    man2rst.py: Add "DO NOT MODIFY THIS FILE!" comment
-
-commit 6933e0ef543a30149f8ae790da193c4cd4b41c53
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-22
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-27
-
-    h2load: Use Headers instead of std::vector<std::pair<>> to store custom headers
-
-commit a9ecdca08a251a3438d2efa1c68377b40981510c
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-22
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-27
-
-    h2load: Read URIs from stdin if -i- is used
-
-commit af5bedd45f3ec1cca5c85e04972446d526fee8b2
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-22
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-27
-
-    h2load: Move code pasing URIs to separate function
-
-commit 7097a31968df6526249ec2e421991ab93af47928
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-22
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-27
-
-    h2load: Uniform handling of URIs from command-line and file
-
-commit 4122920dc6c38400327307646cf7fee1082833e2
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-22
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-27
-
-    h2load: Fix doc and remove trailing spaces
-
-commit 9aed11e3dc84628ac2a161415d1cd682d2362984
-Merge: c6cfcc3 9ea4905
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-27
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-27
-
-    Merge branch 'LPardue-master'
-
-commit 9ea4905f68dac402ba7a9782197f4044d6ce7b96
+commit a067eb02a55a52167d7ca8f4961663809abc9d41
 Author:     Lucas Pardue <Lucas.Pardue@bbc.co.uk>
-AuthorDate: 2014-10-24
+AuthorDate: 2014-11-06
 Commit:     Lucas Pardue <Lucas.Pardue@bbc.co.uk>
-CommitDate: 2014-10-27
+CommitDate: 2014-11-06
 
-    Added X-Forwarded-For header stripping option to nghttpx
+    Add LOG_NOTICE level logging for application lifecycle events
 
-commit c6cfcc3c30f492fb5291ca5a15767a4f96b5d9a8
+commit 154876a17b544f6190199c5bad311880fd4de6e9
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-22
+AuthorDate: 2014-11-06
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-22
+CommitDate: 2014-11-06
 
-    src: Disable insecure SSLv3
+    nghttpx: Apply TLS record length limit to DATA frame payload
+    
+    This is not obvious but it makes intermediaries flush and forward DATA
+    frame boundary without excessive buffering.  Since we have different
+    TCP connections frontend and backend, this may not work.  This is
+    still experimental.
 
-commit 4bc5e551138e294132c7608678ec4d6bc6b6c378
-Merge: e3af9d8 566a252
+commit f8c70993c00dfe052bbd05345d0add0302700658
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-22
+AuthorDate: 2014-11-06
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-22
+CommitDate: 2014-11-06
 
-    Merge branch 'kennypeng-header_add_override'
+    nghttpx: Adjust TLS record size dynamically
+    
+    Use the same behaviour the current Google server does: start with 1300
+    TLS record size and after transmitting 1MiB, change record size to
+    16384.  After 1 second idle time, reset to 1300.  Only applies to
+    HTTP/2 and SPDY upstream connections.
 
-commit 566a252577a02039df07122a79a076b0d982ece9
-Merge: e3af9d8 27c766c
+commit 03a2828fcf4ca301ef805a90e743d4fb974de2be
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-22
+AuthorDate: 2014-11-05
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-22
+CommitDate: 2014-11-05
 
-    Merge branch 'header_add_override' of https://github.com/kennypeng/nghttp2 into kennypeng-header_add_override
+    src: Disable SSL_MODE_ENABLE_PARTIAL_WRITE for apps which use libevent
 
-commit 27c766cb04fee0856255500f75f07e806b05854d
-Author:     Kenny (kang-yen) Peng <kennyp@prizerise.corp.gq1.yahoo.com>
-AuthorDate: 2014-10-21
-Commit:     Kenny (kang-yen) Peng <kennyp@prizerise.corp.gq1.yahoo.com>
-CommitDate: 2014-10-21
-
-    fix some comments and descriptions
-
-commit 41dd6d020510bbccefb1663a759488d2abe7df57
-Author:     Kenny (kang-yen) Peng <kennyp@prizerise.corp.gq1.yahoo.com>
-AuthorDate: 2014-10-21
-Commit:     Kenny (kang-yen) Peng <kennyp@prizerise.corp.gq1.yahoo.com>
-CommitDate: 2014-10-21
-
-    use option i to accept input URI list file
-
-commit db071ca35cc2ce503f48099d537ebc3dd4aa85b6
-Author:     Kenny (kang-yen) Peng <kennyp@prizerise.corp.gq1.yahoo.com>
-AuthorDate: 2014-10-21
-Commit:     Kenny (kang-yen) Peng <kennyp@prizerise.corp.gq1.yahoo.com>
-CommitDate: 2014-10-21
-
-    fix comments of header add/override
-
-commit e3af9d8bd35bb28a32a5d54e90f6942a85afe98b
+commit 2fc0056ada2742b49cf9b99b97709e3187016b62
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-21
+AuthorDate: 2014-11-05
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-21
+CommitDate: 2014-11-05
 
-    nghttp: Use Headers to store custom headers
+    nghttp: Allow multiple -v option to increase verbosity
+    
+    Now the number of -v option specifies verbosity level.  Current all
+    verbose output are turned on for at lest one -v option, except for the
+    debug output for each data chunk which is only turned on more than one
+    -v options.
 
-commit 73955f05193c4c279175b0c8443fce1dc1ff94e7
+commit 9a331165264a9bba34f66cd3ef4e82836959a483
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-21
+AuthorDate: 2014-11-05
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-21
+CommitDate: 2014-11-05
 
-    nghttp: Take advantage the fact that custom headers are already lower cased
+    Fix bug in priority tree
+    
+    This change fixes the bug that stream is out of dependency tree if the
+    number of nodes in a dependency tree which we add new node to is
+    already maximum (NGHTTP2_MAX_DEP_TREE_LENGTH) and the number of
+    maximum concurrent streams is more than more than
+    NGHTTP2_MAX_DEP_TREE_LENGTH.
 
-commit 5df21e36832480ce1b1234ed5015b97aac3f3e89
+commit 29fcd7c946ee0dbdd8e443c03b7ddf041be9776f
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-21
+AuthorDate: 2014-11-02
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-21
+CommitDate: 2014-11-02
 
-    nghttp: Add missing metavar to -H and add example
+    nghttpd: Use http2::Headers
 
-commit a6e1a40c05e1f7998b6b4dafc591ab6e78d8b2ec
-Author:     Kenny (kang-yen) Peng <kennyp@prizerise.corp.gq1.yahoo.com>
-AuthorDate: 2014-10-20
-Commit:     Kenny (kang-yen) Peng <kennyp@prizerise.corp.gq1.yahoo.com>
-CommitDate: 2014-10-20
-
-    support uri list file input
-
-commit e330520341cff6aded1179c009596af84f81c1fe
+commit 189f122dd764be5653d91dfdfa49f85c7769c84e
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-19
+AuthorDate: 2014-11-02
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-19
+CommitDate: 2014-11-02
 
-    Fix compile error on arm
+    nghttpd: Perform redirect if directory is requested
 
-commit d13ed04b1738da082870bb1be79e430d13b5797e
+commit 69c708be447e50aae683265b3eaba882499781cb
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-19
+AuthorDate: 2014-11-02
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-19
+CommitDate: 2014-11-02
 
-    Add Dockerfile.android
-
-commit 75a23c6c7e131d090c317f69bfb09d7b722f63ee
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-19
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-19
-
-    Add sample nghttpx logrotate configuration
-
-commit eaca5d83b0e89ea4d01eb298ae9072040ec8a32f
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-19
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-19
-
-    Add nghttpx init file for convenience
-
-commit 9c1b5e8fb151b658d7bee7624e2c256f3877f077
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-18
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-18
-
-    Update .gitignore
-
-commit 0c31dbb5d914ecf2a90669774256ebcbc7f4cb46
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-18
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-18
-
-    Add aux script
-
-commit 8a0b11e9e1ef8376454a8285ab10f1f335823488
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-18
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-18
-
-    Add aux script
-
-commit 7ca2787cc802e02d319ec0dccb4e79eea9689d2e
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-18
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-18
-
-    man2rst.py: Erase \&
-
-commit cfbf907418a2d0790aa3dc68a9839f96452fadf9
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-18
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-18
-
-    doc: Disable smartypants since we use '--' prefix for cmd options
-
-commit dd02c4cd9b964826c97798788dbc74a93c2ea1a1
-Author:     Kenny Peng <kennyp@loweradvance-lm.(none)>
-AuthorDate: 2014-10-17
-Commit:     Kenny Peng <kennyp@loweradvance-lm.(none)>
-CommitDate: 2014-10-17
-
-    support header add/override
-
-commit 93ee5bdba6e28107e48ab81d4b8948f9fdcee3f0
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-17
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-17
-
-    REAMDE.rst: Add make and binutils to required ubuntu packages
-
-commit f2aa6f4e2b9cbb16771712d96aff367da302abb4
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-16
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-16
-
-    nghttp: Document prioritization with -a option
-
-commit bc8a58318424a4ce5d6a3f0c1b90fb75e133436e
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-16
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-16
-
-    Refactor stream tree code
-
-commit 502ff24568d9a3eecf8b463cbc6bb0fa8afa66ec
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-16
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-16
-
-    Avoid iterate siblings when adding/removing stream tree
-
-commit 47692d113c213d499ece2c415cff0ade35099082
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2014-10-14
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2014-10-14
-
-    Bump up version number to 0.6.5-DEV
+    Bump up version number to 0.6.6-DEV
