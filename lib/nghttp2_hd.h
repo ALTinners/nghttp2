@@ -82,11 +82,6 @@ typedef struct {
 } nghttp2_hd_entry;
 
 typedef struct {
-  nghttp2_hd_entry ent;
-  size_t index;
-} nghttp2_hd_static_entry;
-
-typedef struct {
   nghttp2_hd_entry **buffer;
   size_t mask;
   size_t first;
@@ -161,7 +156,7 @@ struct nghttp2_hd_inflater {
      name. This entry must be in header table. */
   nghttp2_hd_entry *ent_name;
   /* The number of bytes to read */
-  ssize_t left;
+  size_t left;
   /* The index in indexed repr or indexed name */
   size_t index;
   /* The index of header table to toggle off the entry from reference
@@ -173,6 +168,8 @@ struct nghttp2_hd_inflater {
   /* The maximum header table size the inflater supports. This is the
      same value transmitted in SETTINGS_HEADER_TABLE_SIZE */
   size_t settings_hd_table_bufsize_max;
+  /* The number of next shift to decode integer */
+  size_t shift;
   nghttp2_hd_opcode opcode;
   nghttp2_hd_inflate_state state;
   /* nonzero if string is huffman encoded */
@@ -294,6 +291,11 @@ int nghttp2_hd_emit_table_size(nghttp2_bufs *bufs, size_t table_size);
 /* For unittesting purpose */
 nghttp2_hd_entry* nghttp2_hd_table_get(nghttp2_hd_context *context,
                                        size_t index);
+
+/* For unittesting purpose */
+ssize_t nghttp2_hd_decode_length(uint32_t *res, size_t *shift_ptr, int *final,
+                                 uint32_t initial, size_t shift,
+                                 uint8_t *in, uint8_t *last, size_t prefix);
 
 /* Huffman encoding/decoding functions */
 
