@@ -1,0 +1,10 @@
+[Unit]
+Description=HTTP/2 experimental proxy
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/nghttpx --conf=/etc/nghttpx/nghttpx.conf
+
+[Install]
+WantedBy=multi-user.target

@@ -1,58 +1,61 @@
 #!/usr/bin/make -f
 
-include /usr/share/cdbs/1/rules/debhelper.mk
-#include /usr/share/cdbs/1/rules/autoreconf.mk
-include /usr/share/cdbs/1/class/autotools.mk
-include /usr/share/cdbs/1/rules/patchsys-quilt.mk
+# this makes the tests fail
+# LDFLAGS += -Wl,--default-symver
 
-DEB_DBG_PACKAGE_libnghttp2-5 = libnghttp2-5-dbg
+override_dh_auto_configure:
+	dh_auto_configure -- \
+		--enable-python-bindings=no --disable-failmalloc
 
-DEB_CONFIGURE_EXTRA_FLAGS += --libdir=\$${prefix}/lib/$(DEB_HOST_MULTIARCH) \
-  --bindir=\$${prefix}/bin/$(DEB_HOST_MULTIARCH) \
-  --disable-failmalloc \
-  --with-libxml2=yes \
-  --with-spdylay=no
+override_dh_installdocs:
+	dh_installdocs -A README.rst AUTHORS
 
-ifeq (,$(filter hurd-%,$(DEB_BUILD_ARCH)))
-  DEB_CONFIGURE_EXTRA_FLAGS += --with-jemalloc=yes
-endif
-
-LDFLAGS += -Wl,--default-symver
-
-## Show what dh_autoreconf is deleting / moving / restoring
-#DEB_DH_AUTORECONF_ARGS := --verbose
-
-# Do not want README so set the default docs explicitly
-DEB_INSTALL_DOCS_ALL = AUTHORS README.rst
-
-# Install scripts for nghttpx init script installed in install/nghttp2 below
-DEB_DH_INSTALLINIT_ARGS_nghttp2 := --onlyscripts --name=nghttpx
-
-clean::
-	rm -rf doc/manual/html doc/manual/doctrees doc/apiref.rst
-
-# Need to install the contrib files, rename them and set the modes
-install/nghttp2::
-	install -d debian/nghttp2/etc/init.d
-	sed -e 's,^DAEMON=.*/,DAEMON=/usr/sbin/,' contrib/nghttpx-init > debian/nghttp2/etc/init.d/nghttpx
-	chmod 755 debian/nghttp2/etc/init.d/nghttpx
-	install -d debian/nghttp2/etc/nghttpx
-	install -m644 nghttpx.conf.sample debian/nghttp2/etc/nghttpx/nghttpx.conf
-	install -d debian/nghttp2/etc/logrotate.d
-	install -p -m644 contrib/nghttpx-logrotate debian/nghttp2/etc/logrotate.d/nghttpx
-
-install/libnghttp2-dev::
-	rm -f debian/tmp/usr/lib/*/libnghttp2.la
-
-build/libnghttp2-doc::
+override_dh_auto_build:
+	dh_auto_build
 	$(MAKE) html
 
-install/libnghttp2-doc::
-	d=$(CURDIR)/debian/libnghttp2-doc/usr/share/doc/libnghttp2-doc; \
-	mkdir -p $$d; \
-	cp -pr doc/manual/html/* $$d; \
-	cd $$d; \
-	rm -f objects.inv; \
-	cd _static; \
-	ln -sf /usr/share/javascript/jquery/jquery.js; \
-	ln -sf /usr/share/javascript/underscore/underscore.js
+# TODO: this may become obsolete soon with ddebs
+override_dh_strip:
+	dh_strip -plibnghttp2-14 --dbg-package=libnghttp2-14-dbg
+	dh_strip
+
+override_dh_auto_clean:
+	dh_auto_clean
+	rm -rf doc/manual/html doc/manual/doctrees doc/apiref.rst
+
+override_dh_auto_install: custom_install_manual custom_install_init_scripts custom_install_systemd
+	dh_auto_install
+
+override_dh_installinit:
+	dh_installinit -pnghttp2 --onlyscripts --name=nghttpx
+
+.PHONY: custom_install_manual custom_install_init_scripts custom_install_systemd
+
+DOCDIR="debian/libnghttp2-doc/usr/share/doc/libnghttp2-doc"
+custom_install_manual:
+	mkdir -p $(DOCDIR)
+	cp -pr doc/manual/html/* $(DOCDIR)
+	rm $(DOCDIR)/objects.inv
+	ln -sf /usr/share/javascript/jquery/jquery.js $(DOCDIR)/_static/jquery.js
+	ln -sf /usr/share/javascript/underscore/underscore.js $(DOCDIR)/_static/underscore.js
+
+ETCDIR="debian/nghttp2/etc"
+custom_install_init_scripts:
+	install -d $(ETCDIR)/init.d
+	sed -e 's,^DAEMON=.*/,DAEMON=/usr/sbin/,' contrib/nghttpx-init > $(ETCDIR)/init.d/nghttpx
+	chmod 755 $(ETCDIR)/init.d/nghttpx
+	install -d $(ETCDIR)/nghttpx
+	# we install our own version of config
+	install -m644 debian/nghttpx.conf $(ETCDIR)/nghttpx/nghttpx.conf
+	install -d $(ETCDIR)/logrotate.d
+	install -p -m644 contrib/nghttpx-logrotate $(ETCDIR)/logrotate.d/nghttpx
+
+# Currently we install our own systemd unit because
+# the original one is slightly broken
+SYSTEMD="debian/nghttp2/lib/systemd/system"
+custom_install_systemd:
+	install -d $(SYSTEMD)
+	install -p -m644 debian/nghttpx.service $(SYSTEMD)/nghttpx.service
+
+%:
+	dh $@ --parallel --with=autoreconf --with=systemd

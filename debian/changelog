@@ -1,3 +1,10 @@
+nghttp2 (1.2.0-1.1) UNRELEASED; urgency=medium
+
+  * Non-maintainer upload
+  * Imported Upstream version 1.2.0
+
+ -- Tomasz Buchert <tomasz@debian.org>  Tue, 11 Aug 2015 14:57:28 +0200
+
 nghttp2 (0.6.7-1) unstable; urgency=medium
 
   * New upstream release
