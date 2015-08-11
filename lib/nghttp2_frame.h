@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -31,22 +31,34 @@
 
 #include <nghttp2/nghttp2.h>
 #include "nghttp2_hd.h"
-#include "nghttp2_buffer.h"
+#include "nghttp2_buf.h"
 
 #define NGHTTP2_FRAME_LENGTH_MASK ((1 << 14) - 1)
 #define NGHTTP2_STREAM_ID_MASK ((1u << 31) - 1)
+#define NGHTTP2_PRI_GROUP_ID_MASK ((1u << 31) - 1)
 #define NGHTTP2_PRIORITY_MASK ((1u << 31) - 1)
 #define NGHTTP2_WINDOW_SIZE_INCREMENT_MASK ((1u << 31) - 1)
 #define NGHTTP2_SETTINGS_ID_MASK ((1 << 24) - 1)
 
-/* The maximum payload length of a frame */
-#define NGHTTP2_MAX_FRAME_LENGTH ((1 << 14) - 1)
+/* The number of bytes of frame header. */
+#define NGHTTP2_FRAME_HDLEN 8
+
+#define NGHTTP2_MAX_PAYLOADLEN 16383
+/* The one frame buffer length for tranmission.  We may use several of
+   them to support CONTINUATION.  To account for padding specifiers
+   (PAD_HIGH and PAD_LOW), we allocate extra 2 bytes, which saves
+   extra large memcopying. */
+#define NGHTTP2_FRAMEBUF_CHUNKLEN \
+  (NGHTTP2_FRAME_HDLEN + 2 + NGHTTP2_MAX_PAYLOADLEN)
 
 /* The maximum length of DATA frame payload. */
-#define NGHTTP2_DATA_PAYLOAD_LENGTH 4096
+#define NGHTTP2_DATA_PAYLOADLEN 4096
 
-/* The number of bytes of frame header. */
-#define NGHTTP2_FRAME_HEAD_LENGTH 8
+/* The number of bytes for each SETTINGS entry */
+#define NGHTTP2_FRAME_SETTINGS_ENTRY_LENGTH 5
+
+/* The maximum header table size in SETTINGS_HEADER_TABLE_SIZE */
+#define NGHTTP2_MAX_HEADER_TABLE_SIZE ((1u << 31) - 1)
 
 /* Category of frames. */
 typedef enum {
@@ -69,6 +81,11 @@ typedef struct {
    */
   nghttp2_data_provider data_prd;
   /**
+   * The number of bytes added as padding. This includes PAD_HIGH and
+   * PAD_LOW.
+   */
+  size_t padlen;
+  /**
    * The flag to indicate whether EOF was reached or not. Initially
    * |eof| is 0. It becomes 1 after all data were read. This is used
    * exclusively by nghttp2 library and not in the spec.
@@ -82,6 +99,31 @@ void nghttp2_frame_pack_frame_hd(uint8_t *buf, const nghttp2_frame_hd *hd);
 
 void nghttp2_frame_unpack_frame_hd(nghttp2_frame_hd *hd, const uint8_t* buf);
 
+/**
+ * Returns the number of priority field depending on the |flags|.  If
+ * |flags| has neither NGHTTP2_FLAG_PRIORITY_GROUP nor
+ * NGHTTP2_FLAG_PRIORITY_DEPENDENCY set, return 0.
+ */
+size_t nghttp2_frame_priority_len(uint8_t flags);
+
+/**
+ * Packs the |pri_spec| in |buf|.  This function assumes |buf| has
+ * enough space for serialization.
+ */
+void nghttp2_frame_pack_priority_spec(uint8_t *buf,
+                                      const nghttp2_priority_spec *pri_spec);
+
+/**
+ * Unpacks the priority specification from payload |payload| of length
+ * |payloadlen| to |pri_spec|.  The |flags| is used to determine what
+ * kind of priority specification is in |payload|.  This function
+ * assumes the |payload| contains whole priority specification.
+ */
+void nghttp2_frame_unpack_priority_spec(nghttp2_priority_spec *pri_spec,
+                                        uint8_t flags,
+                                        const uint8_t *payload,
+                                        size_t payloadlen);
+
 /*
  * Returns the offset from the HEADERS frame payload where the
  * compressed header block starts. The frame payload does not include
@@ -90,42 +132,34 @@ void nghttp2_frame_unpack_frame_hd(nghttp2_frame_hd *hd, const uint8_t* buf);
 size_t nghttp2_frame_headers_payload_nv_offset(nghttp2_headers *frame);
 
 /*
- * Packs HEADERS frame |frame| in wire format and store it in
- * |*buf_ptr|.  The capacity of |*buf_ptr| is |*buflen_ptr| bytes.
- * This function expands |*buf_ptr| as necessary to store frame. When
- * expansion occurred, memory previously pointed by |*buf_ptr| may
- * change.  |*buf_ptr| and |*buflen_ptr| are updated accordingly.
+ * Packs HEADERS frame |frame| in wire format and store it in |bufs|.
+ * This function expands |bufs| as necessary to store frame.
+ *
+ * The caller must make sure that nghttp2_bufs_reset(bufs) is called
+ * before calling this function.
  *
  * frame->hd.length is assigned after length is determined during
- * packing process. If payload length is strictly larger than
- * NGHTTP2_MAX_FRAME_LENGTH, payload data is still serialized as is,
- * but frame->hd.length is set to NGHTTP2_MAX_FRAME_LENGTH and
- * NGHTTP2_FLAG_END_HEADERS flag is cleared from frame->hd.flags.
+ * packing process.  CONTINUATION frames are also serialized in this
+ * function. This function does not handle padding.
  *
- * This function returns the size of packed frame if it succeeds, or
- * returns one of the following negative error codes:
+ * This function returns 0 if it succeeds, or returns one of the
+ * following negative error codes:
  *
  * NGHTTP2_ERR_HEADER_COMP
  *     The deflate operation failed.
- * NGHTTP2_ERR_FRAME_TOO_LARGE
- *     The length of the frame is too large.
  * NGHTTP2_ERR_NOMEM
  *     Out of memory.
  */
-ssize_t nghttp2_frame_pack_headers(uint8_t **buf_ptr,
-                                   size_t *buflen_ptr,
-                                   nghttp2_headers *frame,
-                                   nghttp2_hd_deflater *deflater);
+int nghttp2_frame_pack_headers(nghttp2_bufs *bufs,
+                               nghttp2_headers *frame,
+                               nghttp2_hd_deflater *deflater);
 
 /*
- * Unpacks HEADERS frame byte sequence into |frame|. This function
- * only unapcks bytes that come before name/value header block.
+ * Unpacks HEADERS frame byte sequence into |frame|.  This function
+ * only unapcks bytes that come before name/value header block and
+ * after PAD_HIGH and PAD_LOW.
  *
- * This function returns 0 if it succeeds or one of the following
- * negative error codes:
- *
- * NGHTTP2_ERR_PROTO
- *     TODO END_HEADERS flag is not set
+ * This function always succeeds and returns 0.
  */
 int nghttp2_frame_unpack_headers_payload(nghttp2_headers *frame,
                                          const uint8_t *payload,
@@ -133,18 +167,15 @@ int nghttp2_frame_unpack_headers_payload(nghttp2_headers *frame,
 
 /*
  * Packs PRIORITY frame |frame| in wire format and store it in
- * |*buf_ptr|. The capacity of |*buf_ptr| is |*buflen_ptr|
- * length. This function expands |*buf_ptr| as necessary to store
- * given |frame|.
+ * |bufs|.
  *
- * This function returns 0 if it succeeds or one of the following
- * negative error codes:
+ * The caller must make sure that nghttp2_bufs_reset(bufs) is called
+ * before calling this function.
  *
- * NGHTTP2_ERR_NOMEM
- *     Out of memory.
+ * This function always succeeds and returns 0.
  */
-ssize_t nghttp2_frame_pack_priority(uint8_t **buf_ptr, size_t *buflen_ptr,
-                                    nghttp2_priority *frame);
+int nghttp2_frame_pack_priority(nghttp2_bufs *bufs,
+                                nghttp2_priority *frame);
 
 /*
  * Unpacks PRIORITY wire format into |frame|.
@@ -155,19 +186,15 @@ void nghttp2_frame_unpack_priority_payload(nghttp2_priority *frame,
 
 /*
  * Packs RST_STREAM frame |frame| in wire frame format and store it in
- * |*buf_ptr|. The capacity of |*buf_ptr| is |*buflen_ptr|
- * length. This function expands |*buf_ptr| as necessary to store
- * given |frame|. In spdy/2 spec, RST_STREAM wire format is always 16
- * bytes long.
+ * |bufs|.
  *
- * This function returns the size of packed frame if it succeeds, or
- * returns one of the following negative error codes:
+ * The caller must make sure that nghttp2_bufs_reset(bufs) is called
+ * before calling this function.
  *
- * NGHTTP2_ERR_NOMEM
- *     Out of memory.
+ * This function always succeeds and returns 0.
  */
-ssize_t nghttp2_frame_pack_rst_stream(uint8_t **buf_ptr, size_t *buflen_ptr,
-                                      nghttp2_rst_stream *frame);
+int nghttp2_frame_pack_rst_stream(nghttp2_bufs *bufs,
+                                  nghttp2_rst_stream *frame);
 
 /*
  * Unpacks RST_STREAM frame byte sequence into |frame|.
@@ -178,18 +205,18 @@ void nghttp2_frame_unpack_rst_stream_payload(nghttp2_rst_stream *frame,
 
 /*
  * Packs SETTINGS frame |frame| in wire format and store it in
- * |*buf_ptr|. The capacity of |*buf_ptr| is |*buflen_ptr|
- * length. This function expands |*buf_ptr| as necessary to store
- * given |frame|.
+ * |bufs|.
  *
- * This function returns the size of packed frame if it succeeds, or
- * returns one of the following negative error codes:
+ * The caller must make sure that nghttp2_bufs_reset(bufs) is called
+ * before calling this function.
  *
- * NGHTTP2_ERR_NOMEM
- *     Out of memory.
+ * This function returns 0 if it succeeds, or returns one of the
+ * following negative error codes:
+ *
+ * NGHTTP2_ERR_FRAME_SIZE_ERROR
+ *     The length of the frame is too large.
  */
-ssize_t nghttp2_frame_pack_settings(uint8_t **buf_ptr, size_t *buflen_ptr,
-                                    nghttp2_settings *frame);
+int nghttp2_frame_pack_settings(nghttp2_bufs *bufs, nghttp2_settings *frame);
 
 /*
  * Packs the |iv|, which includes |niv| entries, in the |buf|,
@@ -237,35 +264,32 @@ int nghttp2_frame_unpack_settings_payload2(nghttp2_settings_entry **iv_ptr,
 
 /*
  * Packs PUSH_PROMISE frame |frame| in wire format and store it in
- * |*buf_ptr|.  The capacity of |*buf_ptr| is |*buflen_ptr| bytes.
- * This function expands |*buf_ptr| as necessary to store frame. When
- * expansion occurred, memory previously pointed by |*buf_ptr| may
- * change.  |*buf_ptr| and |*buflen_ptr| are updated accordingly.
+ * |bufs|.  This function expands |bufs| as necessary to store
+ * frame.
+ *
+ * The caller must make sure that nghttp2_bufs_reset(bufs) is called
+ * before calling this function.
  *
  * frame->hd.length is assigned after length is determined during
- * packing process. If payload length is strictly larger than
- * NGHTTP2_MAX_FRAME_LENGTH, payload data is still serialized as is,
- * but frame->hd.length is set to NGHTTP2_MAX_FRAME_LENGTH and
- * NGHTTP2_FLAG_END_HEADERS flag is cleared from frame->hd.flags.
+ * packing process.  CONTINUATION frames are also serialized in this
+ * function. This function does not handle padding.
  *
- * This function returns the size of packed frame if it succeeds, or
- * returns one of the following negative error codes:
+ * This function returns 0 if it succeeds, or returns one of the
+ * following negative error codes:
  *
  * NGHTTP2_ERR_HEADER_COMP
  *     The deflate operation failed.
- * NGHTTP2_ERR_FRAME_TOO_LARGE
- *     The length of the frame is too large.
  * NGHTTP2_ERR_NOMEM
  *     Out of memory.
  */
-ssize_t nghttp2_frame_pack_push_promise(uint8_t **buf_ptr,
-                                        size_t *buflen_ptr,
-                                        nghttp2_push_promise *frame,
-                                        nghttp2_hd_deflater *deflater);
+int nghttp2_frame_pack_push_promise(nghttp2_bufs *bufs,
+                                    nghttp2_push_promise *frame,
+                                    nghttp2_hd_deflater *deflater);
 
 /*
- * Unpacks PUSH_PROMISE frame byte sequence into |frame|. This function
- * only unapcks bytes that come before name/value header block.
+ * Unpacks PUSH_PROMISE frame byte sequence into |frame|.  This
+ * function only unapcks bytes that come before name/value header
+ * block and after PAD_HIGH and PAD_LOW.
  *
  * This function returns 0 if it succeeds or one of the following
  * negative error codes:
@@ -279,18 +303,14 @@ int nghttp2_frame_unpack_push_promise_payload(nghttp2_push_promise *frame,
 
 /*
  * Packs PING frame |frame| in wire format and store it in
- * |*buf_ptr|. The capacity of |*buf_ptr| is |*buflen_ptr|
- * length. This function expands |*buf_ptr| as necessary to store
- * given |frame|.
+ * |bufs|.
  *
- * This function returns 0 if it succeeds or one of the following
- * negative error codes:
+ * The caller must make sure that nghttp2_bufs_reset(bufs) is called
+ * before calling this function.
  *
- * NGHTTP2_ERR_NOMEM
- *     Out of memory.
+ * This function always succeeds and returns 0.
  */
-ssize_t nghttp2_frame_pack_ping(uint8_t **buf_ptr, size_t *buflen_ptr,
-                                nghttp2_ping *frame);
+int nghttp2_frame_pack_ping(nghttp2_bufs *bufs, nghttp2_ping *frame);
 
 /*
  * Unpacks PING wire format into |frame|.
@@ -300,41 +320,62 @@ void nghttp2_frame_unpack_ping_payload(nghttp2_ping *frame,
                                        size_t payloadlen);
 
 /*
- * Packs GOAWAY frame |frame | in wire format and store it in
- * |*buf_ptr|. The capacity of |*buf_ptr| is |*buflen_ptr|
- * length. This function expands |*buf_ptr| as necessary to store
- * given |frame|.
+ * Packs GOAWAY frame |frame| in wire format and store it in |bufs|.
+ * This function expands |bufs| as necessary to store frame.
+ *
+ * The caller must make sure that nghttp2_bufs_reset(bufs) is called
+ * before calling this function.
  *
  * This function returns 0 if it succeeds or one of the following
  * negative error codes:
  *
  * NGHTTP2_ERR_NOMEM
  *     Out of memory.
+ * NGHTTP2_ERR_FRAME_SIZE_ERROR
+ *     The length of the frame is too large.
  */
-ssize_t nghttp2_frame_pack_goaway(uint8_t **buf_ptr, size_t *buflen_ptr,
-                                  nghttp2_goaway *frame);
+int nghttp2_frame_pack_goaway(nghttp2_bufs *bufs, nghttp2_goaway *frame);
 
 /*
- * Unpacks GOAWAY wire format into |frame|.
+ * Unpacks GOAWAY wire format into |frame|.  The |payload| of length
+ * |payloadlen| contains first 8 bytes of payload.  The
+ * |var_gift_payload| of length |var_gift_payloadlen| contains
+ * remaining payload and its buffer is gifted to the function and then
+ * |frame|.  The |var_gift_payloadlen| must be freed by
+ * nghttp2_frame_goaway_free().
  */
 void nghttp2_frame_unpack_goaway_payload(nghttp2_goaway *frame,
+                                         const uint8_t *payload,
+                                         size_t payloadlen,
+                                         uint8_t *var_gift_payload,
+                                         size_t var_gift_payloadlen);
+
+/*
+ * Unpacks GOAWAY wire format into |frame|.  This function only exists
+ * for unit test.  After allocating buffer for debug data, this
+ * function internally calls nghttp2_frame_unpack_goaway_payload().
+ *
+ * This function returns 0 if it succeeds, or one of the following
+ * negative error codes:
+ *
+ * NGHTTP2_ERR_NOMEM
+ *     Out of memory.
+ */
+int nghttp2_frame_unpack_goaway_payload2(nghttp2_goaway *frame,
                                          const uint8_t *payload,
                                          size_t payloadlen);
 
 /*
  * Packs WINDOW_UPDATE frame |frame| in wire frame format and store it
- * in |*buf_ptr|. The capacity of |*buf_ptr| is |*buflen_ptr|
- * length. This function expands |*buf_ptr| as necessary to store
- * given |frame|.
+ * in |bufs|.
  *
- * This function returns the size of packed frame if it succeeds, or
- * returns one of the following negative error codes:
+ * The caller must make sure that nghttp2_bufs_reset(bufs) is called
+ * before calling this function.
  *
- * NGHTTP2_ERR_NOMEM
- *     Out of memory.
+ * This function always succeeds and returns 0.
  */
-ssize_t nghttp2_frame_pack_window_update(uint8_t **buf_ptr, size_t *buflen_ptr,
-                                         nghttp2_window_update *frame);
+int nghttp2_frame_pack_window_update(nghttp2_bufs *bufs,
+                                     nghttp2_window_update *frame);
 
 /*
  * Unpacks WINDOW_UPDATE frame byte sequence into |frame|.
@@ -344,19 +385,69 @@ void nghttp2_frame_unpack_window_update_payload(nghttp2_window_update *frame,
                                                 size_t payloadlen);
 
 /*
+ * Packs ALTSVC frame |frame| in wire format and store it in |bufs|.
+ * This function expands |bufs| as necessary to store frame.
+ *
+ * The caller must make sure that nghttp2_bufs_reset(bufs) is called
+ * before calling this function.
+ *
+ * This function returns 0 if it succeeds or one of the following
+ * negative error codes:
+ *
+ * NGHTTP2_ERR_NOMEM
+ *     Out of memory.
+ * NGHTTP2_ERR_FRAME_SIZE_ERROR
+ *     The length of the frame is too large.
+ */
+int nghttp2_frame_pack_altsvc(nghttp2_bufs *bufs, nghttp2_altsvc *frame);
+
+
+/*
+ * Unpacks ALTSVC frame byte sequence into |frame|.
+ * The |payload| of length |payloadlen| contains first 8 bytes of
+ * payload.  The |var_gift_payload| of length |var_gift_payloadlen|
+ * contains remaining payload and its buffer is gifted to the function
+ * and then |frame|.  The |var_gift_payloadlen| must be freed by
+ * nghttp2_frame_altsvc_free().
+ *
+ * This function returns 0 if it succeeds or one of the following
+ * negative error codes:
+ *
+ * NGHTTP2_ERR_FRAME_SIZE_ERROR
+ *   The |var_gift_payload| does not contain required data.
+ */
+int nghttp2_frame_unpack_altsvc_payload(nghttp2_altsvc *frame,
+                                        const uint8_t *payload,
+                                        size_t payloadlen,
+                                        uint8_t *var_gift_payload,
+                                        size_t var_gift_payloadlen);
+
+/*
+ * Packs BLOCKED frame |frame| in wire format and store it in |bufs|.
+ *
+ * The caller must make sure that nghttp2_bufs_reset(bufs) is called
+ * before calling this function.
+ *
+ * This function always returns 0.
+ */
+int nghttp2_frame_pack_blocked(nghttp2_bufs *bufs, nghttp2_blocked *frame);
+
+/*
  * Initializes HEADERS frame |frame| with given values.  |frame| takes
  * ownership of |nva|, so caller must not free it. If |stream_id| is
  * not assigned yet, it must be -1.
  */
 void nghttp2_frame_headers_init(nghttp2_headers *frame,
-                                uint8_t flags, int32_t stream_id, int32_t pri,
+                                uint8_t flags, int32_t stream_id,
+                                nghttp2_headers_category cat,
+                                const nghttp2_priority_spec *pri_spec,
                                 nghttp2_nv *nva, size_t nvlen);
 
 void nghttp2_frame_headers_free(nghttp2_headers *frame);
 
 
 void nghttp2_frame_priority_init(nghttp2_priority *frame, int32_t stream_id,
-                                 int32_t pri);
+                                 const nghttp2_priority_spec *pri_spec);
 
 void nghttp2_frame_priority_free(nghttp2_priority *frame);
 
@@ -416,7 +507,34 @@ void nghttp2_frame_window_update_init(nghttp2_window_update *frame,
 
 void nghttp2_frame_window_update_free(nghttp2_window_update *frame);
 
+/* protocol_id, host and origin must be allocated to the one chunk of
+   memory region and protocol_id must point to it.  We only free
+   protocol_id.  This means that |protocol_id| is not NULL even if
+   |protocol_id_len| == 0 and |host_len| + |origin_len| > 0.  If
+   |protocol_id_len|, |host_len| and |origin_len| are all zero,
+   |protocol_id| can be NULL. */
+void nghttp2_frame_altsvc_init(nghttp2_altsvc *frame, int32_t stream_id,
+                               uint32_t max_age,
+                               uint16_t port,
+                               uint8_t *protocol_id,
+                               size_t protocol_id_len,
+                               uint8_t *host, size_t host_len,
+                               uint8_t *origin, size_t origin_len);
+
+void nghttp2_frame_altsvc_free(nghttp2_altsvc *frame);
+
+void nghttp2_frame_blocked_init(nghttp2_blocked *frame, int32_t stream_id);
+
+void nghttp2_frame_blocked_free(nghttp2_blocked *frame);
+
 void nghttp2_frame_data_init(nghttp2_data *frame, nghttp2_private_data *pdata);
+
+/*
+ * Returns the number of padding bytes after payload. The total
+ * padding length is given in the |padlen|. The returned value does
+ * not include the PAD_HIGH and PAD_LOW.
+ */
+size_t nghttp2_frame_trail_padlen(nghttp2_frame *frame, size_t padlen);
 
 void nghttp2_frame_private_data_init(nghttp2_private_data *frame,
                                      uint8_t flags,
@@ -451,9 +569,6 @@ void nghttp2_nv_array_sort(nghttp2_nv *nva, size_t nvlen);
  *
  * NGHTTP2_ERR_NOMEM
  *     Out of memory.
- * NGHTTP2_ERR_INVALID_ARGUMENT
- *     The length of name or value in |nva| is strictly larger than
- *     NGHTTP2_MAX_HD_VALUE_LENGTH.
  */
 ssize_t nghttp2_nv_array_copy(nghttp2_nv **nva_ptr,
                               const nghttp2_nv *nva, size_t nvlen);
@@ -472,12 +587,28 @@ void nghttp2_nv_array_del(nghttp2_nv *nva);
 
 /*
  * Checks that the |iv|, which includes |niv| entries, does not have
- * invalid values. The |flow_control_opt| is current flow control
- * option value.
+ * invalid values.
  *
  * This function returns nonzero if it succeeds, or 0.
  */
-int nghttp2_iv_check(const nghttp2_settings_entry *iv, size_t niv,
-                     int32_t flow_control_opt);
+int nghttp2_iv_check(const nghttp2_settings_entry *iv, size_t niv);
+
+/*
+ * Sets PAD_HIGH and PAD_LOW fields, flags and adjust frame header
+ * position of each buffers in |bufs|.  The padding is given in the
+ * |padlen|. The |hd| is the frame header for the serialized data.
+ * The |type| is used as a frame type when padding requires additional
+ * buffers.
+ *
+ * This function returns 0 if it succeeds, or one of the following
+ * negative error codes:
+ *
+ * NGHTTP2_ERR_NOMEM
+ *     Out of memory.
+ * NGHTTP2_ERR_FRAME_SIZE_ERROR
+ *     The length of the resulting frame is too large.
+ */
+int nghttp2_frame_add_pad(nghttp2_bufs *bufs, nghttp2_frame_hd *hd,
+                          size_t padlen, nghttp2_frame_type type);
 
 #endif /* NGHTTP2_FRAME_H */

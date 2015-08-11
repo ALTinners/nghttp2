@@ -1,4 +1,4 @@
-dnl nghttp2 - HTTP/2.0 C Library
+dnl nghttp2 - HTTP/2 C Library
 
 dnl Copyright (c) 2012, 2013 Tatsuhiro Tsujikawa
 
@@ -21,13 +21,13 @@ dnl LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 dnl OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 dnl WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 AC_PREREQ(2.61)
-AC_INIT([nghttp2], [0.3.2], [t-tujikawa@users.sourceforge.net])
+AC_INIT([nghttp2], [0.4.0], [t-tujikawa@users.sourceforge.net])
 LT_PREREQ([2.2.6])
 LT_INIT()
 dnl See versioning rule:
 dnl  http://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
-AC_SUBST(LT_CURRENT, 2)
-AC_SUBST(LT_REVISION, 2)
+AC_SUBST(LT_CURRENT, 3)
+AC_SUBST(LT_REVISION, 0)
 AC_SUBST(LT_AGE, 0)
 
 major=`echo $PACKAGE_VERSION |cut -d. -f1 | sed -e "s/[^0-9]//g"`
@@ -45,13 +45,26 @@ AC_CANONICAL_TARGET
 AC_CONFIG_MACRO_DIR([m4])
 
 AM_INIT_AUTOMAKE([subdir-objects])
+
+m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
+
 AC_CONFIG_HEADERS([config.h])
 
 dnl Checks for command-line options
-AC_ARG_ENABLE([maintainer-mode],
-    [AS_HELP_STRING([--enable-maintainer-mode],
+AC_ARG_ENABLE([werror],
+    [AS_HELP_STRING([--enable-werror],
                     [Turn on compile time warnings])],
-    [maintainer_mode=$enableval], [maintainer_mode=no])
+    [werror=$enableval], [werror=no])
+
+AC_ARG_ENABLE([debug],
+    [AS_HELP_STRING([--enable-debug],
+                    [Turn on debug output])],
+    [debug=$enableval], [debug=no])
+
+AC_ARG_ENABLE([threads],
+    [AS_HELP_STRING([--disable-threads],
+                    [Turn off threading in apps])],
+    [threads=$enableval], [threads=yes])
 
 AC_ARG_ENABLE([app],
     [AS_HELP_STRING([--enable-app],
@@ -82,6 +95,16 @@ AC_ARG_WITH([libxml2],
     [AS_HELP_STRING([--with-libxml2],
                     [Use libxml2 [default=check]])],
     [request_libxml2=$withval], [request_libxml2=check])
+
+AC_ARG_WITH([jemalloc],
+    [AS_HELP_STRING([--with-jemalloc],
+                    [Use jemalloc [default=check]])],
+    [request_jemalloc=$withval], [request_jemalloc=check])
+
+AC_ARG_WITH([spdylay],
+    [AS_HELP_STRING([--with-spdylay],
+                    [Use spdylay [default=check]])],
+    [request_spdylay=$withval], [request_spdylay=check])
 
 AC_ARG_WITH([cython],
     [AS_HELP_STRING([--with-cython=PATH],
@@ -170,11 +193,13 @@ esac
 # zlib
 if test "x$android_build" = "xyes"; then
   # Use zlib provided by NDK
-  LIBS="-lz $LIBS"
+  SRC_LIBS="-lz $SRC_LIBS"
 else
-  PKG_CHECK_MODULES([ZLIB], [zlib >= 1.2.3])
-  LIBS="$ZLIB_LIBS $LIBS"
-  CFLAGS="$CFLAGS $ZLIB_CFLAGS"
+  PKG_CHECK_MODULES([ZLIB], [zlib >= 1.2.3], [have_zlib=yes], [have_zlib=no])
+
+  if test "x${have_zlib}" = "xno"; then
+    AC_MSG_NOTICE($ZLIB_PKG_ERRORS)
+  fi
 fi
 
 # cunit
@@ -244,21 +269,48 @@ fi
 
 AM_CONDITIONAL([HAVE_LIBXML2], [ test "x${have_libxml2}" = "xyes" ])
 
-# spdylay (for src/nghttpx)
-PKG_CHECK_MODULES([LIBSPDYLAY], [libspdylay >= 1.2.3],
-                  [have_spdylay=yes], [have_spdylay=no])
-if test "x${have_spdylay}" = "xyes"; then
-  AC_DEFINE([HAVE_SPDYLAY], [1], [Define to 1 if you have `spdylay` library.])
-else
-  AC_MSG_NOTICE($LIBSPDYLAY_PKG_ERRORS)
-  AC_MSG_NOTICE([The SPDY support in nghttpx will be disabled.])
+# jemalloc
+have_jemalloc=no
+if test "x${request_jemalloc}" != "xno"; then
+  LIBS_OLD=$LIBS
+  AC_SEARCH_LIBS([malloc_stats_print], [jemalloc], [have_jemalloc=yes])
+  LIBS=$LIBS_OLD
+  if test "x${have_jemalloc}" = "xyes"; then
+    JEMALLOC_LIBS="-ljemalloc"
+    AC_SUBST([JEMALLOC_LIBS])
+  fi
 fi
+
+if test "x${request_jemalloc}" = "xyes" &&
+   test "x${have_jemalloc}" != "xyes"; then
+  AC_MSG_ERROR([jemalloc was requested (--with-jemalloc) but not found])
+fi
+
+# spdylay (for src/nghttpx and src/h2load)
+have_spdylay=no
+if test "x${request_spdylay}" != "xno"; then
+  PKG_CHECK_MODULES([LIBSPDYLAY], [libspdylay >= 1.2.3],
+                    [have_spdylay=yes], [have_spdylay=no])
+  if test "x${have_spdylay}" = "xyes"; then
+    AC_DEFINE([HAVE_SPDYLAY], [1], [Define to 1 if you have `spdylay` library.])
+  else
+    AC_MSG_NOTICE($LIBSPDYLAY_PKG_ERRORS)
+    AC_MSG_NOTICE([The SPDY support in nghttpx and h2load will be disabled.])
+  fi
+fi
+
+if test "x${request_spdylay}" = "xyes" &&
+   test "x${have_spdylay}" != "xyes"; then
+  AC_MSG_ERROR([spdylay was requested (--with-spdylay) but not found])
+fi
+
 AM_CONDITIONAL([HAVE_SPDYLAY], [ test "x${have_spdylay}" = "xyes" ])
 
-# The nghttp, nghttpd and nghttpx under src depend on OpenSSL and
-# libevent_openssl
+# The nghttp, nghttpd and nghttpx under src depend on zlib, OpenSSL
+# and libevent_openssl
 enable_app=no
 if test "x${request_app}" != "xno" &&
+   test "x${have_zlib}" = "xyes" &&
    test "x${have_openssl}" = "xyes" &&
    test "x${have_libevent_openssl}" = "xyes"; then
   enable_app=yes
@@ -317,6 +369,10 @@ fi
 AM_CONDITIONAL([ENABLE_PYTHON_BINDINGS],
                [test "x${enable_python_bindings}" = "xyes"])
 
+# Produce cython conditional, so that we can distribute generated C
+# source
+AM_CONDITIONAL([HAVE_CYTHON], [test "x${CYTHON}" != "x"])
+
 # failmalloc tests
 AM_CONDITIONAL([ENABLE_FAILMALLOC], [ test "x${enable_failmalloc}" = "xyes" ])
 
@@ -370,16 +426,44 @@ case "${host}" in
     ;;
 esac
 
-if test "x$maintainer_mode" != "xno"; then
-    CFLAGS="$CFLAGS -Wall -Wextra -Werror"
-    CFLAGS="$CFLAGS -Wmissing-prototypes -Wstrict-prototypes"
-    CFLAGS="$CFLAGS -Wmissing-declarations -Wpointer-arith"
-    CFLAGS="$CFLAGS -Wdeclaration-after-statement"
-    CFLAGS="$CFLAGS -Wformat-security"
-    CFLAGS="$CFLAGS -Wwrite-strings -Wshadow -Winline -Wnested-externs"
-    CFLAGS="$CFLAGS -Wfloat-equal -Wundef -Wendif-labels -Wempty-body"
-    CFLAGS="$CFLAGS -Wcast-align -Wclobbered -Wvla"
-    CFLAGS="$CFLAGS -Wno-unused-parameter"
+if test "x$werror" != "xno"; then
+    AX_CHECK_COMPILE_FLAG([-Wall], [CFLAGS="$CFLAGS -Wall"])
+    AX_CHECK_COMPILE_FLAG([-Wextra], [CFLAGS="$CFLAGS -Wextra"])
+    AX_CHECK_COMPILE_FLAG([-Werror], [CFLAGS="$CFLAGS -Werror"])
+    AX_CHECK_COMPILE_FLAG([-Wmissing-prototypes], [CFLAGS="$CFLAGS -Wmissing-prototypes"])
+    AX_CHECK_COMPILE_FLAG([-Wstrict-prototypes], [CFLAGS="$CFLAGS -Wstrict-prototypes"])
+    AX_CHECK_COMPILE_FLAG([-Wmissing-declarations], [CFLAGS="$CFLAGS -Wmissing-declarations"])
+    AX_CHECK_COMPILE_FLAG([-Wpointer-arith], [CFLAGS="$CFLAGS -Wpointer-arith"])
+    AX_CHECK_COMPILE_FLAG([-Wdeclaration-after-statement], [CFLAGS="$CFLAGS -Wdeclaration-after-statement"])
+    AX_CHECK_COMPILE_FLAG([-Wformat-security], [CFLAGS="$CFLAGS -Wformat-security"])
+    AX_CHECK_COMPILE_FLAG([-Wwrite-strings], [CFLAGS="$CFLAGS -Wwrite-strings"])
+    AX_CHECK_COMPILE_FLAG([-Wshadow], [CFLAGS="$CFLAGS -Wshadow"])
+    AX_CHECK_COMPILE_FLAG([-Winline], [CFLAGS="$CFLAGS -Winline"])
+    AX_CHECK_COMPILE_FLAG([-Wnested-externs], [CFLAGS="$CFLAGS -Wnested-externs"])
+    AX_CHECK_COMPILE_FLAG([-Wfloat-equal], [CFLAGS="$CFLAGS -Wfloat-equal"])
+    AX_CHECK_COMPILE_FLAG([-Wundef], [CFLAGS="$CFLAGS -Wundef"])
+    AX_CHECK_COMPILE_FLAG([-Wendif-labels], [CFLAGS="$CFLAGS -Wendif-labels"])
+    AX_CHECK_COMPILE_FLAG([-Wempty-body], [CFLAGS="$CFLAGS -Wempty-body"])
+    AX_CHECK_COMPILE_FLAG([-Wcast-align], [CFLAGS="$CFLAGS -Wcast-align"])
+    AX_CHECK_COMPILE_FLAG([-Wclobbered], [CFLAGS="$CFLAGS -Wclobbered"])
+    AX_CHECK_COMPILE_FLAG([-Wvla], [CFLAGS="$CFLAGS -Wvla"])
+    AX_CHECK_COMPILE_FLAG([-Wno-unused-parameter], [CFLAGS="$CFLAGS -Wno-unused-parameter"])
+    AX_CHECK_COMPILE_FLAG([-Wpragmas], [CFLAGS="$CFLAGS -Wpragmas"])
+    AX_CHECK_COMPILE_FLAG([-Wunreachable-code], [CFLAGS="$CFLAGS -Wunreachable-code"])
+    AX_CHECK_COMPILE_FLAG([-Waddress], [CFLAGS="$CFLAGS -Waddress"])
+    AX_CHECK_COMPILE_FLAG([-Wattributes], [CFLAGS="$CFLAGS -Wattributes"])
+    AX_CHECK_COMPILE_FLAG([-Wdiv-by-zero], [CFLAGS="$CFLAGS -Wdiv-by-zero"])
+
+    # Only work with Clang for the moment
+    AX_CHECK_COMPILE_FLAG([-Wheader-guard], [CFLAGS="$CFLAGS -Wheader-guard"])
+fi
+
+if test "x$debug" != "xno"; then
+    AC_DEFINE([DEBUGBUILD], [1], [Define to 1 to enable debug output.])
+fi
+
+if test "x$threads" != "xyes"; then
+    AC_DEFINE([NOTHREADS], [1], [Define to 1 if you want to disable threads.])
 fi
 
 AC_SUBST([TESTS_LIBS])
@@ -397,12 +481,14 @@ AC_CONFIG_FILES([
   src/Makefile
   examples/Makefile
   python/Makefile
+  python/setup.py
   doc/Makefile
   doc/conf.py
   doc/index.rst
   doc/package_README.rst
   doc/tutorial-client.rst
   doc/tutorial-server.rst
+  doc/nghttpx-howto.rst
   doc/nghttp2.h.rst
   doc/nghttp2ver.h.rst
 ])
@@ -436,6 +522,7 @@ AC_MSG_NOTICE([summary of build options:
     Libevent(SSL):  ${have_libevent_openssl}
     Spdylay:        ${have_spdylay}
     Jansson:        ${have_jansson}
+    Jemalloc:       ${have_jemalloc}
     Applications:   ${enable_app}
     HPACK tools:    ${enable_hpack_tools}
     Examples:       ${enable_examples}

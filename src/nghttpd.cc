@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -42,6 +42,7 @@
 #include "app_helper.h"
 #include "HttpServer.h"
 #include "util.h"
+#include "ssl.h"
 
 namespace nghttp2 {
 
@@ -73,10 +74,18 @@ int parse_push_config(Config& config, const char *optarg)
 } // namespace
 
 namespace {
+void print_version(std::ostream& out)
+{
+  out << "nghttpd nghttp2/" NGHTTP2_VERSION << std::endl;
+}
+} // namespace
+
+namespace {
 void print_usage(std::ostream& out)
 {
-  out << "Usage: nghttpd [-DVfhv] [-d <PATH>] [--no-tls] <PORT> [<PRIVATE_KEY> <CERT>]"
-      << std::endl;
+  out << "Usage: nghttpd [OPTION]... <PORT> <PRIVATE_KEY> <CERT>\n"
+      << "  or:  nghttpd --no-tls [OPTION]... <PORT>\n"
+      << "HTTP/2 experimental server" << std::endl;
 }
 } // namespace
 
@@ -84,40 +93,48 @@ namespace {
 void print_help(std::ostream& out)
 {
   print_usage(out);
-  out << "\n"
-      << "OPTIONS:\n"
-      << "    -D, --daemon       Run in a background. If -D is used, the\n"
-      << "                       current working directory is changed to '/'.\n"
-      << "                       Therefore if this option is used, -d option\n"
-      << "                       must be specified.\n"
-      << "    -V, --verify-client\n"
-      << "                       The server sends a client certificate\n"
-      << "                       request. If the client did not return a\n"
-      << "                       certificate, the handshake is terminated.\n"
-      << "                       Currently, this option just requests a\n"
-      << "                       client certificate and does not verify it.\n"
-      << "    -d, --htdocs=<PATH>\n"
-      << "                       Specify document root. If this option is\n"
-      << "                       not specified, the document root is the\n"
-      << "                       current working directory.\n"
-      << "    -v, --verbose      Print debug information such as reception/\n"
-      << "                       transmission of frames and name/value pairs.\n"
-      << "    --no-tls           Disable SSL/TLS.\n"
-      << "    -f, --no-flow-control\n"
-      << "                       Disables connection and stream level flow\n"
-      << "                       controls.\n"
-      << "    -c, --header-table-size=<N>\n"
-      << "                       Specify decoder header table size.\n"
-      << "    --color            Force colored log output.\n"
-      << "    -p, --push=<PATH>=<PUSH_PATH,...>\n"
-      << "                       Push resources PUSH_PATHs when PATH is\n"
-      << "                       requested. This option can be used\n"
-      << "                       repeatedly to specify multiple push\n"
-      << "                       configurations. For example,\n"
-      << "                         -p/=/foo.png -p/doc=/bar.css\n"
-      << "                       PATH and PUSH_PATHs are relative to document\n"
-      << "                       root. See --htdocs option.\n"
-      << "    -h, --help         Print this help.\n"
+  out << R"(
+  <PORT>             Specify listening port number.
+  <PRIVATE_KEY>      Set  path  to  server's  private  key.   Required
+                     unless --no-tls is specified.
+  <CERT>             Set  path  to   server's  certificate.   Required
+                     unless --no-tls is specified.
+Options:
+  -D, --daemon       Run in a background.  If  -D is used, the current
+                     working directory  is changed to  '/'.  Therefore
+                     if  this  option  is  used,  -d  option  must  be
+                     specified.
+  -V, --verify-client
+                     The  server sends  a client  certificate request.
+                     If the  client did not return  a certificate, the
+                     handshake is terminated.   Currently, this option
+                     just requests  a client certificate and  does not
+                     verify it.
+  -d, --htdocs=<PATH>
+                     Specify  document root.   If this  option is  not
+                     specified,  the  document  root  is  the  current
+                     working directory.
+  -v, --verbose      Print  debug   information  such   as  reception/
+                     transmission of frames and name/value pairs.
+  --no-tls           Disable SSL/TLS.
+  -c, --header-table-size=<N>
+                     Specify decoder header table size.
+  --color            Force colored log output.
+  -p, --push=<PATH>=<PUSH_PATH,...>
+                     Push  resources   <PUSH_PATH>s  when   <PATH>  is
+                     requested.  This option can be used repeatedly to
+                     specify multiple push configurations.  <PATH> and
+                     <PUSH_PATH>s are relative  to document root.  See
+                     --htdocs    option.      Example:    -p/=/foo.png
+                     -p/doc=/bar.css
+  -b, --padding=<N>  Add  at most  <N>  bytes to  a  frame payload  as
+                     padding.  Specify 0 to disable padding.
+  -n, --workers=<CORE>
+                     Set the number of worker threads.
+                     Default: 1
+  -e, --error-gzip   Make error response gzipped.
+  --version          Display version information and exit.
+  -h, --help         Display this help and exit.)"
       << std::endl;
 }
 } // namespace
@@ -127,22 +144,26 @@ int main(int argc, char **argv)
   Config config;
   bool color = false;
   while(1) {
-    int flag = 0;
+    static int flag = 0;
     static option long_options[] = {
       {"daemon", no_argument, nullptr, 'D'},
       {"htdocs", required_argument, nullptr, 'd'},
       {"help", no_argument, nullptr, 'h'},
       {"verbose", no_argument, nullptr, 'v'},
       {"verify-client", no_argument, nullptr, 'V'},
-      {"no-flow-control", no_argument, nullptr, 'f'},
       {"header-table-size", required_argument, nullptr, 'c'},
       {"push", required_argument, nullptr, 'p'},
+      {"padding", required_argument, nullptr, 'b'},
+      {"workers", required_argument, nullptr, 'n'},
+      {"error-gzip", no_argument, nullptr, 'e'},
       {"no-tls", no_argument, &flag, 1},
       {"color", no_argument, &flag, 2},
+      {"version", no_argument, &flag, 3},
       {nullptr, 0, nullptr, 0}
     };
     int option_index = 0;
-    int c = getopt_long(argc, argv, "DVc:d:fhp:v", long_options, &option_index);
+    int c = getopt_long(argc, argv, "DVb:c:d:ehn:p:v", long_options,
+                        &option_index);
     char *end;
     if(c == -1) {
       break;
@@ -154,11 +175,27 @@ int main(int argc, char **argv)
     case 'V':
       config.verify_client = true;
       break;
+    case 'b':
+      config.padding = strtol(optarg, nullptr, 10);
+      break;
     case 'd':
       config.htdocs = optarg;
       break;
-    case 'f':
-      config.no_flow_control = true;
+    case 'e':
+      config.error_gzip = true;
+      break;
+    case 'n':
+#ifdef NOTHREADS
+	  std::cerr << "-n: WARNING: Threading disabled at build time, " <<
+		  "no threads created." << std::endl;
+#else
+      errno = 0;
+      config.num_worker = strtoul(optarg, &end, 10);
+      if(errno == ERANGE || *end != '\0' || config.num_worker == 0) {
+        std::cerr << "-n: Bad option value: " << optarg << std::endl;
+        exit(EXIT_FAILURE);
+      }
+#endif // NOTHREADS
       break;
     case 'h':
       print_help(std::cout);
@@ -192,6 +229,10 @@ int main(int argc, char **argv)
         // color option
         color = true;
         break;
+      case 3:
+        // version
+        print_version(std::cout);
+        exit(EXIT_SUCCESS);
       }
       break;
     default:
@@ -235,6 +276,10 @@ int main(int argc, char **argv)
   OpenSSL_add_all_algorithms();
   SSL_load_error_strings();
   SSL_library_init();
+#ifndef NOTHREADS
+  ssl::LibsslGlobalLock();
+#endif // NOTHREADS
+
   reset_timer();
 
   HttpServer server(&config);

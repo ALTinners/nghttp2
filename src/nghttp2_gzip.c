@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -31,7 +31,7 @@ int nghttp2_gzip_inflate_new(nghttp2_gzip **inflater_ptr)
   int rv;
   *inflater_ptr = malloc(sizeof(nghttp2_gzip));
   if(*inflater_ptr == NULL) {
-    return NGHTTP2_ERR_NOMEM;
+    return -1;
   }
   (*inflater_ptr)->finished = 0;
   (*inflater_ptr)->zst.next_in = Z_NULL;
@@ -42,7 +42,7 @@ int nghttp2_gzip_inflate_new(nghttp2_gzip **inflater_ptr)
   rv = inflateInit2(&(*inflater_ptr)->zst, 47);
   if(rv != Z_OK) {
     free(*inflater_ptr);
-    return NGHTTP2_ERR_GZIP;
+    return -1;
   }
   return 0;
 }
@@ -61,7 +61,7 @@ int nghttp2_gzip_inflate(nghttp2_gzip *inflater,
 {
   int rv;
   if(inflater->finished) {
-    return NGHTTP2_ERR_GZIP;
+    return -1;
   }
   inflater->zst.avail_in = *inlen_ptr;
   inflater->zst.next_in = (unsigned char*)in;
@@ -82,10 +82,15 @@ int nghttp2_gzip_inflate(nghttp2_gzip *inflater,
   case Z_STREAM_ERROR:
   case Z_NEED_DICT:
   case Z_MEM_ERROR:
-    return NGHTTP2_ERR_GZIP;
+    return -1;
   default:
     assert(0);
     /* We need this for some compilers */
     return 0;
   }
+}
+
+int nghttp2_gzip_inflate_finished(nghttp2_gzip *inflater)
+{
+  return inflater->finished;
 }

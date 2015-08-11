@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -61,6 +61,9 @@ void nghttp2_outbound_item_free(nghttp2_outbound_item *item)
       break;
     case NGHTTP2_WINDOW_UPDATE:
       nghttp2_frame_window_update_free(&frame->window_update);
+      break;
+    case NGHTTP2_ALTSVC:
+      nghttp2_frame_altsvc_free(&frame->altsvc);
       break;
     }
   } else if(item->frame_cat == NGHTTP2_CAT_DATA) {

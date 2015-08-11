@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -36,6 +36,10 @@
 #include <algorithm>
 #include <sstream>
 #include <memory>
+
+#include <event2/buffer.h>
+
+#include "http-parser/http_parser.h"
 
 namespace nghttp2 {
 
@@ -201,12 +205,18 @@ bool isHexDigit(const char c);
 
 bool inRFC3986UnreservedChars(const char c);
 
+// Returns true if |c| is in token (HTTP-p1, Section 3.2.6)
+bool in_token(char c);
+
 std::string percentEncode(const unsigned char* target, size_t len);
 
 std::string percentEncode(const std::string& target);
 
 std::string percentDecode
 (std::string::const_iterator first, std::string::const_iterator last);
+
+// Percent encode |target| if character is not in token or '%'.
+std::string percent_encode_token(const std::string& target);
 
 std::string format_hex(const unsigned char *s, size_t len);
 
@@ -389,6 +399,27 @@ std::string utos(T n)
   return res;
 }
 
+extern const char UPPER_XDIGITS[];
+
+template<typename T>
+std::string utox(T n)
+{
+  std::string res;
+  if(n == 0) {
+    res = "0";
+    return res;
+  }
+  int i = 0;
+  T t = n;
+  for(; t; t /= 16, ++i);
+  res.resize(i);
+  --i;
+  for(; n; --i, n /= 16) {
+    res[i] = UPPER_XDIGITS[(n & 0x0f)];
+  }
+  return res;
+}
+
 template<typename T, typename... U>
 typename std::enable_if<!std::is_array<T>::value, std::unique_ptr<T>>::type
 make_unique(U&&... u)
@@ -407,6 +438,45 @@ void to_token68(std::string& base64str);
 void to_base64(std::string& token68str);
 
 void show_candidates(const char *unkopt, option *options);
+
+bool has_uri_field(const http_parser_url &u, http_parser_url_fields field);
+
+bool fieldeq(const char *uri1, const http_parser_url &u1,
+             const char *uri2, const http_parser_url &u2,
+             http_parser_url_fields field);
+
+bool fieldeq(const char *uri, const http_parser_url &u,
+             http_parser_url_fields field,
+             const char *t);
+
+std::string get_uri_field(const char *uri, const http_parser_url &u,
+                          http_parser_url_fields field);
+
+uint16_t get_default_port(const char *uri, const http_parser_url &u);
+
+bool porteq(const char *uri1, const http_parser_url &u1,
+            const char *uri2, const http_parser_url &u2);
+
+void write_uri_field(std::ostream& o,
+                     const char *uri, const http_parser_url &u,
+                     http_parser_url_fields field);
+
+class EvbufferBuffer {
+public:
+  EvbufferBuffer();
+  EvbufferBuffer(evbuffer *evbuffer, uint8_t *buf, size_t bufmax);
+  void reset(evbuffer *evbuffer, uint8_t *buf, size_t bufmax);
+  int flush();
+  int add(const uint8_t *data, size_t datalen);
+  size_t get_buflen() const;
+private:
+  evbuffer *evbuffer_;
+  uint8_t *buf_;
+  size_t bufmax_;
+  size_t buflen_;
+};
+
+bool numeric_host(const char *hostname);
 
 } // namespace util
 

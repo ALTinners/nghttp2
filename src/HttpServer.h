@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2013 Tatsuhiro Tsujikawa
  *
@@ -40,9 +40,18 @@
 #include <openssl/ssl.h>
 
 #include <event2/event.h>
-#include <event2/bufferevent.h>
 
 #include <nghttp2/nghttp2.h>
+
+#ifdef  __cplusplus
+extern "C" {
+#endif
+
+#include "nghttp2_buf.h"
+
+#ifdef __cplusplus
+}
+#endif
 
 #include "http2.h"
 
@@ -54,27 +63,34 @@ struct Config {
   std::string host;
   std::string private_key_file;
   std::string cert_file;
+  timeval stream_read_timeout;
+  timeval stream_write_timeout;
   void *data_ptr;
-  size_t output_upper_thres;
+  size_t padding;
+  size_t num_worker;
   ssize_t header_table_size;
   uint16_t port;
   bool verbose;
   bool daemon;
   bool verify_client;
   bool no_tls;
-  bool no_flow_control;
+  bool error_gzip;
   Config();
 };
 
-class Sessions;
+class Http2Handler;
 
-struct Request {
+struct Stream {
   Headers headers;
   std::pair<std::string, size_t> response_body;
+  Http2Handler *handler;
+  event *rtimer;
+  event *wtimer;
   int32_t stream_id;
   int file;
-  Request(int32_t stream_id);
-  ~Request();
+  bool enable_compression;
+  Stream(Http2Handler *handler, int32_t stream_id);
+  ~Stream();
 };
 
 class Sessions;
@@ -94,7 +110,7 @@ public:
   int recvcb(uint8_t *buf, size_t len);
 
   int submit_file_response(const std::string& status,
-                           int32_t stream_id,
+                           Stream *stream,
                            time_t last_modified,
                            off_t file_length,
                            nghttp2_data_provider *data_prd);
@@ -109,11 +125,13 @@ public:
    const std::vector<std::pair<std::string, std::string>>& headers,
    nghttp2_data_provider *data_prd);
 
-  int submit_push_promise(Request *req, const std::string& push_path);
+  int submit_push_promise(Stream *stream, const std::string& push_path);
 
-  void add_stream(int32_t stream_id, std::unique_ptr<Request> req);
+  int submit_rst_stream(Stream *stream, nghttp2_error_code error_code);
+
+  void add_stream(int32_t stream_id, std::unique_ptr<Stream> stream);
   void remove_stream(int32_t stream_id);
-  Request* get_stream(int32_t stream_id);
+  Stream* get_stream(int32_t stream_id);
   int64_t session_id() const;
   Sessions* get_sessions() const;
   const Config* get_config() const;
@@ -121,16 +139,27 @@ public:
   void set_left_connhd_len(size_t left);
   void remove_settings_timer();
   void terminate_session(nghttp2_error_code error_code);
+  int tls_handshake();
+  void decide_compression(const std::string& path, Stream *stream);
 private:
-  std::map<int32_t, std::unique_ptr<Request>> id2req_;
+  int handle_ssl_temporal_error(int err);
+  int tls_write(const uint8_t *data, size_t datalen);
+  int tls_write_pending();
+  int wait_events();
+
+  std::map<int32_t, std::unique_ptr<Stream>> id2stream_;
+  nghttp2_buf sendbuf_;
   int64_t session_id_;
   nghttp2_session *session_;
   Sessions *sessions_;
-  bufferevent *bev_;
   SSL* ssl_;
+  event *rev_, *wev_;
   event *settings_timerev_;
+  const uint8_t *pending_data_;
+  size_t pending_datalen_;
   size_t left_connhd_len_;
   int fd_;
+  uint8_t sendbufarray_[65536];
 };
 
 class HttpServer {

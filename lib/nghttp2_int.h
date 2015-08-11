@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -45,9 +45,8 @@ typedef int (*nghttp2_compar)(const void *lhs, const void *rhs);
    inclusive. */
 typedef enum {
   NGHTTP2_ERR_CREDENTIAL_PENDING = -101,
-  NGHTTP2_ERR_BUFFER_ERROR = -102,
   NGHTTP2_ERR_IGN_HEADER_BLOCK = -103,
-  NGHTTP2_ERR_IGN_PAYLOAD = -104,
+  NGHTTP2_ERR_IGN_PAYLOAD = -104
 } nghttp2_internal_error;
 
 #endif /* NGHTTP2_INT_H */

@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -31,12 +31,13 @@
 int nghttp2_map_init(nghttp2_map *map)
 {
   map->tablelen = INITIAL_TABLE_LENGTH;
-  map->table = malloc(sizeof(nghttp2_map_entry*) * map->tablelen);
+  map->table = calloc(map->tablelen, sizeof(nghttp2_map_entry*));
   if(map->table == NULL) {
     return NGHTTP2_ERR_NOMEM;
   }
-  memset(map->table, 0, sizeof(nghttp2_map_entry*) * map->tablelen);
+
   map->size = 0;
+
   return 0;
 }
 
@@ -85,12 +86,13 @@ void nghttp2_map_entry_init(nghttp2_map_entry *entry, key_type key)
   entry->next = NULL;
 }
 
-/* Same hash function in openjdk HashMap source code. */
+/* Same hash function in android HashMap source code. */
 /* The |mod| must be power of 2 */
 static int32_t hash(int32_t h, int32_t mod)
 {
   h ^= (h >> 20) ^ (h >> 12);
-  return (h ^ (h >> 7) ^ (h >> 4)) & (mod - 1);
+  h ^= (h >> 7) ^ (h >> 4);
+  return h & (mod - 1);
 }
 
 static int insert(nghttp2_map_entry **table, size_t tablelen,
@@ -118,11 +120,11 @@ static int resize(nghttp2_map *map, size_t new_tablelen)
 {
   size_t i;
   nghttp2_map_entry **new_table;
-  new_table = malloc(sizeof(nghttp2_map_entry*) * new_tablelen);
+  new_table = calloc(new_tablelen, sizeof(nghttp2_map_entry*));
   if(new_table == NULL) {
     return NGHTTP2_ERR_NOMEM;
   }
-  memset(new_table, 0, sizeof(nghttp2_map_entry*) * new_tablelen);
+
   for(i = 0; i < map->tablelen; ++i) {
     nghttp2_map_entry *entry;
     for(entry = map->table[i]; entry;) {

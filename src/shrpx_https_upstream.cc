@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -75,7 +75,8 @@ int htp_msg_begin(http_parser *htp)
     ULOG(INFO, upstream) << "HTTP request started";
   }
   upstream->reset_current_header_length();
-  auto downstream = new Downstream(upstream, 0, NGHTTP2_PRI_DEFAULT);
+  // TODO specify 0 as priority for now
+  auto downstream = new Downstream(upstream, 0, 0);
   upstream->attach_downstream(downstream);
   return 0;
 }
@@ -158,8 +159,8 @@ int htp_hdrs_completecb(http_parser *htp)
        << downstream->get_request_minor() << "\n";
     const auto& headers = downstream->get_request_headers();
     for(size_t i = 0; i < headers.size(); ++i) {
-      ss << TTY_HTTP_HD << headers[i].first << TTY_RST << ": "
-         << headers[i].second << "\n";
+      ss << TTY_HTTP_HD << headers[i].name << TTY_RST << ": "
+         << headers[i].value << "\n";
     }
     ULOG(INFO, upstream) << "HTTP request headers\n" << ss.str();
   }
@@ -245,14 +246,14 @@ int htp_msg_completecb(http_parser *htp)
 
 namespace {
 http_parser_settings htp_hooks = {
-  htp_msg_begin, /*http_cb      on_message_begin;*/
-  htp_uricb, /*http_data_cb on_url;*/
-  nullptr, /*http_cb on_status_complete */
-  htp_hdr_keycb, /*http_data_cb on_header_field;*/
-  htp_hdr_valcb, /*http_data_cb on_header_value;*/
-  htp_hdrs_completecb, /*http_cb      on_headers_complete;*/
-  htp_bodycb, /*http_data_cb on_body;*/
-  htp_msg_completecb /*http_cb      on_message_complete;*/
+  htp_msg_begin, // http_cb      on_message_begin;
+  htp_uricb, // http_data_cb on_url;
+  nullptr, // http_data_cb on_status;
+  htp_hdr_keycb, // http_data_cb on_header_field;
+  htp_hdr_valcb, // http_data_cb on_header_value;
+  htp_hdrs_completecb, // http_cb      on_headers_complete;
+  htp_bodycb, // http_data_cb on_body;
+  htp_msg_completecb // http_cb      on_message_complete;
 };
 } // namespace
 
@@ -404,6 +405,8 @@ void https_downstream_readcb(bufferevent *bev, void *ptr)
   if(downstream->get_response_state() == Downstream::MSG_RESET) {
     delete upstream->get_client_handler();
   } else if(rv == 0) {
+    auto handler = upstream->get_client_handler();
+
     if(downstream->get_response_state() == Downstream::MSG_COMPLETE) {
       if(downstream->get_response_connection_close()) {
         // Connection close
@@ -414,7 +417,6 @@ void https_downstream_readcb(bufferevent *bev, void *ptr)
         // Keep-alive
         dconn->detach_downstream(downstream);
       }
-      auto handler = upstream->get_client_handler();
       if(downstream->get_request_state() == Downstream::MSG_COMPLETE) {
         if(handler->get_should_close_after_write() &&
            handler->get_outbuf_length() == 0) {
@@ -449,8 +451,7 @@ void https_downstream_readcb(bufferevent *bev, void *ptr)
         }
       }
     } else {
-      if(upstream->get_client_handler()->get_outbuf_length() >
-         OUTBUF_MAX_THRES) {
+      if(handler->get_outbuf_length() >= OUTBUF_MAX_THRES) {
         downstream->pause_read(SHRPX_NO_BUFFER);
       }
     }
@@ -649,11 +650,12 @@ int HttpsUpstream::on_downstream_header_complete(Downstream *downstream)
   if(LOG_ENABLED(INFO)) {
     DLOG(INFO, downstream) << "HTTP response header completed";
   }
-  char temp[16];
-  snprintf(temp, sizeof(temp), "HTTP/%d.%d ",
-           downstream->get_request_major(),
-           downstream->get_request_minor());
-  std::string hdrs = temp;
+
+  std::string hdrs = "HTTP/";
+  hdrs += util::utos(downstream->get_request_major());
+  hdrs += ".";
+  hdrs += util::utos(downstream->get_request_minor());
+  hdrs += " ";
   hdrs += http2::get_status_string(downstream->get_response_http_status());
   hdrs += "\r\n";
   downstream->normalize_response_headers();
@@ -674,28 +676,55 @@ int HttpsUpstream::on_downstream_header_complete(Downstream *downstream)
       // We add this header for HTTP/1.0 or HTTP/0.9 clients
       hdrs += "Connection: Keep-Alive\r\n";
     }
-  } else {
+  } else if(!downstream->get_upgraded() ||
+            downstream->get_request_method() != "CONNECT") {
     hdrs += "Connection: close\r\n";
   }
+
+  if(downstream->get_norm_response_header("alt-svc") == end_headers) {
+    // We won't change or alter alt-svc from backend at the moment.
+    if(!get_config()->altsvcs.empty()) {
+      hdrs += "Alt-Svc: ";
+
+      for(auto& altsvc : get_config()->altsvcs) {
+        hdrs += util::percent_encode_token(altsvc.protocol_id);
+        hdrs += "=";
+        hdrs += util::utos(altsvc.port);
+        hdrs += ", ";
+      }
+
+      hdrs[hdrs.size() - 2] = '\r';
+      hdrs[hdrs.size() - 1] = '\n';
+    }
+  }
+
   auto via = downstream->get_norm_response_header("via");
   if(get_config()->no_via) {
     if(via != end_headers) {
       hdrs += "Via: ";
-      hdrs += (*via).second;
-      http2::sanitize_header_value(hdrs, hdrs.size() - (*via).second.size());
+      hdrs += (*via).value;
+      http2::sanitize_header_value(hdrs, hdrs.size() - (*via).value.size());
       hdrs += "\r\n";
     }
   } else {
     hdrs += "Via: ";
     if(via != end_headers) {
-      hdrs += (*via).second;
-      http2::sanitize_header_value(hdrs, hdrs.size() - (*via).second.size());
+      hdrs += (*via).value;
+      http2::sanitize_header_value(hdrs, hdrs.size() - (*via).value.size());
       hdrs += ", ";
     }
     hdrs += http::create_via_header_value
       (downstream->get_response_major(), downstream->get_response_minor());
     hdrs += "\r\n";
   }
+
+  for(auto& p : get_config()->add_response_headers) {
+    hdrs += p.first;
+    hdrs += ": ";
+    hdrs += p.second;
+    hdrs += "\r\n";
+  }
+
   hdrs += "\r\n";
   if(LOG_ENABLED(INFO)) {
     const char *hdrp;
@@ -721,7 +750,8 @@ int HttpsUpstream::on_downstream_header_complete(Downstream *downstream)
 }
 
 int HttpsUpstream::on_downstream_body(Downstream *downstream,
-                                      const uint8_t *data, size_t len)
+                                      const uint8_t *data, size_t len,
+                                      bool flush)
 {
   int rv;
   if(len == 0) {
@@ -729,10 +759,12 @@ int HttpsUpstream::on_downstream_body(Downstream *downstream,
   }
   auto output = bufferevent_get_output(handler_->get_bev());
   if(downstream->get_chunked_response()) {
-    char chunk_size_hex[16];
-    rv = snprintf(chunk_size_hex, sizeof(chunk_size_hex), "%X\r\n",
-                  static_cast<unsigned int>(len));
-    if(evbuffer_add(output, chunk_size_hex, rv) != 0) {
+    auto chunk_size_hex = util::utox(len);
+    chunk_size_hex += "\r\n";
+
+    rv = evbuffer_add(output, chunk_size_hex.c_str(), chunk_size_hex.size());
+
+    if(rv != 0) {
       ULOG(FATAL, this) << "evbuffer_add() failed";
       return -1;
     }

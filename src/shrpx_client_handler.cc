@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -138,7 +138,7 @@ namespace {
 void upstream_http2_connhd_readcb(bufferevent *bev, void *arg)
 {
   // This callback assumes upstream is Http2Upstream.
-  uint8_t data[NGHTTP2_CLIENT_CONNECTION_HEADER_LEN];
+  uint8_t data[NGHTTP2_CLIENT_CONNECTION_PREFACE_LEN];
   auto handler = static_cast<ClientHandler*>(arg);
   auto leftlen = handler->get_left_connhd_len();
   auto input = bufferevent_get_input(bev);
@@ -147,8 +147,8 @@ void upstream_http2_connhd_readcb(bufferevent *bev, void *arg)
     delete handler;
     return;
   }
-  if(memcmp(NGHTTP2_CLIENT_CONNECTION_HEADER +
-            NGHTTP2_CLIENT_CONNECTION_HEADER_LEN - leftlen,
+  if(memcmp(NGHTTP2_CLIENT_CONNECTION_PREFACE +
+            NGHTTP2_CLIENT_CONNECTION_PREFACE_LEN - leftlen,
             data, readlen) != 0) {
     // There is no downgrade path here. Just drop the connection.
     if(LOG_ENABLED(INFO)) {
@@ -175,7 +175,7 @@ namespace {
 void upstream_http1_connhd_readcb(bufferevent *bev, void *arg)
 {
   // This callback assumes upstream is HttpsUpstream.
-  uint8_t data[NGHTTP2_CLIENT_CONNECTION_HEADER_LEN];
+  uint8_t data[NGHTTP2_CLIENT_CONNECTION_PREFACE_LEN];
   auto handler = static_cast<ClientHandler*>(arg);
   auto leftlen = handler->get_left_connhd_len();
   auto input = bufferevent_get_input(bev);
@@ -184,15 +184,15 @@ void upstream_http1_connhd_readcb(bufferevent *bev, void *arg)
     delete handler;
     return;
   }
-  if(memcmp(NGHTTP2_CLIENT_CONNECTION_HEADER +
-            NGHTTP2_CLIENT_CONNECTION_HEADER_LEN - leftlen,
+  if(memcmp(NGHTTP2_CLIENT_CONNECTION_PREFACE +
+            NGHTTP2_CLIENT_CONNECTION_PREFACE_LEN - leftlen,
             data, readlen) != 0) {
     if(LOG_ENABLED(INFO)) {
       CLOG(INFO, handler) << "This is HTTP/1.1 connection, "
-                          << "but may be upgraded to HTTP/2.0 later.";
+                          << "but may be upgraded to HTTP/2 later.";
     }
-    // Reset header length for later HTTP/2.0 upgrade
-    handler->set_left_connhd_len(NGHTTP2_CLIENT_CONNECTION_HEADER_LEN);
+    // Reset header length for later HTTP/2 upgrade
+    handler->set_left_connhd_len(NGHTTP2_CLIENT_CONNECTION_PREFACE_LEN);
     handler->set_bev_cb(upstream_readcb, upstream_writecb, upstream_eventcb);
     if(handler->on_read() != 0) {
       delete handler;
@@ -208,7 +208,7 @@ void upstream_http1_connhd_readcb(bufferevent *bev, void *arg)
   handler->set_left_connhd_len(leftlen);
   if(leftlen == 0) {
     if(LOG_ENABLED(INFO)) {
-      CLOG(INFO, handler) << "direct HTTP/2.0 connection";
+      CLOG(INFO, handler) << "direct HTTP/2 connection";
     }
     handler->direct_http2_upgrade();
     handler->set_bev_cb(upstream_readcb, upstream_writecb, upstream_eventcb);
@@ -246,23 +246,38 @@ void tls_raw_writecb(evbuffer *buffer, const evbuffer_cb_info *info, void *arg)
 }
 } // namespace
 
-ClientHandler::ClientHandler(bufferevent *bev, int fd, SSL *ssl,
+ClientHandler::ClientHandler(bufferevent *bev,
+                             bufferevent_rate_limit_group *rate_limit_group,
+                             int fd, SSL *ssl,
                              const char *ipaddr)
   : ipaddr_(ipaddr),
     bev_(bev),
     http2session_(nullptr),
     ssl_(ssl),
-    left_connhd_len_(NGHTTP2_CLIENT_CONNECTION_HEADER_LEN),
+    left_connhd_len_(NGHTTP2_CLIENT_CONNECTION_PREFACE_LEN),
     fd_(fd),
     should_close_after_write_(false),
     tls_handshake_(false),
     tls_renegotiation_(false)
 {
   int rv;
-  rv = bufferevent_set_rate_limit(bev_, get_config()->rate_limit_cfg);
+
+  auto rate_limit_bev = bufferevent_get_underlying(bev_);
+  if(!rate_limit_bev) {
+    rate_limit_bev = bev_;
+  }
+
+  rv = bufferevent_set_rate_limit(rate_limit_bev,
+                                  get_config()->rate_limit_cfg);
   if(rv == -1) {
     CLOG(FATAL, this) << "bufferevent_set_rate_limit() failed";
   }
+
+  rv = bufferevent_add_to_rate_limit_group(rate_limit_bev, rate_limit_group);
+  if(rv == -1) {
+    CLOG(FATAL, this) << "bufferevent_add_to_rate_limit_group() failed";
+  }
+
   bufferevent_enable(bev_, EV_READ | EV_WRITE);
   bufferevent_setwatermark(bev_, EV_READ, 0, SHRPX_READ_WARTER_MARK);
   set_upstream_timeouts(&get_config()->upstream_read_timeout,
@@ -276,7 +291,7 @@ ClientHandler::ClientHandler(bufferevent *bev, int fd, SSL *ssl,
     evbuffer_add_cb(output, tls_raw_writecb, this);
   } else {
     // For non-TLS version, first create HttpsUpstream. It may be
-    // upgraded to HTTP/2.0 through HTTP Upgrade or direct HTTP/2.0
+    // upgraded to HTTP/2 through HTTP Upgrade or direct HTTP/2
     // connection.
     upstream_ = util::make_unique<HttpsUpstream>(this);
     set_bev_cb(upstream_http1_connhd_readcb, nullptr, upstream_eventcb);
@@ -293,7 +308,15 @@ ClientHandler::~ClientHandler()
     SSL_set_shutdown(ssl_, SSL_RECEIVED_SHUTDOWN);
     SSL_shutdown(ssl_);
   }
+
   auto underlying = bufferevent_get_underlying(bev_);
+
+  if(underlying) {
+    bufferevent_remove_from_rate_limit_group(underlying);
+  } else {
+    bufferevent_remove_from_rate_limit_group(bev_);
+  }
+
   bufferevent_disable(bev_, EV_READ | EV_WRITE);
   bufferevent_free(bev_);
   if(ssl_) {
@@ -362,6 +385,12 @@ int ClientHandler::validate_next_proto()
       if(next_proto_len == NGHTTP2_PROTO_VERSION_ID_LEN &&
          memcmp(NGHTTP2_PROTO_VERSION_ID, next_proto,
                 NGHTTP2_PROTO_VERSION_ID_LEN) == 0) {
+
+        // For NPN, we must check security requirement here.
+        if(!ssl::check_http2_requirement(ssl_)) {
+          return -1;
+        }
+
         set_bev_cb(upstream_http2_connhd_readcb, upstream_writecb,
                    upstream_eventcb);
         upstream_ = util::make_unique<Http2Upstream>(this);
@@ -519,7 +548,7 @@ int ClientHandler::perform_http2_upgrade(HttpsUpstream *http)
   set_bev_cb(upstream_http2_connhd_readcb, upstream_writecb, upstream_eventcb);
   static char res[] = "HTTP/1.1 101 Switching Protocols\r\n"
     "Connection: Upgrade\r\n"
-    "Upgrade: " NGHTTP2_PROTO_VERSION_ID "\r\n"
+    "Upgrade: " NGHTTP2_CLEARTEXT_PROTO_VERSION_ID "\r\n"
     "\r\n";
   rv = bufferevent_write(bev_, res, sizeof(res) - 1);
   if(rv != 0) {

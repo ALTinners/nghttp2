@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -74,7 +74,13 @@ int nghttp2_reserve_buffer(uint8_t **buf_ptr, size_t *buflen_ptr,
 
 void* nghttp2_memdup(const void* src, size_t n)
 {
-  void* dest = malloc(n);
+  void* dest;
+
+  if(n == 0) {
+    return NULL;
+  }
+
+  dest = malloc(n);
   if(dest == NULL) {
     return NULL;
   }
@@ -161,6 +167,8 @@ const char* nghttp2_strerror(int error_code)
     return "Success";
   case NGHTTP2_ERR_INVALID_ARGUMENT:
     return "Invalid argument";
+  case NGHTTP2_ERR_BUFFER_ERROR:
+    return "Out of buffer space";
   case NGHTTP2_ERR_UNSUPPORTED_VERSION:
     return "Unsupported SPDY version";
   case NGHTTP2_ERR_WOULDBLOCK:
@@ -195,14 +203,24 @@ const char* nghttp2_strerror(int error_code)
     return "Invalid header block";
   case NGHTTP2_ERR_INVALID_STATE:
     return "Invalid state";
-  case NGHTTP2_ERR_GZIP:
-    return "Gzip error";
   case NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE:
     return "The user callback function failed due to the temporal error";
   case NGHTTP2_ERR_FRAME_SIZE_ERROR:
     return "The length of the frame is invalid";
   case NGHTTP2_ERR_HEADER_COMP:
     return "Header compression/decompression error";
+  case NGHTTP2_ERR_FLOW_CONTROL:
+    return "Flow control error";
+  case NGHTTP2_ERR_INSUFF_BUFSIZE:
+    return "Insufficient buffer size given to function";
+  case NGHTTP2_ERR_PAUSE:
+    return "Callback was paused by the application";
+  case NGHTTP2_ERR_TOO_MANY_INFLIGHT_SETTINGS:
+    return "Too many inflight SETTINGS";
+  case NGHTTP2_ERR_PUSH_DISABLED:
+    return "Server push is disabled by peer";
+  case NGHTTP2_ERR_DATA_EXIST:
+    return "DATA frame already exists";
   case NGHTTP2_ERR_NOMEM:
     return "Out of memory";
   case NGHTTP2_ERR_CALLBACK_FAILURE:
@@ -381,4 +399,11 @@ int nghttp2_check_header_value(const uint8_t *value, size_t len)
     }
   }
   return 1;
+}
+
+uint8_t* nghttp2_cpymem(uint8_t *dest, const void *src, size_t len)
+{
+  memcpy(dest, src, len);
+
+  return dest + len;
 }

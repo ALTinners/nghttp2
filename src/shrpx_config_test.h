@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2014 Tatsuhiro Tsujikawa
  *
@@ -28,7 +28,8 @@
 namespace shrpx {
 
 void test_shrpx_config_parse_config_str_list(void);
+void test_shrpx_config_parse_header(void);
 
 } // namespace shrpx
 
-#endif /* SHRPX_CONFIG_TEST_H */
+#endif // SHRPX_CONFIG_TEST_H

@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -104,6 +104,10 @@ const char SHRPX_OPT_READ_RATE[] = "read-rate";
 const char SHRPX_OPT_READ_BURST[] = "read-burst";
 const char SHRPX_OPT_WRITE_RATE[] = "write-rate";
 const char SHRPX_OPT_WRITE_BURST[] = "write-burst";
+const char SHRPX_OPT_WORKER_READ_RATE[] = "worker-read-rate";
+const char SHRPX_OPT_WORKER_READ_BURST[] = "worker-read-burst";
+const char SHRPX_OPT_WORKER_WRITE_RATE[] = "worker-write-rate";
+const char SHRPX_OPT_WORKER_WRITE_BURST[] = "worker-write-burst";
 const char SHRPX_OPT_NPN_LIST[] = "npn-list";
 const char SHRPX_OPT_TLS_PROTO_LIST[] = "tls-proto-list";
 const char SHRPX_OPT_VERIFY_CLIENT[] = "verify-client";
@@ -115,6 +119,10 @@ const char SHRPX_OPT_FRONTEND_HTTP2_DUMP_REQUEST_HEADER[] =
 const char SHRPX_OPT_FRONTEND_HTTP2_DUMP_RESPONSE_HEADER[] =
   "frontend-http2-dump-response-header";
 const char SHRPX_OPT_HTTP2_NO_COOKIE_CRUMBLING[] = "http2-no-cookie-crumbling";
+const char SHRPX_OPT_FRONTEND_FRAME_DEBUG[] = "frontend-frame-debug";
+const char SHRPX_OPT_PADDING[] = "padding";
+const char SHRPX_OPT_ALTSVC[] = "altsvc";
+const char SHRPX_OPT_ADD_RESPONSE_HEADER[] = "add-response-header";
 
 namespace {
 Config *config = nullptr;
@@ -222,12 +230,12 @@ void set_config_str(char **destp, const char *val)
   *destp = strdup(val);
 }
 
-char** parse_config_str_list(size_t *outlen, const char *s)
+std::unique_ptr<char*[]> parse_config_str_list(size_t *outlen, const char *s)
 {
   size_t len = 1;
   for(const char *first = s, *p = nullptr; (p = strchr(first, ','));
       ++len, first = p + 1);
-  auto list = new char*[len];
+  auto list = util::make_unique<char*[]>(len);
   auto first = strdup(s);
   len = 0;
   for(;;) {
@@ -242,6 +250,22 @@ char** parse_config_str_list(size_t *outlen, const char *s)
   list[len++] = first;
   *outlen = len;
   return list;
+}
+
+std::pair<std::string, std::string> parse_header(const char *optarg)
+{
+  // We skip possible ":" at the start of optarg.
+  const auto *colon = strchr(optarg + 1, ':');
+
+  // name = ":" is not allowed
+  if(colon == nullptr || (optarg[0] == ':' && colon == optarg + 1)) {
+    return {"", ""};
+  }
+
+  auto value = colon + 1;
+  for(; *value == '\t' || *value == ' '; ++value);
+
+  return {std::string(optarg, colon), std::string(value, strlen(value))};
 }
 
 int parse_config(const char *opt, const char *optarg)
@@ -450,14 +474,22 @@ int parse_config(const char *opt, const char *optarg)
     mod_config()->write_rate = strtoul(optarg, nullptr, 10);
   } else if(util::strieq(opt, SHRPX_OPT_WRITE_BURST)) {
     mod_config()->write_burst = strtoul(optarg, nullptr, 10);
+  } else if(util::strieq(opt, SHRPX_OPT_WORKER_READ_RATE)) {
+    mod_config()->worker_read_rate = strtoul(optarg, nullptr, 10);
+  } else if(util::strieq(opt, SHRPX_OPT_WORKER_READ_BURST)) {
+    mod_config()->worker_read_burst = strtoul(optarg, nullptr, 10);
+  } else if(util::strieq(opt, SHRPX_OPT_WORKER_WRITE_RATE)) {
+    mod_config()->worker_write_rate = strtoul(optarg, nullptr, 10);
+  } else if(util::strieq(opt, SHRPX_OPT_WORKER_WRITE_BURST)) {
+    mod_config()->worker_write_burst = strtoul(optarg, nullptr, 10);
   } else if(util::strieq(opt, SHRPX_OPT_NPN_LIST)) {
     delete [] mod_config()->npn_list;
     mod_config()->npn_list = parse_config_str_list(&mod_config()->npn_list_len,
-                                                   optarg);
+                                                   optarg).release();
   } else if(util::strieq(opt, SHRPX_OPT_TLS_PROTO_LIST)) {
     delete [] mod_config()->tls_proto_list;
     mod_config()->tls_proto_list = parse_config_str_list
-      (&mod_config()->tls_proto_list_len, optarg);
+      (&mod_config()->tls_proto_list_len, optarg).release();
   } else if(util::strieq(opt, SHRPX_OPT_VERIFY_CLIENT)) {
     mod_config()->verify_client = util::strieq(optarg, "yes");
   } else if(util::strieq(opt, SHRPX_OPT_VERIFY_CLIENT_CACERT)) {
@@ -480,6 +512,62 @@ int parse_config(const char *opt, const char *optarg)
     mod_config()->http2_upstream_dump_response_header = f;
   } else if(util::strieq(opt, SHRPX_OPT_HTTP2_NO_COOKIE_CRUMBLING)) {
     mod_config()->http2_no_cookie_crumbling = util::strieq(optarg, "yes");
+  } else if(util::strieq(opt, SHRPX_OPT_FRONTEND_FRAME_DEBUG)) {
+    mod_config()->upstream_frame_debug = util::strieq(optarg, "yes");
+  } else if(util::strieq(opt, SHRPX_OPT_PADDING)) {
+    mod_config()->padding = strtoul(optarg, nullptr, 10);
+  } else if(util::strieq(opt, SHRPX_OPT_ALTSVC)) {
+    size_t len;
+
+    auto tokens = parse_config_str_list(&len, optarg);
+
+    if(len < 2) {
+      // Requires at least protocol_id and port
+      LOG(ERROR) << "altsvc: too few parameters: " << optarg;
+      return -1;
+    }
+
+    if(len > 4) {
+      // We only need protocol_id, port, host and origin
+      LOG(ERROR) << "altsvc: too many parameters: " << optarg;
+      return -1;
+    }
+
+    errno = 0;
+    auto port = strtoul(tokens[1], nullptr, 10);
+
+    if(errno != 0 || port < 1 || port > std::numeric_limits<uint16_t>::max()) {
+      LOG(ERROR) << "altsvc: port is invalid: " << tokens[1];
+      return -1;
+    }
+
+    AltSvc altsvc;
+
+    altsvc.port = port;
+
+    altsvc.protocol_id = tokens[0];
+    altsvc.protocol_id_len = strlen(altsvc.protocol_id);
+
+    if(len > 2) {
+      altsvc.host = tokens[2];
+      altsvc.host_len = strlen(altsvc.host);
+
+      if(len > 3) {
+        altsvc.origin = tokens[3];
+        altsvc.origin_len = strlen(altsvc.origin);
+      }
+    }
+
+    mod_config()->altsvcs.push_back(std::move(altsvc));
+
+  } else if(util::strieq(opt, SHRPX_OPT_ADD_RESPONSE_HEADER)) {
+    auto p = parse_header(optarg);
+    if(p.first.empty()) {
+      LOG(ERROR) << "add-response-header: header field name is empty: "
+                 << optarg;
+      return -1;
+    }
+    mod_config()->add_response_headers.push_back(std::move(p));
   } else if(util::strieq(opt, "conf")) {
     LOG(WARNING) << "conf is ignored";
   } else {

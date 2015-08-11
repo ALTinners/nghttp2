@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -25,6 +25,9 @@
 #include "util.h"
 
 #include <time.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
 
 #include <cassert>
 #include <cstdio>
@@ -38,6 +41,8 @@ namespace nghttp2 {
 namespace util {
 
 const char DEFAULT_STRIP_CHARSET[] = "\r\n\t ";
+
+const char UPPER_XDIGITS[] = "0123456789ABCDEF";
 
 bool isAlpha(const char c)
 {
@@ -65,13 +70,14 @@ std::string percentEncode(const unsigned char* target, size_t len)
 {
   std::string dest;
   for(size_t i = 0; i < len; ++i) {
-    if(inRFC3986UnreservedChars(target[i])) {
-      dest += target[i];
+    unsigned char c = target[i];
+
+    if(inRFC3986UnreservedChars(c)) {
+      dest += c;
     } else {
-      char temp[4];
-      snprintf(temp, sizeof(temp), "%%%02X", target[i]);
-      dest.append(temp);
-      //dest.append(fmt("%%%02X", target[i]));
+      dest += "%";
+      dest += UPPER_XDIGITS[c >> 4];
+      dest += UPPER_XDIGITS[(c & 0x0f)];
     }
   }
   return dest;
@@ -81,6 +87,35 @@ std::string percentEncode(const std::string& target)
 {
   return percentEncode(reinterpret_cast<const unsigned char*>(target.c_str()),
                        target.size());
+}
+
+bool in_token(char c)
+{
+  static const char extra[] = {
+    '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~'
+  };
+
+  return isAlpha(c) || isDigit(c) ||
+    std::find(&extra[0], &extra[sizeof(extra)], c) != &extra[sizeof(extra)];
+}
+
+std::string percent_encode_token(const std::string& target)
+{
+  auto len = target.size();
+  std::string dest;
+
+  for(size_t i = 0; i < len; ++i) {
+    unsigned char c = target[i];
+
+    if(c != '%' && in_token(c)) {
+      dest += c;
+    } else {
+      dest += "%";
+      dest += UPPER_XDIGITS[c >> 4];
+      dest += UPPER_XDIGITS[(c & 0x0f)];
+    }
+  }
+  return dest;
 }
 
 std::string percentDecode
@@ -107,9 +142,14 @@ std::string percentDecode
 std::string http_date(time_t t)
 {
   char buf[32];
-  tm* tms = gmtime(&t); // returned struct is statically allocated.
-  size_t r = strftime(buf, sizeof(buf), "%a, %d %b %Y %H:%M:%S GMT", tms);
-  return std::string(&buf[0], &buf[r]);
+  tm tms;
+
+  if(gmtime_r(&t, &tms) == nullptr) {
+    return "";
+  }
+
+  auto rv = strftime(buf, sizeof(buf), "%a, %d %b %Y %H:%M:%S GMT", &tms);
+  return std::string(&buf[0], &buf[rv]);
 }
 
 time_t parse_http_date(const std::string& s)
@@ -230,22 +270,20 @@ char upcase(char c)
   }
 }
 
+namespace {
+const char LOWER_XDIGITS[] = "0123456789abcdef";
+} // namespace
+
 std::string format_hex(const unsigned char *s, size_t len)
 {
   std::string res;
+  res.resize(len * 2);
+
   for(size_t i = 0; i < len; ++i) {
-    unsigned char c = s[i] >> 4;
-    if(c > 9) {
-      res += c - 10 + 'a';
-    } else {
-      res += c + '0';
-    }
-    c = s[i] & 0xf;
-    if(c > 9) {
-      res += c - 10 + 'a';
-    } else {
-      res += c + '0';
-    }
+    unsigned char c = s[i];
+
+    res[i * 2] = LOWER_XDIGITS[c >> 4];
+    res[i * 2 + 1] = LOWER_XDIGITS[c & 0x0f];
   }
   return res;
 }
@@ -380,6 +418,171 @@ void show_candidates(const char *unkopt, option *options)
     }
     std::cerr << "\t--" << item.second << "\n";
   }
+}
+
+bool has_uri_field(const http_parser_url &u, http_parser_url_fields field)
+{
+  return u.field_set & (1 << field);
+}
+
+bool fieldeq(const char *uri1, const http_parser_url &u1,
+             const char *uri2, const http_parser_url &u2,
+             http_parser_url_fields field)
+{
+  if(!has_uri_field(u1, field)) {
+    if(!has_uri_field(u2, field)) {
+      return true;
+    } else {
+      return false;
+    }
+  } else if(!has_uri_field(u2, field)) {
+    return false;
+  }
+  if(u1.field_data[field].len != u2.field_data[field].len) {
+    return false;
+  }
+  return memcmp(uri1+u1.field_data[field].off,
+                uri2+u2.field_data[field].off,
+                u1.field_data[field].len) == 0;
+}
+
+bool fieldeq(const char *uri, const http_parser_url &u,
+             http_parser_url_fields field,
+             const char *t)
+{
+  if(!has_uri_field(u, field)) {
+    if(!t[0]) {
+      return true;
+    } else {
+      return false;
+    }
+  } else if(!t[0]) {
+    return false;
+  }
+  int i, len = u.field_data[field].len;
+  const char *p = uri+u.field_data[field].off;
+  for(i = 0; i < len && t[i] && p[i] == t[i]; ++i);
+  return i == len && !t[i];
+}
+
+std::string get_uri_field(const char *uri, const http_parser_url &u,
+                          http_parser_url_fields field)
+{
+  if(util::has_uri_field(u, field)) {
+    return std::string(uri+u.field_data[field].off,
+                       u.field_data[field].len);
+  } else {
+    return "";
+  }
+}
+
+uint16_t get_default_port(const char *uri, const http_parser_url &u)
+{
+  if(util::fieldeq(uri, u, UF_SCHEMA, "https")) {
+    return 443;
+  } else if(util::fieldeq(uri, u, UF_SCHEMA, "http")) {
+    return 80;
+  } else {
+    return 443;
+  }
+}
+
+bool porteq(const char *uri1, const http_parser_url &u1,
+            const char *uri2, const http_parser_url &u2)
+{
+  uint16_t port1, port2;
+  port1 = util::has_uri_field(u1, UF_PORT) ?
+    u1.port : get_default_port(uri1, u1);
+  port2 = util::has_uri_field(u2, UF_PORT) ?
+    u2.port : get_default_port(uri2, u2);
+  return port1 == port2;
+}
+
+void write_uri_field(std::ostream& o,
+                     const char *uri, const http_parser_url &u,
+                     http_parser_url_fields field)
+{
+  if(util::has_uri_field(u, field)) {
+    o.write(uri+u.field_data[field].off, u.field_data[field].len);
+  }
+}
+
+EvbufferBuffer::EvbufferBuffer()
+  : evbuffer_(nullptr),
+    buf_(nullptr),
+    bufmax_(0),
+    buflen_(0)
+{}
+
+EvbufferBuffer::EvbufferBuffer(evbuffer *evbuffer, uint8_t *buf, size_t bufmax)
+  : evbuffer_(evbuffer),
+    buf_(buf),
+    bufmax_(bufmax),
+    buflen_(0)
+{}
+
+void EvbufferBuffer::reset(evbuffer *evbuffer, uint8_t *buf, size_t bufmax)
+{
+  evbuffer_ = evbuffer;
+  buf_ = buf;
+  bufmax_ = bufmax;
+  buflen_ = 0;
+}
+
+int EvbufferBuffer::flush()
+{
+  int rv;
+  if(buflen_ > 0) {
+    rv = evbuffer_add(evbuffer_, buf_, buflen_);
+    if(rv == -1) {
+      return -1;
+    }
+    buflen_ = 0;
+  }
+  return 0;
+}
+
+int EvbufferBuffer::add(const uint8_t *data, size_t datalen)
+{
+  int rv;
+  if(buflen_ + datalen > bufmax_) {
+    if(buflen_ > 0) {
+      rv = evbuffer_add(evbuffer_, buf_, buflen_);
+      if(rv == -1) {
+        return -1;
+      }
+      buflen_ = 0;
+    }
+    if(datalen > bufmax_) {
+      rv = evbuffer_add(evbuffer_, data, datalen);
+      if(rv == -1) {
+        return -1;
+      }
+      return 0;
+    }
+  }
+  memcpy(buf_ + buflen_, data, datalen);
+  buflen_ += datalen;
+  return 0;
+}
+
+size_t EvbufferBuffer::get_buflen() const
+{
+  return buflen_;
+}
+
+bool numeric_host(const char *hostname)
+{
+  struct addrinfo hints;
+  struct addrinfo* res;
+  memset(&hints, 0, sizeof(hints));
+  hints.ai_family = AF_UNSPEC;
+  hints.ai_flags = AI_NUMERICHOST;
+  if(getaddrinfo(hostname, nullptr, &hints, &res)) {
+    return false;
+  }
+  freeaddrinfo(res);
+  return true;
 }
 
 } // namespace util

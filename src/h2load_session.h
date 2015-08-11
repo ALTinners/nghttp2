@@ -1,7 +1,7 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
- * Copyright (c) 2012 Tatsuhiro Tsujikawa
+ * Copyright (c) 2014 Tatsuhiro Tsujikawa
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -22,35 +22,32 @@
  * OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-#include "nghttp2_buffer_test.h"
+#ifndef H2LOAD_SESSION_H
+#define H2LOAD_SESSION_H
 
-#include <stdio.h>
+#include "nghttp2_config.h"
 
-#include <CUnit/CUnit.h>
+#include <sys/types.h>
 
-#include "nghttp2_buffer.h"
+namespace h2load {
 
-void test_nghttp2_buffer(void)
-{
-  nghttp2_buffer buffer;
+class Session {
+public:
+  virtual ~Session() {}
+  // Called when the connection was made.
+  virtual void on_connect() = 0;
+  // Called when one request must be issued.
+  virtual void submit_request() = 0;
+  // Called when incoming bytes are available. The subclass has to
+  // return the number of bytes read.
+  virtual ssize_t on_read() = 0;
+  // Called when write is available. Returns 0 on success, otherwise
+  // return -1.
+  virtual int on_write() = 0;
+  // Called when the underlying session must be terminated.
+  virtual void terminate() = 0;
+};
 
-  nghttp2_buffer_init(&buffer, 16);
+} // namespace h2load
 
-  CU_ASSERT(0 == buffer.len);
-
-  CU_ASSERT(0 == nghttp2_buffer_add(&buffer, (const uint8_t*)"foo", 3));
-  CU_ASSERT(3 == buffer.len);
-
-  CU_ASSERT(0 == nghttp2_buffer_add_byte(&buffer, '.'));
-  CU_ASSERT(4 == buffer.len);
-
-  CU_ASSERT(0 == nghttp2_buffer_add(&buffer,
-                                    (const uint8_t*)"012345678901", 12));
-  CU_ASSERT(16 == buffer.len);
-
-  CU_ASSERT(NGHTTP2_ERR_BUFFER_ERROR == nghttp2_buffer_add_byte(&buffer, '.'));
-  CU_ASSERT(NGHTTP2_ERR_BUFFER_ERROR ==
-            nghttp2_buffer_add(&buffer, (const uint8_t*)".", 1));
-
-  nghttp2_buffer_free(&buffer);
-}
+#endif // H2LOAD_SESSION_H

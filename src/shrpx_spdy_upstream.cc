@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -46,6 +46,7 @@ namespace shrpx {
 
 namespace {
 const size_t OUTBUF_MAX_THRES = 64*1024;
+const size_t INBUF_MAX_THRES = 64*1024;
 } // namespace
 
 namespace {
@@ -56,20 +57,19 @@ ssize_t send_callback(spdylay_session *session,
   int rv;
   auto upstream = static_cast<SpdyUpstream*>(user_data);
   auto handler = upstream->get_client_handler();
-  auto bev = handler->get_bev();
-  auto output = bufferevent_get_output(bev);
+
   // Check buffer length and return WOULDBLOCK if it is large enough.
-  if(handler->get_outbuf_length() > OUTBUF_MAX_THRES) {
+  if(handler->get_outbuf_length() + upstream->sendbuf.get_buflen() >=
+     OUTBUF_MAX_THRES) {
     return SPDYLAY_ERR_WOULDBLOCK;
   }
 
-  rv = evbuffer_add(output, data, len);
-  if(rv == -1) {
+  rv = upstream->sendbuf.add(data, len);
+  if(rv != 0) {
     ULOG(FATAL, upstream) << "evbuffer_add() failed";
     return SPDYLAY_ERR_CALLBACK_FAILURE;
-  } else {
-    return len;
   }
+  return len;
 }
 } // namespace
 
@@ -352,7 +352,7 @@ void on_unknown_ctrl_recv_callback(spdylay_session *session,
 } // namespace
 
 namespace {
-// Infer upstream RST_STREAM status code from downstream HTTP/2.0
+// Infer upstream RST_STREAM status code from downstream HTTP/2
 // error code.
 uint32_t infer_upstream_rst_stream_status_code
 (nghttp2_error_code downstream_error_code)
@@ -439,26 +439,16 @@ SpdyUpstream::~SpdyUpstream()
 int SpdyUpstream::on_read()
 {
   int rv = 0;
-  if((rv = spdylay_session_recv(session_)) < 0) {
+
+  rv = spdylay_session_recv(session_);
+  if(rv < 0) {
     if(rv != SPDYLAY_ERR_EOF) {
       ULOG(ERROR, this) << "spdylay_session_recv() returned error: "
                         << spdylay_strerror(rv);
     }
-  } else if((rv = spdylay_session_send(session_)) < 0) {
-    ULOG(ERROR, this) << "spdylay_session_send() returned error: "
-                      << spdylay_strerror(rv);
+    return rv;
   }
-  if(rv == 0) {
-    if(spdylay_session_want_read(session_) == 0 &&
-       spdylay_session_want_write(session_) == 0 &&
-       handler_->get_outbuf_length() == 0) {
-      if(LOG_ENABLED(INFO)) {
-        ULOG(INFO, this) << "No more read/write for this SPDY session";
-      }
-      rv = -1;
-    }
-  }
-  return rv;
+  return send();
 }
 
 int SpdyUpstream::on_write()
@@ -470,21 +460,32 @@ int SpdyUpstream::on_write()
 int SpdyUpstream::send()
 {
   int rv = 0;
-  if((rv = spdylay_session_send(session_)) < 0) {
+  uint8_t buf[16384];
+
+  sendbuf.reset(bufferevent_get_output(handler_->get_bev()), buf, sizeof(buf));
+
+  rv = spdylay_session_send(session_);
+  if(rv != 0) {
     ULOG(ERROR, this) << "spdylay_session_send() returned error: "
                       << spdylay_strerror(rv);
+    return rv;
   }
-  if(rv == 0) {
-    if(spdylay_session_want_read(session_) == 0 &&
-       spdylay_session_want_write(session_) == 0 &&
-       handler_->get_outbuf_length() == 0) {
-      if(LOG_ENABLED(INFO)) {
-        ULOG(INFO, this) << "No more read/write for this SPDY session";
-      }
-      rv = -1;
+
+  rv = sendbuf.flush();
+  if(rv != 0) {
+    ULOG(FATAL, this) << "evbuffer_add() failed";
+    return -1;
+  }
+
+  if(spdylay_session_want_read(session_) == 0 &&
+     spdylay_session_want_write(session_) == 0 &&
+     handler_->get_outbuf_length() == 0) {
+    if(LOG_ENABLED(INFO)) {
+      ULOG(INFO, this) << "No more read/write for this SPDY session";
     }
+    return -1;
   }
-  return rv;
+  return 0;
 }
 
 int SpdyUpstream::on_event()
@@ -725,7 +726,6 @@ ssize_t spdy_data_read_callback(spdylay_session *session,
 {
   auto downstream = static_cast<Downstream*>(source->ptr);
   auto upstream = static_cast<SpdyUpstream*>(downstream->get_upstream());
-  auto handler = upstream->get_client_handler();
   auto body = downstream->get_response_body_buf();
   assert(body);
   int nread = evbuffer_remove(body, buf, length);
@@ -747,18 +747,15 @@ ssize_t spdy_data_read_callback(spdylay_session *session,
                            (downstream->get_response_rst_stream_error_code()));
     }
   }
-  // Send WINDOW_UPDATE before buffer is empty to avoid delay because
-  // of RTT.
-  if(*eof != 1 &&
-     handler->get_outbuf_length() + evbuffer_get_length(body) <
-     OUTBUF_MAX_THRES) {
+
+  if(nread == 0 && *eof != 1) {
     if(downstream->resume_read(SHRPX_NO_BUFFER) != 0) {
       return SPDYLAY_ERR_CALLBACK_FAILURE;
     }
-  }
-  if(nread == 0 && *eof != 1) {
+
     return SPDYLAY_ERR_DEFERRED;
   }
+
   return nread;
 }
 } // namespace
@@ -854,7 +851,9 @@ int SpdyUpstream::on_downstream_header_complete(Downstream *downstream)
   }
   size_t nheader = downstream->get_response_headers().size();
   // 6 means :status, :version and possible via header field.
-  auto nv = util::make_unique<const char*[]>(nheader * 2 + 6 + 1);
+  auto nv = util::make_unique<const char*[]>
+    (nheader * 2 + 6 + get_config()->add_response_headers.size() * 2 + 1);
+
   size_t hdidx = 0;
   std::string via_value;
   std::string status_string = http2::get_status_string
@@ -864,18 +863,18 @@ int SpdyUpstream::on_downstream_header_complete(Downstream *downstream)
   nv[hdidx++] = ":version";
   nv[hdidx++] = "HTTP/1.1";
   for(auto& hd : downstream->get_response_headers()) {
-    if(hd.first.empty() || hd.first.c_str()[0] == ':' ||
-       util::strieq(hd.first.c_str(), "transfer-encoding") ||
-       util::strieq(hd.first.c_str(), "keep-alive") || // HTTP/1.0?
-       util::strieq(hd.first.c_str(), "connection") ||
-       util::strieq(hd.first.c_str(), "proxy-connection")) {
+    if(hd.name.empty() || hd.name.c_str()[0] == ':' ||
+       util::strieq(hd.name.c_str(), "transfer-encoding") ||
+       util::strieq(hd.name.c_str(), "keep-alive") || // HTTP/1.0?
+       util::strieq(hd.name.c_str(), "connection") ||
+       util::strieq(hd.name.c_str(), "proxy-connection")) {
       // These are ignored
     } else if(!get_config()->no_via &&
-              util::strieq(hd.first.c_str(), "via")) {
-      via_value = hd.second;
+              util::strieq(hd.name.c_str(), "via")) {
+      via_value = hd.value;
     } else {
-      nv[hdidx++] = hd.first.c_str();
-      nv[hdidx++] = hd.second.c_str();
+      nv[hdidx++] = hd.name.c_str();
+      nv[hdidx++] = hd.value.c_str();
     }
   }
   if(!get_config()->no_via) {
@@ -887,6 +886,12 @@ int SpdyUpstream::on_downstream_header_complete(Downstream *downstream)
     nv[hdidx++] = "via";
     nv[hdidx++] = via_value.c_str();
   }
+
+  for(auto& p : get_config()->add_response_headers) {
+    nv[hdidx++] = p.first.c_str();
+    nv[hdidx++] = p.second.c_str();
+  }
+
   nv[hdidx++] = 0;
   if(LOG_ENABLED(INFO)) {
     std::stringstream ss;
@@ -919,20 +924,25 @@ int SpdyUpstream::on_downstream_header_complete(Downstream *downstream)
 // WARNING: Never call directly or indirectly spdylay_session_send or
 // spdylay_session_recv. These calls may delete downstream.
 int SpdyUpstream::on_downstream_body(Downstream *downstream,
-                                     const uint8_t *data, size_t len)
+                                     const uint8_t *data, size_t len,
+                                     bool flush)
 {
-  auto upstream = downstream->get_upstream();
   auto body = downstream->get_response_body_buf();
   int rv = evbuffer_add(body, data, len);
   if(rv != 0) {
     ULOG(FATAL, this) << "evbuffer_add() failed";
     return -1;
   }
-  spdylay_session_resume_data(session_, downstream->get_stream_id());
 
-  auto outbuflen = upstream->get_client_handler()->get_outbuf_length() +
-    evbuffer_get_length(body);
-  if(outbuflen > OUTBUF_MAX_THRES) {
+  if(flush) {
+    spdylay_session_resume_data(session_, downstream->get_stream_id());
+  }
+
+  if(evbuffer_get_length(body) >= INBUF_MAX_THRES) {
+    if(!flush) {
+      spdylay_session_resume_data(session_, downstream->get_stream_id());
+    }
+
     downstream->pause_read(SHRPX_NO_BUFFER);
   }
 

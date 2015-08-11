@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -65,7 +65,7 @@ public:
   void remove_stream_data(StreamData *sd);
 
   int submit_request(Http2DownstreamConnection *dconn,
-                     uint8_t pri, const nghttp2_nv *nva, size_t nvlen,
+                     int32_t pri, const nghttp2_nv *nva, size_t nvlen,
                      const nghttp2_data_provider *data_prd);
 
   int submit_rst_stream(int32_t stream_id, nghttp2_error_code error_code);
@@ -105,6 +105,8 @@ public:
   void stop_settings_timer();
 
   size_t get_outbuf_length() const;
+
+  SSL* get_ssl() const;
 
   enum {
     // Disconnected

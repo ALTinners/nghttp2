@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -56,7 +56,7 @@ public:
   void set_stream_id(int32_t stream_id);
   int32_t get_stream_id() const;
   void set_priority(int32_t pri);
-  int32_t get_priorty() const;
+  int32_t get_priority() const;
   void pause_read(IOCtrlReason reason);
   int resume_read(IOCtrlReason reason);
   void force_resume_read();
@@ -79,7 +79,7 @@ public:
   // Returns true if the upgrade is succeded as a result of the call
   // check_upgrade_fulfilled().
   bool get_upgraded() const;
-  // Returns true if the request is HTTP Upgrade for HTTP/2.0
+  // Returns true if the request is HTTP Upgrade for HTTP/2
   bool http2_upgrade_request() const;
   // downstream request API
   const Headers& get_request_headers() const;
@@ -103,7 +103,8 @@ public:
   void set_last_request_header_value(std::string value);
 
   void split_add_request_header(const uint8_t *name, size_t namelen,
-                                const uint8_t *value, size_t valuelen);
+                                const uint8_t *value, size_t valuelen,
+                                bool no_index);
 
   bool get_request_header_key_prev() const;
   void append_last_request_header_key(const char *data, size_t len);
@@ -171,7 +172,8 @@ public:
   void set_last_response_header_value(std::string value);
 
   void split_add_response_header(const uint8_t *name, size_t namelen,
-                                 const uint8_t *value, size_t valuelen);
+                                 const uint8_t *value, size_t valuelen,
+                                 bool no_index);
 
   bool get_response_header_key_prev() const;
   void append_last_response_header_key(const char *data, size_t len);

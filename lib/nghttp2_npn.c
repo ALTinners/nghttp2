@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -33,16 +33,18 @@ int nghttp2_select_next_protocol(unsigned char **out, unsigned char *outlen,
   unsigned int i = 0;
   for(; i < inlen; i += in[i]+1) {
     if(in[i] == NGHTTP2_PROTO_VERSION_ID_LEN &&
+       i + 1 + in[i] <= inlen &&
        memcmp(&in[i+1], NGHTTP2_PROTO_VERSION_ID, in[i]) == 0) {
       *out = (unsigned char*)&in[i+1];
       *outlen = in[i];
       return 1;
     }
-    if(in[i] == 8 && memcmp(&in[i+1], "http/1.1", in[i]) == 0) {
+    if(in[i] == 8 && i + 1 + in[i] <= inlen &&
+       memcmp(&in[i+1], "http/1.1", in[i]) == 0) {
       http_selected = 1;
       *out = (unsigned char*)&in[i+1];
       *outlen = in[i];
-      /* Go through to the next iteration, because "HTTP/2.0" may be
+      /* Go through to the next iteration, because "HTTP/2" may be
          there */
     }
   }

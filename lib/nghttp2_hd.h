@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2013 Tatsuhiro Tsujikawa
  *
@@ -22,8 +22,8 @@
  * OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-#ifndef NGHTTP2_HD_COMP_H
-#define NGHTTP2_HD_COMP_H
+#ifndef NGHTTP2_HD_H
+#define NGHTTP2_HD_H
 
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
@@ -32,26 +32,20 @@
 #include <nghttp2/nghttp2.h>
 
 #include "nghttp2_hd_huffman.h"
-#include "nghttp2_buffer.h"
+#include "nghttp2_buf.h"
 
-#define NGHTTP2_HD_DEFAULT_MAX_BUFFER_SIZE (1 << 12)
+#define NGHTTP2_HD_DEFAULT_MAX_BUFFER_SIZE NGHTTP2_DEFAULT_HEADER_TABLE_SIZE
 #define NGHTTP2_HD_ENTRY_OVERHEAD 32
 
 /* The maximum value length of name/value pair. This is not specified
    by the spec. We just chose the arbitrary size */
 #define NGHTTP2_HD_MAX_NAME 256
-#define NGHTTP2_HD_MAX_VALUE 4096
-#define NGHTTP2_HD_MAX_BUFFER_LENGTH (1 << 15)
+#define NGHTTP2_HD_MAX_VALUE 8192
 
 /* Default size of maximum table buffer size for encoder. Even if
    remote decoder notifies larger buffer size for its decoding,
    encoder only uses the memory up to this value. */
 #define NGHTTP2_HD_DEFAULT_MAX_DEFLATE_BUFFER_SIZE (1 << 12)
-
-typedef enum {
-  NGHTTP2_HD_SIDE_REQUEST = 0,
-  NGHTTP2_HD_SIDE_RESPONSE = 1
-} nghttp2_hd_side;
 
 typedef enum {
   NGHTTP2_HD_ROLE_DEFLATE,
@@ -108,6 +102,8 @@ typedef enum {
 
 typedef enum {
   NGHTTP2_HD_STATE_OPCODE,
+  NGHTTP2_HD_STATE_CLEAR_REFSET,
+  NGHTTP2_HD_STATE_READ_TABLE_SIZE,
   NGHTTP2_HD_STATE_READ_INDEX,
   NGHTTP2_HD_STATE_NEWNAME_CHECK_NAMELEN,
   NGHTTP2_HD_STATE_NEWNAME_READ_NAMELEN,
@@ -116,7 +112,7 @@ typedef enum {
   NGHTTP2_HD_STATE_CHECK_VALUELEN,
   NGHTTP2_HD_STATE_READ_VALUELEN,
   NGHTTP2_HD_STATE_READ_VALUEHUFF,
-  NGHTTP2_HD_STATE_READ_VALUE,
+  NGHTTP2_HD_STATE_READ_VALUE
 } nghttp2_hd_inflate_state;
 
 typedef struct {
@@ -126,49 +122,34 @@ typedef struct {
      is the sum of length of name/value in hd_table +
      NGHTTP2_HD_ENTRY_OVERHEAD bytes overhead per each entry. */
   size_t hd_table_bufsize;
-  /* The header table size for decoding. If the context is initialized
-     as encoder, this value is advertised by remote endpoint
-     decoder. */
+  /* The effective header table size. */
   size_t hd_table_bufsize_max;
-  /* The current effective header table size for encoding. This value
-     is always equal to |hd_table_bufsize| on decoder
-     context. |deflate_hd_table_bufsize| <= |hd_table_bufsize| must be
-     hold. */
-  size_t deflate_hd_table_bufsize;
-  /* The maximum effective header table for encoding. Although header
-     table size is bounded by |hd_table_bufsize_max|, the encoder can
-     use smaller buffer by not retaining the header name/values beyond
-     the |deflate_hd_table_bufsize_max| and not referencing those
-     entries. This value is always equal to |hd_table_bufsize_max| on
-     decoder context. */
-  size_t deflate_hd_table_bufsize_max;
-  /* The number of effective entry in |hd_table|. This value is always
-     equal to hd_table.len on decoder side. */
-  size_t deflate_hd_tablelen;
   /* Role of this context; deflate or infalte */
   nghttp2_hd_role role;
-  /* NGHTTP2_HD_SIDE_REQUEST for processing request, otherwise
-     response. */
-  nghttp2_hd_side side;
   /* If inflate/deflate error occurred, this value is set to 1 and
      further invocation of inflate/deflate will fail with
      NGHTTP2_ERR_HEADER_COMP. */
   uint8_t bad;
 } nghttp2_hd_context;
 
-typedef struct {
+struct nghttp2_hd_deflater {
   nghttp2_hd_context ctx;
+  /* The upper limit of the header table size the deflater accepts. */
+  size_t deflate_hd_table_bufsize_max;
   /* Set to this nonzero to clear reference set on each deflation each
      time. */
   uint8_t no_refset;
-} nghttp2_hd_deflater;
+  /* If nonzero, send header table size using encoding context update
+     in the next deflate process */
+  uint8_t notify_table_size_change;
+};
 
-typedef struct {
+struct nghttp2_hd_inflater {
   nghttp2_hd_context ctx;
   /* header name buffer */
-  nghttp2_buffer namebuf;
+  nghttp2_bufs namebufs;
   /* header value buffer */
-  nghttp2_buffer valuebuf;
+  nghttp2_bufs valuebufs;
   /* Stores current state of huffman decoding */
   nghttp2_hd_huff_decode_context huff_decode_ctx;
   /* Pointer to the nghttp2_hd_entry which is used current header
@@ -189,13 +170,19 @@ typedef struct {
   /* The index of header table to toggle off the entry from reference
      set at the end of decompression. */
   size_t end_headers_index;
+  /* The maximum header table size the inflater supports. This is the
+     same value transmitted in SETTINGS_HEADER_TABLE_SIZE */
+  size_t settings_hd_table_bufsize_max;
   nghttp2_hd_opcode opcode;
   nghttp2_hd_inflate_state state;
   /* nonzero if string is huffman encoded */
   uint8_t huffman_encoded;
   /* nonzero if deflater requires that current entry is indexed */
   uint8_t index_required;
-} nghttp2_hd_inflater;
+  /* nonzero if deflater requires that current entry must not be
+     indexed */
+  uint8_t no_index;
+};
 
 /*
  * Initializes the |ent| members. If NGHTTP2_HD_FLAG_NAME_ALLOC bit
@@ -211,8 +198,8 @@ typedef struct {
  *     Out of memory.
  */
 int nghttp2_hd_entry_init(nghttp2_hd_entry *ent, uint8_t flags,
-                          uint8_t *name, uint16_t namelen,
-                          uint8_t *value, uint16_t valuelen);
+                          uint8_t *name, size_t namelen,
+                          uint8_t *value, size_t valuelen);
 
 void nghttp2_hd_entry_free(nghttp2_hd_entry *ent);
 
@@ -230,8 +217,7 @@ void nghttp2_hd_entry_free(nghttp2_hd_entry *ent);
  * NGHTTP2_ERR_NOMEM
  *     Out of memory.
  */
-int nghttp2_hd_deflate_init(nghttp2_hd_deflater *deflater,
-                            nghttp2_hd_side side);
+int nghttp2_hd_deflate_init(nghttp2_hd_deflater *deflater);
 
 /*
  * Initializes |deflater| for deflating name/values pairs.
@@ -247,20 +233,7 @@ int nghttp2_hd_deflate_init(nghttp2_hd_deflater *deflater,
  *     Out of memory.
  */
 int nghttp2_hd_deflate_init2(nghttp2_hd_deflater *deflater,
-                             nghttp2_hd_side side,
                              size_t deflate_hd_table_bufsize_max);
-
-/*
- * Initializes |inflater| for inflating name/values pairs.
- *
- * This function returns 0 if it succeeds, or one of the following
- * negative error codes:
- *
- * NGHTTP2_ERR_NOMEM
- *     Out of memory.
- */
-int nghttp2_hd_inflate_init(nghttp2_hd_inflater *inflater,
-                            nghttp2_hd_side side);
 
 /*
  * Deallocates any resources allocated for |deflater|.
@@ -268,125 +241,55 @@ int nghttp2_hd_inflate_init(nghttp2_hd_inflater *inflater,
 void nghttp2_hd_deflate_free(nghttp2_hd_deflater *deflater);
 
 /*
- * Deallocates any resources allocated for |inflater|.
- */
-void nghttp2_hd_inflate_free(nghttp2_hd_inflater *inflater);
-
-/*
- * Sets the availability of reference set in the |deflater|. If
- * |no_refset| is nonzero, the deflater will first emit index=0 in the
- * each invocation of nghttp2_hd_deflate_hd() to clear up reference
- * set. By default, the deflater uses reference set.
- */
-void nghttp2_hd_deflate_set_no_refset(nghttp2_hd_deflater *deflater,
-                                      uint8_t no_refset);
-
-/*
- * Changes header table size in |context|. This may trigger eviction
- * in the dynamic table.
+ * Deflates the |nva|, which has the |nvlen| name/value pairs, into
+ * the |bufs|.
  *
- * This function can be used for deflater and inflater.
+ * This function expands |bufs| as necessary to store the result. If
+ * buffers is full and the process still requires more space, this
+ * funtion fails and returns NGHTTP2_ERR_HEADER_COMP.
+ *
+ * After this function returns, it is safe to delete the |nva|.
  *
  * This function returns 0 if it succeeds, or one of the following
  * negative error codes:
  *
  * NGHTTP2_ERR_NOMEM
  *     Out of memory.
- */
-int nghttp2_hd_change_table_size(nghttp2_hd_context *context,
-                                 size_t hd_table_bufsize_max);
-
-/*
- * Deflates the |nva|, which has the |nvlen| name/value pairs, into
- * the buffer pointed by the |*buf_ptr| with the length |*buflen_ptr|.
- * The output starts after |nv_offset| bytes from |*buf_ptr|.
- *
- * This function expands |*buf_ptr| as necessary to store the
- * result. When expansion occurred, memory previously pointed by
- * |*buf_ptr| may change.  |*buf_ptr| and |*buflen_ptr| are updated
- * accordingly.
- *
- * This function copies necessary data into |*buf_ptr|. After this
- * function returns, it is safe to delete the |nva|.
- *
- * TODO: The rest of the code call nghttp2_hd_end_headers() after this
- * call, but it is just a regacy of the first implementation. Now it
- * is not required to be called as of now.
- *
- * This function returns the number of bytes outputted if it succeeds,
- * or one of the following negative error codes:
- *
- * NGHTTP2_ERR_NOMEM
- *     Out of memory.
  * NGHTTP2_ERR_HEADER_COMP
  *     Deflation process has failed.
+ * NGHTTP2_ERR_BUFFER_ERROR
+ *     Out of buffer space.
  */
-ssize_t nghttp2_hd_deflate_hd(nghttp2_hd_deflater *deflater,
-                              uint8_t **buf_ptr, size_t *buflen_ptr,
-                              size_t nv_offset,
-                              nghttp2_nv *nva, size_t nvlen);
-
-typedef enum {
-  NGHTTP2_HD_INFLATE_NONE = 0,
-  NGHTTP2_HD_INFLATE_FINAL = 1,
-  NGHTTP2_HD_INFLATE_EMIT = (1 << 1)
-} nghttp2_hd_inflate_flag;
+int nghttp2_hd_deflate_hd_bufs(nghttp2_hd_deflater *deflater,
+                               nghttp2_bufs *bufs,
+                               nghttp2_nv *nva, size_t nvlen);
 
 /*
- * Inflates name/value block stored in |in| with length |inlen|. This
- * function performs decompression. For each successful emission of
- * header name/value pair, NGHTTP2_HD_INFLATE_EMIT is set in
- * |*inflate_flags| and name/value pair is assigned to the |nv_out|
- * and the function returns. The caller must not free the members of
- * |nv_out|.
+ * Initializes |inflater| for inflating name/values pairs.
  *
- * The |nv_out| may include pointers to the memory region in the
- * |in|. The caller must retain the |in| while the |nv_out| is used.
+ * This function returns 0 if it succeeds, or one of the following
+ * negative error codes:
  *
- * The application should call this function repeatedly until the
- * |(*inflate_flags) & NGHTTP2_HD_INFLATE_FINAL| is nonzero and return
- * value is non-negative. This means the all input values are
- * processed successfully. Then the application must call
- * `nghttp2_hd_inflate_end_headers()` to prepare for the next header
- * block input.
- *
- * The caller can feed complete compressed header block. It also can
- * feed it in several chunks. The caller must set |in_final| to
- * nonzero if the given input is the last block of the compressed
- * header.
- *
- * This function returns the number of bytes processed if it succeeds,
- * or one of the following negative error codes:
- *
- * NGHTTP2_ERR_NOMEM
+ * :enum:`NGHTTP2_ERR_NOMEM`
  *     Out of memory.
- * NGHTTP2_ERR_HEADER_COMP
- *     Inflation process has failed.
  */
-ssize_t nghttp2_hd_inflate_hd(nghttp2_hd_inflater *inflater,
-                              nghttp2_nv *nv_out, int *inflate_flags,
-                              uint8_t *in, size_t inlen, int in_final);
+int nghttp2_hd_inflate_init(nghttp2_hd_inflater *inflater);
 
 /*
- * Signals the end of decompression for one header block.
- *
- * This function returns 0 if it succeeds. Currently this function
- * always succeeds.
+ * Deallocates any resources allocated for |inflater|.
  */
-int nghttp2_hd_inflate_end_headers(nghttp2_hd_inflater *inflater);
+void nghttp2_hd_inflate_free(nghttp2_hd_inflater *inflater);
 
 /* For unittesting purpose */
-int nghttp2_hd_emit_indname_block(uint8_t **buf_ptr, size_t *buflen_ptr,
-                                  size_t *offset_ptr, size_t index,
-                                  const uint8_t *value, size_t valuelen,
-                                  int inc_indexing,
-                                  nghttp2_hd_side side);
+int nghttp2_hd_emit_indname_block(nghttp2_bufs *bufs, size_t index,
+                                  nghttp2_nv *nv, int inc_indexing);
 
 /* For unittesting purpose */
-int nghttp2_hd_emit_newname_block(uint8_t **buf_ptr, size_t *buflen_ptr,
-                                  size_t *offset_ptr, nghttp2_nv *nv,
-                                  int inc_indexing,
-                                  nghttp2_hd_side side);
+int nghttp2_hd_emit_newname_block(nghttp2_bufs *bufs, nghttp2_nv *nv,
+                                  int inc_indexing);
+
+/* For unittesting purpose */
+int nghttp2_hd_emit_table_size(nghttp2_bufs *bufs, size_t table_size);
 
 /* For unittesting purpose */
 nghttp2_hd_entry* nghttp2_hd_table_get(nghttp2_hd_context *context,
@@ -395,44 +298,38 @@ nghttp2_hd_entry* nghttp2_hd_table_get(nghttp2_hd_context *context,
 /* Huffman encoding/decoding functions */
 
 /*
- * Counts the required bytes to encode |src| with length |len|. If
- * |side| is NGHTTP2_HD_SIDE_REQUEST, the request huffman code table
- * is used. Otherwise, the response code table is used.
+ * Counts the required bytes to encode |src| with length |len|.
  *
  * This function returns the number of required bytes to encode given
  * data, including padding of prefix of terminal symbol code. This
  * function always succeeds.
  */
-size_t nghttp2_hd_huff_encode_count(const uint8_t *src, size_t len,
-                                    nghttp2_hd_side side);
+size_t nghttp2_hd_huff_encode_count(const uint8_t *src, size_t len);
 
 /*
- * Encodes the given data |src| with length |srclen| to the given
- * memory location pointed by |dest|, allocated at lest |destlen|
- * bytes. The caller is responsible to specify |destlen| at least the
- * length that nghttp2_hd_huff_encode_count() returns.  If |side| is
- * NGHTTP2_HD_SIDE_REQUEST, the request huffman code table is
- * used. Otherwise, the response code table is used.
+ * Encodes the given data |src| with length |srclen| to the |bufs|.
+ * This function expands extra buffers in |bufs| if necessary.
  *
- * This function returns the number of written bytes, including
- * padding of prefix of terminal symbol code. This return value is
- * exactly the same with the return value of
- * nghttp2_hd_huff_encode_count() if it is given with the same |src|,
- * |srclen|, and |side|. This function always succeeds.
+ * This function returns 0 if it succeeds, or one of the following
+ * negative error codes:
+ *
+ * NGHTTP2_ERR_NOMEM
+ *     Out of memory.
+ * NGHTTP2_ERR_BUFFER_ERROR
+ *     Out of buffer space.
  */
-ssize_t nghttp2_hd_huff_encode(uint8_t *dest, size_t destlen,
-                               const uint8_t *src, size_t srclen,
-                               nghttp2_hd_side side);
+int nghttp2_hd_huff_encode(nghttp2_bufs *bufs,
+                           const uint8_t *src, size_t srclen);
 
-void nghttp2_hd_huff_decode_context_init(nghttp2_hd_huff_decode_context *ctx,
-                                         nghttp2_hd_side side);
+void nghttp2_hd_huff_decode_context_init(nghttp2_hd_huff_decode_context *ctx);
 
 /*
  * Decodes the given data |src| with length |srclen|. The |ctx| must
  * be initialized by nghttp2_hd_huff_decode_context_init(). The result
  * will be added to |dest|. This function may expand |dest| as
  * needed. The caller is responsible to release the memory of |dest|
- * by calling nghttp2_buffer_free().
+ * by calling nghttp2_bufs_free() or export its content using
+ * nghttp2_bufs_remove().
  *
  * The caller must set the |final| to nonzero if the given input is
  * the final block.
@@ -450,7 +347,7 @@ void nghttp2_hd_huff_decode_context_init(nghttp2_hd_huff_decode_context *ctx,
  *     Decoding process has failed.
  */
 ssize_t nghttp2_hd_huff_decode(nghttp2_hd_huff_decode_context *ctx,
-                               nghttp2_buffer *dest,
+                               nghttp2_bufs *bufs,
                                const uint8_t *src, size_t srclen, int final);
 
-#endif /* NGHTTP2_HD_COMP_H */
+#endif /* NGHTTP2_HD_H */

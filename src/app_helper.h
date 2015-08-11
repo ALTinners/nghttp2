@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -43,6 +43,7 @@ int verbose_on_header_callback(nghttp2_session *session,
                                const nghttp2_frame *frame,
                                const uint8_t *name, size_t namelen,
                                const uint8_t *value, size_t valuelen,
+                               uint8_t flags,
                                void *user_data);
 
 int verbose_on_frame_recv_callback
@@ -85,6 +86,13 @@ void print_timer();
 // when printing HTTP2 frames. This function changes a static
 // variable.
 void set_color_output(bool f);
+
+// Set output file when printing HTTP2 frames. By default, stdout is
+// used.
+void set_output(FILE *file);
+
+ssize_t deflate_data(uint8_t *out, size_t outlen,
+                     const uint8_t *in, size_t inlen);
 
 } // namespace nghttp2
 

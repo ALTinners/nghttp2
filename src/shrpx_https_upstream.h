@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2012 Tatsuhiro Tsujikawa
  *
@@ -60,7 +60,7 @@ public:
 
   virtual int on_downstream_header_complete(Downstream *downstream);
   virtual int on_downstream_body(Downstream *downstream,
-                                 const uint8_t *data, size_t len);
+                                 const uint8_t *data, size_t len, bool flush);
   virtual int on_downstream_body_complete(Downstream *downstream);
 
   void reset_current_header_length();

@@ -1,4 +1,4 @@
-# nghttp2 - HTTP/2.0 C Library
+# nghttp2 - HTTP/2 C Library
 
 # Copyright (c) 2013 Tatsuhiro Tsujikawa
 
@@ -20,18 +20,29 @@
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+import sys
 from distutils.core import setup
 from distutils.extension import Extension
 
+if sys.platform == "win32":
+  LIBS = ['nghttp2_imp', 'ws2_32']
+else:
+  LIBS = ['nghttp2']
+
 setup(
     name = 'python-nghttp2',
-    description = 'Python HTTP/2.0 library on top of nghttp2',
+    description = 'Python HTTP/2 library on top of nghttp2',
     author = 'Tatsuhiro Tsujikawa',
     author_email = 'tatsuhiro.t@gmail.com',
     url = 'http://tatsuhiro-t.github.io/nghttp2/',
     keywords = [],
     ext_modules = [Extension("nghttp2",
                              ["nghttp2.c"],
-                             libraries=['nghttp2'])],
+                             include_dirs=['@top_srcdir@/lib',
+                                           '@top_srcdir@/lib/includes',
+                                           '@top_builddir@/lib/includes'],
+                             library_dirs=['@top_builddir@/lib/.libs'],
+                             libraries=LIBS)],
     long_description='TBD'
     )

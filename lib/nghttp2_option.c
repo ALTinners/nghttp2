@@ -1,7 +1,7 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
- * Copyright (c) 2012 Tatsuhiro Tsujikawa
+ * Copyright (c) 2014 Tatsuhiro Tsujikawa
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -22,10 +22,41 @@
  * OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-#ifndef NGHTTP2_BUFFER_TEST_H
-#define NGHTTP2_BUFFER_TEST_H
+#include "nghttp2_option.h"
 
-void test_nghttp2_buffer(void);
-void test_nghttp2_buffer_reader(void);
+int nghttp2_option_new(nghttp2_option **option_ptr)
+{
+  *option_ptr = calloc(1, sizeof(nghttp2_option));
 
-#endif /* NGHTTP2_BUFFER_TEST_H */
+  if(*option_ptr == NULL) {
+    return NGHTTP2_ERR_NOMEM;
+  }
+
+  return 0;
+}
+
+void nghttp2_option_del(nghttp2_option *option)
+{
+  free(option);
+}
+
+void nghttp2_option_set_no_auto_stream_window_update(nghttp2_option *option,
+                                                     int val)
+{
+  option->opt_set_mask |= NGHTTP2_OPT_NO_AUTO_STREAM_WINDOW_UPDATE;
+  option->no_auto_stream_window_update = val;
+}
+
+void nghttp2_option_set_no_auto_connection_window_update
+(nghttp2_option *option, int val)
+{
+  option->opt_set_mask |= NGHTTP2_OPT_NO_AUTO_CONNECTION_WINDOW_UPDATE;
+  option->no_auto_connection_window_update = val;
+}
+
+void nghttp2_option_set_peer_max_concurrent_streams(nghttp2_option *option,
+                                                    uint32_t val)
+{
+  option->opt_set_mask |= NGHTTP2_OPT_PEER_MAX_CONCURRENT_STREAMS;
+  option->peer_max_concurrent_streams = val;
+}

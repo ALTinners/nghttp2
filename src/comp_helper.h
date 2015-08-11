@@ -1,5 +1,5 @@
 /*
- * nghttp2 - HTTP/2.0 C Library
+ * nghttp2 - HTTP/2 C Library
  *
  * Copyright (c) 2013 Tatsuhiro Tsujikawa
  *
@@ -27,7 +27,7 @@
 
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
-#endif /* HAVE_CONFIG_H */
+#endif // HAVE_CONFIG_H
 
 #include <jansson.h>
 
@@ -40,8 +40,8 @@ json_t* dump_header(const uint8_t *name, size_t namelen,
 
 json_t* dump_headers(const nghttp2_nv *nva, size_t nvlen);
 
-void output_json_header(int side);
+void output_json_header(void);
 
 void output_json_footer(void);
 
-#endif /* NGHTTP2_COMP_HELPER_H */
+#endif // NGHTTP2_COMP_HELPER_H
