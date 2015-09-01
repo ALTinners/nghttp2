@@ -1,7 +1,8 @@
-nghttp2 (1.3.0-1.0) UNRELEASED; urgency=medium
+nghttp2 (1.3.0-0.1) experimental; urgency=medium
 
   * Non-maintainer upload
   * Imported Upstream version 1.3.0
+  * Switch to dh
 
  -- Tomasz Buchert <tomasz@debian.org>  Tue, 01 Sep 2015 09:58:41 +0200
 
