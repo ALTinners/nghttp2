@@ -446,3 +446,31 @@ Enums
         (``0x02``) 
         Indicates a header was emitted.
 
+.. type:: nghttp2_stream_proto_state
+
+    
+    State of stream as described in RFC 7540.
+
+    .. macro:: NGHTTP2_STREAM_STATE_IDLE
+
+        (``1``) 
+        idle state.
+    .. macro:: NGHTTP2_STREAM_STATE_OPEN,
+
+        open state.
+    .. macro:: NGHTTP2_STREAM_STATE_RESERVED_LOCAL,
+
+        reserved (local) state.
+    .. macro:: NGHTTP2_STREAM_STATE_RESERVED_REMOTE,
+
+        reserved (remote) state.
+    .. macro:: NGHTTP2_STREAM_STATE_HALF_CLOSED_LOCAL,
+
+        half closed (local) state.
+    .. macro:: NGHTTP2_STREAM_STATE_HALF_CLOSED_REMOTE,
+
+        half closed (remote) state.
+    .. macro:: NGHTTP2_STREAM_STATE_CLOSED
+
+        closed state.
+

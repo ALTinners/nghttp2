@@ -45,6 +45,7 @@
 #endif // HAVE_SPDYLAY
 #include "util.h"
 #include "template.h"
+#include "ssl.h"
 
 using namespace nghttp2;
 
@@ -358,7 +359,8 @@ int ClientHandler::upstream_http1_connhd_read() {
 
 ClientHandler::ClientHandler(Worker *worker, int fd, SSL *ssl,
                              const char *ipaddr, const char *port)
-    : conn_(worker->get_loop(), fd, ssl, get_config()->upstream_write_timeout,
+    : conn_(worker->get_loop(), fd, ssl, worker->get_mcpool(),
+            get_config()->upstream_write_timeout,
             get_config()->upstream_read_timeout, get_config()->write_rate,
             get_config()->write_burst, get_config()->read_rate,
             get_config()->read_burst, writecb, readcb, timeoutcb, this),
@@ -472,7 +474,12 @@ int ClientHandler::validate_next_proto() {
 
         auto http2_upstream = make_unique<Http2Upstream>(this);
 
-        if (!ssl::check_http2_requirement(conn_.tls.ssl)) {
+        if (!nghttp2::ssl::check_http2_requirement(conn_.tls.ssl)) {
+          if (LOG_ENABLED(INFO)) {
+            LOG(INFO) << "TLSv1.2 was not negotiated. "
+                      << "HTTP/2 must not be negotiated.";
+          }
+
           rv = http2_upstream->terminate_session(NGHTTP2_INADEQUATE_SECURITY);
 
           if (rv != 0) {
@@ -848,7 +855,5 @@ RateLimit *ClientHandler::get_wlimit() { return &conn_.wlimit; }
 ev_io *ClientHandler::get_wev() { return &conn_.wev; }
 
 Worker *ClientHandler::get_worker() const { return worker_; }
-
-Connection *ClientHandler::get_connection() { return &conn_; }
 
 } // namespace shrpx

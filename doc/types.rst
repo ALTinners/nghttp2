@@ -921,3 +921,10 @@ Types (structs, unions and typedefs)
     HPACK inflater object.
 
 
+.. type:: nghttp2_stream
+
+    
+    The structure to represent HTTP/2 stream.  The details of this
+    structure are intentionally hidden from the public API.
+
+
