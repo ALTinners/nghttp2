@@ -67,6 +67,7 @@ int main(int argc _U_, char *argv[] _U_) {
   /* add the tests to the suite */
   if (!CU_add_test(pSuite, "pq", test_nghttp2_pq) ||
       !CU_add_test(pSuite, "pq_update", test_nghttp2_pq_update) ||
+      !CU_add_test(pSuite, "pq_remove", test_nghttp2_pq_remove) ||
       !CU_add_test(pSuite, "map", test_nghttp2_map) ||
       !CU_add_test(pSuite, "map_functional", test_nghttp2_map_functional) ||
       !CU_add_test(pSuite, "map_each_free", test_nghttp2_map_each_free) ||
@@ -242,9 +243,13 @@ int main(int argc _U_, char *argv[] _U_) {
                    test_nghttp2_session_stream_attach_item) ||
       !CU_add_test(pSuite, "session_stream_attach_item_subtree",
                    test_nghttp2_session_stream_attach_item_subtree) ||
-      !CU_add_test(pSuite, "session_stream_keep_closed_stream",
+      !CU_add_test(pSuite, "session_stream_get_state",
+                   test_nghttp2_session_stream_get_state) ||
+      !CU_add_test(pSuite, "session_stream_get_something",
+                   test_nghttp2_session_stream_get_something) ||
+      !CU_add_test(pSuite, "session_keep_closed_stream",
                    test_nghttp2_session_keep_closed_stream) ||
-      !CU_add_test(pSuite, "session_stream_keep_idle_stream",
+      !CU_add_test(pSuite, "session_keep_idle_stream",
                    test_nghttp2_session_keep_idle_stream) ||
       !CU_add_test(pSuite, "session_detach_idle_stream",
                    test_nghttp2_session_detach_idle_stream) ||

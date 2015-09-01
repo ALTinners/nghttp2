@@ -46,6 +46,7 @@
 #include "http2.h"
 #include "util.h"
 #include "base64.h"
+#include "ssl.h"
 
 using namespace nghttp2;
 
@@ -144,7 +145,8 @@ void writecb(struct ev_loop *loop, ev_io *w, int revents) {
 Http2Session::Http2Session(struct ev_loop *loop, SSL_CTX *ssl_ctx,
                            ConnectBlocker *connect_blocker, Worker *worker,
                            size_t group, size_t idx)
-    : conn_(loop, -1, nullptr, get_config()->downstream_write_timeout,
+    : conn_(loop, -1, nullptr, worker->get_mcpool(),
+            get_config()->downstream_write_timeout,
             get_config()->downstream_read_timeout, 0, 0, 0, 0, writecb, readcb,
             timeoutcb, this),
       worker_(worker), connect_blocker_(connect_blocker), ssl_ctx_(ssl_ctx),
@@ -323,7 +325,7 @@ int Http2Session::initiate_connection() {
       // We are establishing TLS connection.  If conn_.tls.ssl, we may
       // reuse the previous session.
       if (!conn_.tls.ssl) {
-        auto ssl = ssl::create_client_ssl(ssl_ctx_);
+        auto ssl = ssl::create_ssl(ssl_ctx_);
         if (!ssl) {
           return -1;
         }
@@ -1295,9 +1297,13 @@ int Http2Session::connection_made() {
   }
 
   auto must_terminate = !get_config()->downstream_no_tls &&
-                        !ssl::check_http2_requirement(conn_.tls.ssl);
+                        !nghttp2::ssl::check_http2_requirement(conn_.tls.ssl);
 
   if (must_terminate) {
+    if (LOG_ENABLED(INFO)) {
+      LOG(INFO) << "TLSv1.2 was not negotiated. HTTP/2 must not be negotiated.";
+    }
+
     rv = terminate_session(NGHTTP2_INADEQUATE_SECURITY);
 
     if (rv != 0) {

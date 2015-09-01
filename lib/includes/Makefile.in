@@ -174,6 +174,7 @@ am__uninstall_files_from_dir = { \
   }
 am__installdirs = "$(DESTDIR)$(includedir)"
 HEADERS = $(nobase_include_HEADERS)
+am__extra_recursive_targets = it-recursive itprep-recursive
 am__tagged_files = $(HEADERS) $(SOURCES) $(TAGS_FILES) $(LISP)
 # Read a list of newline-separated strings from the standard input,
 # and print each of them once, without duplicates.  Input order is
@@ -355,6 +356,7 @@ program_transform_name = @program_transform_name@
 psdir = @psdir@
 pyexecdir = @pyexecdir@
 pythondir = @pythondir@
+runstatedir = @runstatedir@
 sbindir = @sbindir@
 sharedstatedir = @sharedstatedir@
 srcdir = @srcdir@
@@ -438,6 +440,8 @@ uninstall-nobase_includeHEADERS:
 	@list='$(nobase_include_HEADERS)'; test -n "$(includedir)" || list=; \
 	$(am__nobase_strip_setup); files=`$(am__nobase_strip)`; \
 	dir='$(DESTDIR)$(includedir)'; $(am__uninstall_files_from_dir)
+it-local: 
+itprep-local: 
 
 ID: $(am__tagged_files)
 	$(am__define_uniq_tagged_files); mkid -fID $$unique
@@ -606,6 +610,14 @@ install-ps-am:
 
 installcheck-am:
 
+it: it-am
+
+it-am: it-local
+
+itprep: itprep-am
+
+itprep-am: itprep-local
+
 maintainer-clean: maintainer-clean-am
 	-rm -f Makefile
 maintainer-clean-am: distclean-am maintainer-clean-generic
@@ -635,10 +647,11 @@ uninstall-am: uninstall-nobase_includeHEADERS
 	install-info install-info-am install-man \
 	install-nobase_includeHEADERS install-pdf install-pdf-am \
 	install-ps install-ps-am install-strip installcheck \
-	installcheck-am installdirs maintainer-clean \
-	maintainer-clean-generic mostlyclean mostlyclean-generic \
-	mostlyclean-libtool pdf pdf-am ps ps-am tags tags-am uninstall \
-	uninstall-am uninstall-nobase_includeHEADERS
+	installcheck-am installdirs it-am it-local itprep-am \
+	itprep-local maintainer-clean maintainer-clean-generic \
+	mostlyclean mostlyclean-generic mostlyclean-libtool pdf pdf-am \
+	ps ps-am tags tags-am uninstall uninstall-am \
+	uninstall-nobase_includeHEADERS
 
 .PRECIOUS: Makefile
 
