@@ -14,11 +14,6 @@ override_dh_auto_build:
 	dh_auto_build
 	$(MAKE) html
 
-# TODO: this may become obsolete soon with ddebs
-override_dh_strip:
-	dh_strip -plibnghttp2-14 --dbg-package=libnghttp2-14-dbg
-	dh_strip
-
 override_dh_auto_clean:
 	dh_auto_clean
 	rm -rf doc/manual/html doc/manual/doctrees doc/apiref.rst
