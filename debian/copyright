@@ -19,6 +19,11 @@ Comment: Based on src/http/ngx_http_parse.c from NGINX copyright Igor Sysoev.
  Additional changes are licensed under the same terms as NGINX and
  copyright Joyent, Inc. and other Node contributors. All rights reserved.
 
+Files: third-party/mruby/*
+Copyright: 2015 mruby developers
+License: MIT
+Comment: This code is not used by the Debian package, but is kept nevertheless.
+
 Files: tests/nghttp2_npn_test.*
 Copyright: 2012, Twist Inc.
 License: Expat
