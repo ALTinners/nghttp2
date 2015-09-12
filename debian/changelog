@@ -1,6 +1,9 @@
-nghttp2 (1.3.1-1) UNRELEASED; urgency=medium
+nghttp2 (1.3.1-0.3) unstable; urgency=medium
 
+  * Non-maintainer upload.
   * Imported Upstream version 1.3.1 (Closes: #798598)
+  * d/copyright: add license for mruby
+  * d/conf: send errorlog to syslog
 
  -- Tomasz Buchert <tomasz@debian.org>  Sat, 12 Sep 2015 22:34:22 +0200
 
