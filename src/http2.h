@@ -38,6 +38,7 @@
 #include "http-parser/http_parser.h"
 
 #include "util.h"
+#include "memchunk.h"
 
 namespace nghttp2 {
 
@@ -69,7 +70,7 @@ namespace http2 {
 
 std::string get_status_string(unsigned int status_code);
 
-void capitalize(std::string &s, size_t offset);
+void capitalize(DefaultMemchunks *buf, const std::string &s);
 
 // Returns true if |value| is LWS
 bool lws(const char *value);
@@ -137,11 +138,11 @@ nghttp2_nv make_nv_ls(const char (&name)[N], const std::string &value) {
 // which require special handling (i.e. via), are not copied.
 void copy_headers_to_nva(std::vector<nghttp2_nv> &nva, const Headers &headers);
 
-// Appends HTTP/1.1 style header lines to |hdrs| from headers in
+// Appends HTTP/1.1 style header lines to |buf| from headers in
 // |headers|.  |headers| must be indexed before this call (its
 // element's token field is assigned).  Certain headers, which
 // requires special handling (i.e. via and cookie), are not appended.
-void build_http1_headers_from_headers(std::string &hdrs,
+void build_http1_headers_from_headers(DefaultMemchunks *buf,
                                       const Headers &headers);
 
 // Return positive window_size_increment if WINDOW_UPDATE should be
@@ -207,6 +208,7 @@ enum {
   HD_CONNECTION,
   HD_CONTENT_LENGTH,
   HD_COOKIE,
+  HD_DATE,
   HD_EXPECT,
   HD_HOST,
   HD_HTTP2_SETTINGS,
@@ -261,6 +263,9 @@ bool http2_mandatory_request_headers_presence(const HeaderIndex &hdidx);
 // Returns header denoted by |token| using index |hdidx|.
 const Headers::value_type *get_header(const HeaderIndex &hdidx, int16_t token,
                                       const Headers &nva);
+
+Headers::value_type *get_header(const HeaderIndex &hdidx, int16_t token,
+                                Headers &nva);
 
 struct LinkHeader {
   // The region of URI is [uri.first, uri.second).
@@ -348,6 +353,21 @@ std::string rewrite_clean_path(InputIt first, InputIt last) {
   }
   return path;
 }
+
+// Stores path component of |uri| in *base.  Its extracted length is
+// stored in *baselen.  The extracted path does not include query
+// component.  This function returns 0 if it succeeds, or -1.
+int get_pure_path_component(const char **base, size_t *baselen,
+                            const std::string &uri);
+
+// Deduces scheme, authority and path from given |uri| of length
+// |len|, and stores them in |scheme|, |authority|, and |path|
+// respectively.  If |uri| is relative path, path resolution is taken
+// palce using path given in |base| of length |baselen|.  This
+// function returns 0 if it succeeds, or -1.
+int construct_push_component(std::string &scheme, std::string &authority,
+                             std::string &path, const char *base,
+                             size_t baselen, const char *uri, size_t len);
 
 } // namespace http2
 

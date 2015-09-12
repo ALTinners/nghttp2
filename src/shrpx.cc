@@ -926,9 +926,13 @@ int event_loop() {
 #endif // !NOTHREADS
 
   if (get_config()->num_worker == 1) {
-    conn_handler->create_single_worker();
+    rv = conn_handler->create_single_worker();
   } else {
-    conn_handler->create_worker_thread(get_config()->num_worker);
+    rv = conn_handler->create_worker_thread(get_config()->num_worker);
+  }
+
+  if (rv != 0) {
+    return -1;
   }
 
 #ifndef NOTHREADS
@@ -1264,6 +1268,8 @@ Connections:
               timeouts when connecting and  making CONNECT request can
               be     specified    by     --backend-read-timeout    and
               --backend-write-timeout options.
+  --accept-proxy-protocol
+              Accept PROXY protocol version 1 on frontend connection.
 
 Performance:
   -n, --workers=<N>
@@ -1726,6 +1732,16 @@ Process:
               Run this program as <USER>.   This option is intended to
               be used to drop root privileges.
 
+Scripting:
+  --request-phase-file=<PATH>
+              Set  mruby  script  file  which will  be  executed  when
+              request  header  fields  are  completely  received  from
+              frontend.  This hook is called request phase hook.
+  --response-phase-file=<PATH>
+              Set  mruby  script  file  which will  be  executed  when
+              response  header  fields  are completely  received  from
+              backend.  This hook is called response phase hook.
+
 Misc:
   --conf=<PATH>
               Load configuration from <PATH>.
@@ -1899,6 +1915,9 @@ int main(int argc, char **argv) {
          89},
         {SHRPX_OPT_TLS_TICKET_KEY_MEMCACHED_MAX_FAIL, required_argument, &flag,
          90},
+        {SHRPX_OPT_REQUEST_PHASE_FILE, required_argument, &flag, 91},
+        {SHRPX_OPT_RESPONSE_PHASE_FILE, required_argument, &flag, 92},
+        {SHRPX_OPT_ACCEPT_PROXY_PROTOCOL, no_argument, &flag, 93},
         {nullptr, 0, nullptr, 0}};
 
     int option_index = 0;
@@ -1930,11 +1949,7 @@ int main(int argc, char **argv) {
       cmdcfgs.emplace_back(SHRPX_OPT_INSECURE, "yes");
       break;
     case 'n':
-#ifdef NOTHREADS
-      LOG(WARN) << "Threading disabled at build time, no threads created.";
-#else
       cmdcfgs.emplace_back(SHRPX_OPT_WORKERS, optarg);
-#endif // NOTHREADS
       break;
     case 'o':
       cmdcfgs.emplace_back(SHRPX_OPT_FRONTEND_FRAME_DEBUG, "yes");
@@ -2296,6 +2311,18 @@ int main(int argc, char **argv) {
         cmdcfgs.emplace_back(SHRPX_OPT_TLS_TICKET_KEY_MEMCACHED_MAX_FAIL,
                              optarg);
         break;
+      case 91:
+        // --request-phase-file
+        cmdcfgs.emplace_back(SHRPX_OPT_REQUEST_PHASE_FILE, optarg);
+        break;
+      case 92:
+        // --response-phase-file
+        cmdcfgs.emplace_back(SHRPX_OPT_RESPONSE_PHASE_FILE, optarg);
+        break;
+      case 93:
+        // --accept-proxy-protocol
+        cmdcfgs.emplace_back(SHRPX_OPT_ACCEPT_PROXY_PROTOCOL, "yes");
+        break;
       default:
         break;
       }
@@ -2613,9 +2640,13 @@ int main(int argc, char **argv) {
   act.sa_handler = SIG_IGN;
   sigaction(SIGPIPE, &act, nullptr);
 
-  event_loop();
+  if (event_loop() != 0) {
+    return -1;
+  }
 
   LOG(NOTICE) << "Shutdown momentarily";
+
+  delete log_config();
 
   return 0;
 }

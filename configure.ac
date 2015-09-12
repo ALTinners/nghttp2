@@ -25,7 +25,7 @@ dnl Do not change user variables!
 dnl http://www.gnu.org/software/automake/manual/html_node/Flag-Variables-Ordering.html
 
 AC_PREREQ(2.61)
-AC_INIT([nghttp2], [1.3.0], [t-tujikawa@users.sourceforge.net])
+AC_INIT([nghttp2], [1.3.1], [t-tujikawa@users.sourceforge.net])
 AC_CONFIG_AUX_DIR([.])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_HEADERS([config.h])
@@ -47,7 +47,7 @@ m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 dnl See versioning rule:
 dnl  http://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
 AC_SUBST(LT_CURRENT, 15)
-AC_SUBST(LT_REVISION, 0)
+AC_SUBST(LT_REVISION, 1)
 AC_SUBST(LT_AGE, 1)
 
 major=`echo $PACKAGE_VERSION |cut -d. -f1 | sed -e "s/[^0-9]//g"`
@@ -118,6 +118,11 @@ AC_ARG_WITH([spdylay],
     [AS_HELP_STRING([--with-spdylay],
                     [Use spdylay [default=check]])],
     [request_spdylay=$withval], [request_spdylay=check])
+
+AC_ARG_WITH([mruby],
+    [AS_HELP_STRING([--with-mruby],
+                    [Use mruby [default=no]])],
+    [request_mruby=$withval], [request_mruby=no])
 
 AC_ARG_WITH([cython],
     [AS_HELP_STRING([--with-cython=PATH],
@@ -370,6 +375,20 @@ fi
 
 AM_CONDITIONAL([HAVE_SPDYLAY], [ test "x${have_spdylay}" = "xyes" ])
 
+# mruby (for src/nghttpx)
+have_mruby=no
+if test "x${request_mruby}" = "xyes"; then
+  # We are going to build mruby
+  have_mruby=yes
+  AC_DEFINE([HAVE_MRUBY], [1], [Define to 1 if you have `mruby` library.])
+  LIBMRUBY_LIBS="-lmruby -lm"
+  LIBMRUBY_CFLAGS=
+  AC_SUBST([LIBMRUBY_LIBS])
+  AC_SUBST([LIBMRUBY_CFLAGS])
+fi
+
+AM_CONDITIONAL([HAVE_MRUBY], [test "x${have_mruby}" = "xyes"])
+
 # Check Boost Asio library
 have_asio_lib=no
 
@@ -450,6 +469,7 @@ AM_CONDITIONAL([ENABLE_EXAMPLES], [ test "x${enable_examples}" = "xyes" ])
 enable_third_party=no
 if test "x${enable_examples}" = "xyes" ||
    test "x${enable_app}" = "xyes" ||
+   test "x${enable_hpack_tools}" = "xyes" ||
    test "x${enable_asio_lib}" = "xyes"; then
   enable_third_party=yes
 fi
@@ -717,6 +737,7 @@ AC_MSG_NOTICE([summary of build options:
       Libev:          ${have_libev}
       Libevent(SSL):  ${have_libevent_openssl}
       Spdylay:        ${have_spdylay}
+      MRuby:          ${have_mruby}
       Jansson:        ${have_jansson}
       Jemalloc:       ${have_jemalloc}
       Zlib:           ${have_zlib}

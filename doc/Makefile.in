@@ -256,6 +256,8 @@ LIBEVENT_OPENSSL_CFLAGS = @LIBEVENT_OPENSSL_CFLAGS@
 LIBEVENT_OPENSSL_LIBS = @LIBEVENT_OPENSSL_LIBS@
 LIBEV_CFLAGS = @LIBEV_CFLAGS@
 LIBEV_LIBS = @LIBEV_LIBS@
+LIBMRUBY_CFLAGS = @LIBMRUBY_CFLAGS@
+LIBMRUBY_LIBS = @LIBMRUBY_LIBS@
 LIBOBJS = @LIBOBJS@
 LIBS = @LIBS@
 LIBSPDYLAY_CFLAGS = @LIBSPDYLAY_CFLAGS@
@@ -504,6 +506,9 @@ EXTRA_DIST = \
 	sources/python-apiref.rst \
 	sources/building-android-binary.rst \
 	sources/contribute.rst \
+	_exts/sphinxcontrib/LICENSE.rubydomain \
+	_exts/sphinxcontrib/__init__.py \
+	_exts/sphinxcontrib/rubydomain.py \
 	_themes/sphinx_rtd_theme/__init__.py \
 	_themes/sphinx_rtd_theme/breadcrumbs.html \
 	_themes/sphinx_rtd_theme/footer.html \
