@@ -66,16 +66,6 @@ const char DEFAULT_STRIP_CHARSET[] = "\r\n\t ";
 
 const char UPPER_XDIGITS[] = "0123456789ABCDEF";
 
-bool isAlpha(const char c) {
-  return ('A' <= c && c <= 'Z') || ('a' <= c && c <= 'z');
-}
-
-bool isDigit(const char c) { return '0' <= c && c <= '9'; }
-
-bool isHexDigit(const char c) {
-  return isDigit(c) || ('A' <= c && c <= 'F') || ('a' <= c && c <= 'f');
-}
-
 bool inRFC3986UnreservedChars(const char c) {
   static const char unreserved[] = {'-', '.', '_', '~'};
   return isAlpha(c) || isDigit(c) ||
@@ -636,15 +626,16 @@ void write_uri_field(std::ostream &o, const char *uri, const http_parser_url &u,
 }
 
 bool numeric_host(const char *hostname) {
-  struct addrinfo *res;
-  struct addrinfo hints {};
-  hints.ai_family = AF_UNSPEC;
-  hints.ai_flags = AI_NUMERICHOST;
-  if (getaddrinfo(hostname, nullptr, &hints, &res)) {
-    return false;
-  }
-  freeaddrinfo(res);
-  return true;
+  return numeric_host(hostname, AF_INET) || numeric_host(hostname, AF_INET6);
+}
+
+bool numeric_host(const char *hostname, int family) {
+  int rv;
+  std::array<uint8_t, sizeof(struct in6_addr)> dst;
+
+  rv = inet_pton(family, hostname, dst.data());
+
+  return rv == 1;
 }
 
 std::string numeric_name(const struct sockaddr *sa, socklen_t salen) {

@@ -104,6 +104,8 @@ void writecb(struct ev_loop *loop, ev_io *w, int revents) {
 }
 } // namespace
 
+int ClientHandler::noop() { return 0; }
+
 int ClientHandler::read_clear() {
   ev_timer_again(conn_.loop, &conn_.rt);
 
@@ -382,6 +384,17 @@ ClientHandler::ClientHandler(Worker *worker, int fd, SSL *ssl,
   conn_.rlimit.startw();
   ev_timer_again(conn_.loop, &conn_.rt);
 
+  if (get_config()->accept_proxy_protocol) {
+    read_ = &ClientHandler::read_clear;
+    write_ = &ClientHandler::noop;
+    on_read_ = &ClientHandler::proxy_protocol_read;
+    on_write_ = &ClientHandler::upstream_noop;
+  } else {
+    setup_upstream_io_callback();
+  }
+}
+
+void ClientHandler::setup_upstream_io_callback() {
   if (conn_.tls.ssl) {
     conn_.prepare_server_handshake();
     read_ = write_ = &ClientHandler::tls_handshake;
@@ -452,108 +465,96 @@ void ClientHandler::reset_upstream_write_timeout(ev_tstamp t) {
 int ClientHandler::validate_next_proto() {
   const unsigned char *next_proto = nullptr;
   unsigned int next_proto_len;
-  int rv;
 
   // First set callback for catch all cases
   on_read_ = &ClientHandler::upstream_read;
 
   SSL_get0_next_proto_negotiated(conn_.tls.ssl, &next_proto, &next_proto_len);
-  for (int i = 0; i < 2; ++i) {
-    if (next_proto) {
-      if (LOG_ENABLED(INFO)) {
-        std::string proto(next_proto, next_proto + next_proto_len);
-        CLOG(INFO, this) << "The negotiated next protocol: " << proto;
-      }
-      if (!ssl::in_proto_list(get_config()->npn_list, next_proto,
-                              next_proto_len)) {
-        break;
-      }
-      if (util::check_h2_is_selected(next_proto, next_proto_len)) {
-
-        on_read_ = &ClientHandler::upstream_http2_connhd_read;
-
-        auto http2_upstream = make_unique<Http2Upstream>(this);
-
-        if (!nghttp2::ssl::check_http2_requirement(conn_.tls.ssl)) {
-          if (LOG_ENABLED(INFO)) {
-            LOG(INFO) << "TLSv1.2 was not negotiated. "
-                      << "HTTP/2 must not be negotiated.";
-          }
-
-          rv = http2_upstream->terminate_session(NGHTTP2_INADEQUATE_SECURITY);
-
-          if (rv != 0) {
-            return -1;
-          }
-        }
-
-        upstream_ = std::move(http2_upstream);
-        alpn_.assign(next_proto, next_proto + next_proto_len);
-
-        // At this point, input buffer is already filled with some
-        // bytes.  The read callback is not called until new data
-        // come. So consume input buffer here.
-        if (on_read() != 0) {
-          return -1;
-        }
-
-        return 0;
-      } else {
-#ifdef HAVE_SPDYLAY
-        uint16_t version = spdylay_npn_get_version(next_proto, next_proto_len);
-        if (version) {
-          upstream_ = make_unique<SpdyUpstream>(version, this);
-
-          switch (version) {
-          case SPDYLAY_PROTO_SPDY2:
-            alpn_ = "spdy/2";
-            break;
-          case SPDYLAY_PROTO_SPDY3:
-            alpn_ = "spdy/3";
-            break;
-          case SPDYLAY_PROTO_SPDY3_1:
-            alpn_ = "spdy/3.1";
-            break;
-          default:
-            alpn_ = "spdy/unknown";
-          }
-
-          // At this point, input buffer is already filled with some
-          // bytes.  The read callback is not called until new data
-          // come. So consume input buffer here.
-          if (on_read() != 0) {
-            return -1;
-          }
-
-          return 0;
-        }
-#endif // HAVE_SPDYLAY
-        if (next_proto_len == 8 && memcmp("http/1.1", next_proto, 8) == 0) {
-          upstream_ = make_unique<HttpsUpstream>(this);
-          alpn_ = "http/1.1";
-
-          // At this point, input buffer is already filled with some
-          // bytes.  The read callback is not called until new data
-          // come. So consume input buffer here.
-          if (on_read() != 0) {
-            return -1;
-          }
-
-          return 0;
-        }
-      }
-      break;
-    }
 #if OPENSSL_VERSION_NUMBER >= 0x10002000L
+  if (next_proto == nullptr) {
     SSL_get0_alpn_selected(conn_.tls.ssl, &next_proto, &next_proto_len);
-#else  // OPENSSL_VERSION_NUMBER < 0x10002000L
-    break;
-#endif // OPENSSL_VERSION_NUMBER < 0x10002000L
   }
-  if (!next_proto) {
+#endif // OPENSSL_VERSION_NUMBER >= 0x10002000L
+
+  if (next_proto == nullptr) {
     if (LOG_ENABLED(INFO)) {
       CLOG(INFO, this) << "No protocol negotiated. Fallback to HTTP/1.1";
     }
+
+    upstream_ = make_unique<HttpsUpstream>(this);
+    alpn_ = "http/1.1";
+
+    // At this point, input buffer is already filled with some bytes.
+    // The read callback is not called until new data come. So consume
+    // input buffer here.
+    if (on_read() != 0) {
+      return -1;
+    }
+
+    return 0;
+  }
+
+  if (LOG_ENABLED(INFO)) {
+    std::string proto(next_proto, next_proto + next_proto_len);
+    CLOG(INFO, this) << "The negotiated next protocol: " << proto;
+  }
+
+  if (!ssl::in_proto_list(get_config()->npn_list, next_proto, next_proto_len)) {
+    if (LOG_ENABLED(INFO)) {
+      CLOG(INFO, this) << "The negotiated protocol is not supported";
+    }
+    return -1;
+  }
+
+  if (util::check_h2_is_selected(next_proto, next_proto_len)) {
+    on_read_ = &ClientHandler::upstream_http2_connhd_read;
+
+    auto http2_upstream = make_unique<Http2Upstream>(this);
+
+    upstream_ = std::move(http2_upstream);
+    alpn_.assign(next_proto, next_proto + next_proto_len);
+
+    // At this point, input buffer is already filled with some bytes.
+    // The read callback is not called until new data come. So consume
+    // input buffer here.
+    if (on_read() != 0) {
+      return -1;
+    }
+
+    return 0;
+  }
+
+#ifdef HAVE_SPDYLAY
+  auto spdy_version = spdylay_npn_get_version(next_proto, next_proto_len);
+  if (spdy_version) {
+    upstream_ = make_unique<SpdyUpstream>(spdy_version, this);
+
+    switch (spdy_version) {
+    case SPDYLAY_PROTO_SPDY2:
+      alpn_ = "spdy/2";
+      break;
+    case SPDYLAY_PROTO_SPDY3:
+      alpn_ = "spdy/3";
+      break;
+    case SPDYLAY_PROTO_SPDY3_1:
+      alpn_ = "spdy/3.1";
+      break;
+    default:
+      alpn_ = "spdy/unknown";
+    }
+
+    // At this point, input buffer is already filled with some bytes.
+    // The read callback is not called until new data come. So consume
+    // input buffer here.
+    if (on_read() != 0) {
+      return -1;
+    }
+
+    return 0;
+  }
+#endif // HAVE_SPDYLAY
+
+  if (next_proto_len == 8 && memcmp("http/1.1", next_proto, 8) == 0) {
     upstream_ = make_unique<HttpsUpstream>(this);
     alpn_ = "http/1.1";
 
@@ -751,41 +752,23 @@ namespace {
 // HttpDownstreamConnection::push_request_headers(), but vastly
 // simplified since we only care about absolute URI.
 std::string construct_absolute_request_uri(Downstream *downstream) {
-  const char *authority = nullptr, *host = nullptr;
-  if (!downstream->get_request_http2_authority().empty()) {
-    authority = downstream->get_request_http2_authority().c_str();
-  }
-  auto h = downstream->get_request_header(http2::HD_HOST);
-  if (h) {
-    host = h->value.c_str();
-  }
-  if (!authority && !host) {
+  auto &authority = downstream->get_request_http2_authority();
+  if (authority.empty()) {
     return downstream->get_request_path();
   }
   std::string uri;
-  if (downstream->get_request_http2_scheme().empty()) {
+  auto &scheme = downstream->get_request_http2_scheme();
+  if (scheme.empty()) {
     // We may have to log the request which lacks scheme (e.g.,
     // http/1.1 with origin form).
     uri += "http://";
   } else {
-    uri += downstream->get_request_http2_scheme();
+    uri += scheme;
     uri += "://";
   }
-  if (authority) {
-    uri += authority;
-  } else {
-    uri += host;
-  }
+  uri += authority;
+  uri += downstream->get_request_path();
 
-  // Server-wide OPTIONS takes following form in proxy request:
-  //
-  // OPTIONS http://example.org HTTP/1.1
-  //
-  // Notice that no slash after authority. See
-  // http://tools.ietf.org/html/rfc7230#section-5.3.4
-  if (downstream->get_request_path() != "*") {
-    uri += downstream->get_request_path();
-  }
   return uri;
 }
 } // namespace
@@ -799,12 +782,15 @@ void ClientHandler::write_accesslog(Downstream *downstream) {
           downstream, ipaddr_.c_str(),
           http2::to_method_string(downstream->get_request_method()),
 
-          (downstream->get_request_method() != HTTP_CONNECT &&
-           (get_config()->http2_proxy || get_config()->client_proxy))
-              ? construct_absolute_request_uri(downstream).c_str()
-              : downstream->get_request_path().empty()
-                    ? downstream->get_request_http2_authority().c_str()
-                    : downstream->get_request_path().c_str(),
+          downstream->get_request_method() == HTTP_CONNECT
+              ? downstream->get_request_http2_authority().c_str()
+              : (get_config()->http2_proxy || get_config()->client_proxy)
+                    ? construct_absolute_request_uri(downstream).c_str()
+                    : downstream->get_request_path().empty()
+                          ? downstream->get_request_method() == HTTP_OPTIONS
+                                ? "*"
+                                : "-"
+                          : downstream->get_request_path().c_str(),
 
           alpn_.c_str(),
           nghttp2::ssl::get_tls_session_info(&tls_info, conn_.tls.ssl),
@@ -855,5 +841,226 @@ RateLimit *ClientHandler::get_wlimit() { return &conn_.wlimit; }
 ev_io *ClientHandler::get_wev() { return &conn_.wev; }
 
 Worker *ClientHandler::get_worker() const { return worker_; }
+
+namespace {
+ssize_t parse_proxy_line_port(const uint8_t *first, const uint8_t *last) {
+  auto p = first;
+  int32_t port = 0;
+
+  if (p == last) {
+    return -1;
+  }
+
+  if (*p == '0') {
+    if (p + 1 != last && util::isDigit(*(p + 1))) {
+      return -1;
+    }
+    return 1;
+  }
+
+  for (; p != last && util::isDigit(*p); ++p) {
+    port *= 10;
+    port += *p - '0';
+
+    if (port > 65535) {
+      return -1;
+    }
+  }
+
+  return p - first;
+}
+} // namespace
+
+int ClientHandler::on_proxy_protocol_finish() {
+  setup_upstream_io_callback();
+
+  // Run on_read to process data left in buffer since they are not
+  // notified further
+  if (on_read() != 0) {
+    return -1;
+  }
+
+  return 0;
+}
+
+// http://www.haproxy.org/download/1.5/doc/proxy-protocol.txt
+int ClientHandler::proxy_protocol_read() {
+  if (LOG_ENABLED(INFO)) {
+    CLOG(INFO, this) << "PROXY-protocol: Started";
+  }
+
+  auto first = rb_.pos;
+
+  // NULL character really destroys functions which expects NULL
+  // terminated string.  We won't expect it in PROXY protocol line, so
+  // find it here.
+  auto chrs = std::array<char, 2>{{'\n', '\0'}};
+
+  constexpr size_t MAX_PROXY_LINELEN = 107;
+
+  auto bufend = rb_.pos + std::min(MAX_PROXY_LINELEN, rb_.rleft());
+
+  auto end =
+      std::find_first_of(rb_.pos, bufend, std::begin(chrs), std::end(chrs));
+
+  if (end == bufend || *end == '\0' || end == rb_.pos || *(end - 1) != '\r') {
+    if (LOG_ENABLED(INFO)) {
+      CLOG(INFO, this) << "PROXY-protocol-v1: No ending CR LF sequence found";
+    }
+    return -1;
+  }
+
+  --end;
+
+  constexpr const char HEADER[] = "PROXY ";
+
+  if (static_cast<size_t>(end - rb_.pos) < str_size(HEADER)) {
+    if (LOG_ENABLED(INFO)) {
+      CLOG(INFO, this) << "PROXY-protocol-v1: PROXY version 1 ID not found";
+    }
+    return -1;
+  }
+
+  if (!util::streq_l(HEADER, rb_.pos, str_size(HEADER))) {
+    if (LOG_ENABLED(INFO)) {
+      CLOG(INFO, this) << "PROXY-protocol-v1: Bad PROXY protocol version 1 ID";
+    }
+    return -1;
+  }
+
+  rb_.drain(str_size(HEADER));
+
+  int family;
+
+  if (rb_.pos[0] == 'T') {
+    if (end - rb_.pos < 5) {
+      if (LOG_ENABLED(INFO)) {
+        CLOG(INFO, this) << "PROXY-protocol-v1: INET protocol family not found";
+      }
+      return -1;
+    }
+
+    if (rb_.pos[1] != 'C' || rb_.pos[2] != 'P') {
+      if (LOG_ENABLED(INFO)) {
+        CLOG(INFO, this) << "PROXY-protocol-v1: Unknown INET protocol family";
+      }
+      return -1;
+    }
+
+    switch (rb_.pos[3]) {
+    case '4':
+      family = AF_INET;
+      break;
+    case '6':
+      family = AF_INET6;
+      break;
+    default:
+      if (LOG_ENABLED(INFO)) {
+        CLOG(INFO, this) << "PROXY-protocol-v1: Unknown INET protocol family";
+      }
+      return -1;
+    }
+
+    rb_.drain(5);
+  } else {
+    if (end - rb_.pos < 7) {
+      if (LOG_ENABLED(INFO)) {
+        CLOG(INFO, this) << "PROXY-protocol-v1: INET protocol family not found";
+      }
+      return -1;
+    }
+    if (!util::streq_l("UNKNOWN", rb_.pos, 7)) {
+      if (LOG_ENABLED(INFO)) {
+        CLOG(INFO, this) << "PROXY-protocol-v1: Unknown INET protocol family";
+      }
+      return -1;
+    }
+
+    rb_.drain(end + 2 - rb_.pos);
+
+    return on_proxy_protocol_finish();
+  }
+
+  // source address
+  auto token_end = std::find(rb_.pos, end, ' ');
+  if (token_end == end) {
+    if (LOG_ENABLED(INFO)) {
+      CLOG(INFO, this) << "PROXY-protocol-v1: Source address not found";
+    }
+    return -1;
+  }
+
+  *token_end = '\0';
+  if (!util::numeric_host(reinterpret_cast<const char *>(rb_.pos), family)) {
+    if (LOG_ENABLED(INFO)) {
+      CLOG(INFO, this) << "PROXY-protocol-v1: Invalid source address";
+    }
+    return -1;
+  }
+
+  auto src_addr = rb_.pos;
+  auto src_addrlen = token_end - rb_.pos;
+
+  rb_.drain(token_end - rb_.pos + 1);
+
+  // destination address
+  token_end = std::find(rb_.pos, end, ' ');
+  if (token_end == end) {
+    if (LOG_ENABLED(INFO)) {
+      CLOG(INFO, this) << "PROXY-protocol-v1: Destination address not found";
+    }
+    return -1;
+  }
+
+  *token_end = '\0';
+  if (!util::numeric_host(reinterpret_cast<const char *>(rb_.pos), family)) {
+    if (LOG_ENABLED(INFO)) {
+      CLOG(INFO, this) << "PROXY-protocol-v1: Invalid destination address";
+    }
+    return -1;
+  }
+
+  // Currently we don't use destination address
+
+  rb_.drain(token_end - rb_.pos + 1);
+
+  // source port
+  auto n = parse_proxy_line_port(rb_.pos, end);
+  if (n <= 0 || *(rb_.pos + n) != ' ') {
+    if (LOG_ENABLED(INFO)) {
+      CLOG(INFO, this) << "PROXY-protocol-v1: Invalid source port";
+    }
+    return -1;
+  }
+
+  rb_.pos[n] = '\0';
+  auto src_port = rb_.pos;
+  auto src_portlen = n;
+
+  rb_.drain(n + 1);
+
+  // destination  port
+  n = parse_proxy_line_port(rb_.pos, end);
+  if (n <= 0 || rb_.pos + n != end) {
+    if (LOG_ENABLED(INFO)) {
+      CLOG(INFO, this) << "PROXY-protocol-v1: Invalid destination port";
+    }
+    return -1;
+  }
+
+  // Currently we don't use destination port
+
+  rb_.drain(end + 2 - rb_.pos);
+
+  ipaddr_.assign(src_addr, src_addr + src_addrlen);
+  port_.assign(src_port, src_port + src_portlen);
+
+  if (LOG_ENABLED(INFO)) {
+    CLOG(INFO, this) << "PROXY-protocol-v1: Finished, " << (rb_.pos - first)
+                     << " bytes read";
+  }
+
+  return on_proxy_protocol_finish();
+}
 
 } // namespace shrpx

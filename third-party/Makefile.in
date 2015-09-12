@@ -263,6 +263,8 @@ LIBEVENT_OPENSSL_CFLAGS = @LIBEVENT_OPENSSL_CFLAGS@
 LIBEVENT_OPENSSL_LIBS = @LIBEVENT_OPENSSL_LIBS@
 LIBEV_CFLAGS = @LIBEV_CFLAGS@
 LIBEV_LIBS = @LIBEV_LIBS@
+LIBMRUBY_CFLAGS = @LIBMRUBY_CFLAGS@
+LIBMRUBY_LIBS = @LIBMRUBY_LIBS@
 LIBOBJS = @LIBOBJS@
 LIBS = @LIBS@
 LIBSPDYLAY_CFLAGS = @LIBSPDYLAY_CFLAGS@
@@ -388,6 +390,7 @@ AM_CPPFLAGS = -Wall @DEFS@
 @ENABLE_THIRD_PARTY_TRUE@	http-parser/http_parser.c \
 @ENABLE_THIRD_PARTY_TRUE@	http-parser/http_parser.h
 
+@ENABLE_THIRD_PARTY_TRUE@@HAVE_MRUBY_TRUE@EXTRA_DIST = build_config.rb mruby/*
 all: all-am
 
 .SUFFIXES:
@@ -571,7 +574,9 @@ distdir: $(DISTFILES)
 	done
 check-am: all-am
 check: check-am
-all-am: Makefile $(LTLIBRARIES)
+@ENABLE_THIRD_PARTY_FALSE@all-local:
+@HAVE_MRUBY_FALSE@all-local:
+all-am: Makefile $(LTLIBRARIES) all-local
 installdirs:
 install: install-am
 install-exec: install-exec-am
@@ -605,10 +610,12 @@ distclean-generic:
 maintainer-clean-generic:
 	@echo "This command is intended for maintainers to use"
 	@echo "it deletes files that may require special tools to rebuild."
+@ENABLE_THIRD_PARTY_FALSE@clean-local:
+@HAVE_MRUBY_FALSE@clean-local:
 clean: clean-am
 
-clean-am: clean-generic clean-libtool clean-noinstLTLIBRARIES \
-	mostlyclean-am
+clean-am: clean-generic clean-libtool clean-local \
+	clean-noinstLTLIBRARIES mostlyclean-am
 
 distclean: distclean-am
 	-rm -rf http-parser/$(DEPDIR)
@@ -686,23 +693,39 @@ uninstall-am:
 
 .MAKE: install-am install-strip
 
-.PHONY: CTAGS GTAGS TAGS all all-am check check-am clean clean-generic \
-	clean-libtool clean-noinstLTLIBRARIES cscopelist-am ctags \
-	ctags-am distclean distclean-compile distclean-generic \
-	distclean-libtool distclean-tags distdir dvi dvi-am html \
-	html-am info info-am install install-am install-data \
-	install-data-am install-dvi install-dvi-am install-exec \
-	install-exec-am install-html install-html-am install-info \
-	install-info-am install-man install-pdf install-pdf-am \
-	install-ps install-ps-am install-strip installcheck \
-	installcheck-am installdirs it-am it-local itprep-am \
-	itprep-local maintainer-clean maintainer-clean-generic \
-	mostlyclean mostlyclean-compile mostlyclean-generic \
-	mostlyclean-libtool pdf pdf-am ps ps-am tags tags-am uninstall \
-	uninstall-am
+.PHONY: CTAGS GTAGS TAGS all all-am all-local check check-am clean \
+	clean-generic clean-libtool clean-local \
+	clean-noinstLTLIBRARIES cscopelist-am ctags ctags-am distclean \
+	distclean-compile distclean-generic distclean-libtool \
+	distclean-tags distdir dvi dvi-am html html-am info info-am \
+	install install-am install-data install-data-am install-dvi \
+	install-dvi-am install-exec install-exec-am install-html \
+	install-html-am install-info install-info-am install-man \
+	install-pdf install-pdf-am install-ps install-ps-am \
+	install-strip installcheck installcheck-am installdirs it-am \
+	it-local itprep-am itprep-local maintainer-clean \
+	maintainer-clean-generic mostlyclean mostlyclean-compile \
+	mostlyclean-generic mostlyclean-libtool pdf pdf-am ps ps-am \
+	tags tags-am uninstall uninstall-am
 
 .PRECIOUS: Makefile
 
+
+@ENABLE_THIRD_PARTY_TRUE@@HAVE_MRUBY_TRUE@.PHONY: all-local clean mruby
+
+@ENABLE_THIRD_PARTY_TRUE@@HAVE_MRUBY_TRUE@mruby:
+@ENABLE_THIRD_PARTY_TRUE@@HAVE_MRUBY_TRUE@	MRUBY_CONFIG="${srcdir}/build_config.rb" \
+@ENABLE_THIRD_PARTY_TRUE@@HAVE_MRUBY_TRUE@	BUILD_DIR="${abs_builddir}/mruby/build" \
+@ENABLE_THIRD_PARTY_TRUE@@HAVE_MRUBY_TRUE@	INSTALL_DIR="${abs_builddir}/mruby/build/install/bin" \
+@ENABLE_THIRD_PARTY_TRUE@@HAVE_MRUBY_TRUE@	CC="${CC}" CXX="${CXX}" LD="${LD}" \
+@ENABLE_THIRD_PARTY_TRUE@@HAVE_MRUBY_TRUE@	CFLAGS="${CPPFLAGS} ${CFLAGS}" CXXFLAGS="${CPPFLAGS} ${CXXFLAGS}" \
+@ENABLE_THIRD_PARTY_TRUE@@HAVE_MRUBY_TRUE@	LDFLAGS="${LDFLAGS}" \
+@ENABLE_THIRD_PARTY_TRUE@@HAVE_MRUBY_TRUE@	"${srcdir}/mruby/minirake" -f "${srcdir}/mruby/Rakefile"
+
+@ENABLE_THIRD_PARTY_TRUE@@HAVE_MRUBY_TRUE@all-local: mruby
+
+@ENABLE_THIRD_PARTY_TRUE@@HAVE_MRUBY_TRUE@clean-local:
+@ENABLE_THIRD_PARTY_TRUE@@HAVE_MRUBY_TRUE@	-rm -rf "${abs_builddir}/mruby/build"
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

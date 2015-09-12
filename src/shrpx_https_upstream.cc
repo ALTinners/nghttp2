@@ -37,6 +37,9 @@
 #include "shrpx_log_config.h"
 #include "shrpx_worker.h"
 #include "shrpx_http2_session.h"
+#ifdef HAVE_MRUBY
+#include "shrpx_mruby.h"
+#endif // HAVE_MRUBY
 #include "http2.h"
 #include "util.h"
 #include "template.h"
@@ -69,8 +72,14 @@ int htp_msg_begin(http_parser *htp) {
   auto handler = upstream->get_client_handler();
 
   // TODO specify 0 as priority for now
-  upstream->attach_downstream(
-      make_unique<Downstream>(upstream, handler->get_mcpool(), 0, 0));
+  auto downstream =
+      make_unique<Downstream>(upstream, handler->get_mcpool(), 0, 0);
+
+  // We happen to have the same value for method token.
+  downstream->set_request_method(htp->method);
+
+  upstream->attach_downstream(std::move(downstream));
+
   return 0;
 }
 } // namespace
@@ -90,7 +99,12 @@ int htp_uricb(http_parser *htp, const char *data, size_t len) {
     return -1;
   }
   downstream->add_request_headers_sum(len);
-  downstream->append_request_path(data, len);
+  if (downstream->get_request_method() == HTTP_CONNECT) {
+    downstream->append_request_http2_authority(data, len);
+  } else {
+    downstream->append_request_path(data, len);
+  }
+
   return 0;
 }
 } // namespace
@@ -198,6 +212,10 @@ void rewrite_request_host_path_from_uri(Downstream *downstream, const char *uri,
   }
   downstream->set_request_http2_authority(authority);
 
+  std::string scheme;
+  http2::copy_url_component(scheme, &u, UF_SCHEMA, uri);
+  downstream->set_request_http2_scheme(std::move(scheme));
+
   std::string path;
   if (u.field_set & (1 << UF_PATH)) {
     http2::copy_url_component(path, &u, UF_PATH, uri);
@@ -208,7 +226,7 @@ void rewrite_request_host_path_from_uri(Downstream *downstream, const char *uri,
     //
     // Notice that no slash after authority. See
     // http://tools.ietf.org/html/rfc7230#section-5.3.4
-    downstream->set_request_path("*");
+    downstream->set_request_path("");
     // we ignore query component here
     return;
   } else {
@@ -225,10 +243,6 @@ void rewrite_request_host_path_from_uri(Downstream *downstream, const char *uri,
     downstream->set_request_path(
         http2::rewrite_clean_path(std::begin(path), std::end(path)));
   }
-
-  std::string scheme;
-  http2::copy_url_component(scheme, &u, UF_SCHEMA, uri);
-  downstream->set_request_http2_scheme(std::move(scheme));
 }
 } // namespace
 
@@ -241,17 +255,18 @@ int htp_hdrs_completecb(http_parser *htp) {
   }
   auto downstream = upstream->get_downstream();
 
-  // We happen to have the same value for method token.
-  downstream->set_request_method(htp->method);
   downstream->set_request_major(htp->http_major);
   downstream->set_request_minor(htp->http_minor);
 
   downstream->set_request_connection_close(!http_should_keep_alive(htp));
 
+  auto method = downstream->get_request_method();
+
   if (LOG_ENABLED(INFO)) {
     std::stringstream ss;
-    ss << http2::to_method_string(downstream->get_request_method()) << " "
-       << downstream->get_request_path() << " "
+    ss << http2::to_method_string(method) << " "
+       << (method == HTTP_CONNECT ? downstream->get_request_http2_authority()
+                                  : downstream->get_request_path()) << " "
        << "HTTP/" << downstream->get_request_major() << "."
        << downstream->get_request_minor() << "\n";
     const auto &headers = downstream->get_request_headers();
@@ -274,13 +289,12 @@ int htp_hdrs_completecb(http_parser *htp) {
 
   downstream->inspect_http1_request();
 
-  if (downstream->get_request_method() != HTTP_CONNECT) {
+  if (method != HTTP_CONNECT) {
     http_parser_url u{};
     // make a copy of request path, since we may set request path
     // while we are refering to original request path.
-    auto uri = downstream->get_request_path();
-    rv = http_parser_parse_url(uri.c_str(),
-                               downstream->get_request_path().size(), 0, &u);
+    auto path = downstream->get_request_path();
+    rv = http_parser_parse_url(path.c_str(), path.size(), 0, &u);
     if (rv != 0) {
       // Expect to respond with 400 bad request
       return -1;
@@ -292,8 +306,17 @@ int htp_hdrs_completecb(http_parser *htp) {
         return -1;
       }
 
-      downstream->set_request_path(
-          http2::rewrite_clean_path(std::begin(uri), std::end(uri)));
+      if (method == HTTP_OPTIONS && path == "*") {
+        downstream->set_request_path("");
+      } else {
+        downstream->set_request_path(
+            http2::rewrite_clean_path(std::begin(path), std::end(path)));
+      }
+
+      auto host = downstream->get_request_header(http2::HD_HOST);
+      if (host) {
+        downstream->set_request_http2_authority(host->value);
+      }
 
       if (upstream->get_client_handler()->get_ssl()) {
         downstream->set_request_http2_scheme("https");
@@ -301,8 +324,27 @@ int htp_hdrs_completecb(http_parser *htp) {
         downstream->set_request_http2_scheme("http");
       }
     } else {
-      rewrite_request_host_path_from_uri(downstream, uri.c_str(), u);
+      rewrite_request_host_path_from_uri(downstream, path.c_str(), u);
     }
+  }
+
+  downstream->set_request_state(Downstream::HEADER_COMPLETE);
+
+#ifdef HAVE_MRUBY
+  auto handler = upstream->get_client_handler();
+  auto worker = handler->get_worker();
+  auto mruby_ctx = worker->get_mruby_context();
+
+  if (mruby_ctx->run_on_request_proc(downstream) != 0) {
+    downstream->set_response_http_status(500);
+    return -1;
+  }
+#endif // HAVE_MRUBY
+
+  // mruby hook may change method value
+
+  if (downstream->get_response_state() == Downstream::MSG_COMPLETE) {
+    return 0;
   }
 
   rv = downstream->attach_downstream_connection(
@@ -319,8 +361,6 @@ int htp_hdrs_completecb(http_parser *htp) {
   if (rv != 0) {
     return -1;
   }
-
-  downstream->set_request_state(Downstream::HEADER_COMPLETE);
 
   return 0;
 }
@@ -352,6 +392,17 @@ int htp_msg_completecb(http_parser *htp) {
   downstream->set_request_state(Downstream::MSG_COMPLETE);
   rv = downstream->end_upload_data();
   if (rv != 0) {
+    if (downstream->get_response_state() == Downstream::MSG_COMPLETE) {
+      // Here both response and request were completed.  One of the
+      // reason why end_upload_data() failed is when we sent response
+      // in request phase hook.  We only delete and proceed to the
+      // next request handling (if we don't close the connection).  We
+      // first pause parser here jsut as we normally do, and call
+      // signal_write() to run on_write().
+      http_parser_pause(htp, 1);
+
+      return 0;
+    }
     return -1;
   }
 
@@ -451,6 +502,13 @@ int HttpsUpstream::on_read() {
   auto htperr = HTTP_PARSER_ERRNO(&htp_);
 
   if (htperr == HPE_PAUSED) {
+    // We may pause parser in htp_msg_completecb when both side are
+    // completed.  Signal write, so that we can run on_write().
+    if (downstream &&
+        downstream->get_request_state() == Downstream::MSG_COMPLETE &&
+        downstream->get_response_state() == Downstream::MSG_COMPLETE) {
+      handler_->signal_write();
+    }
     return 0;
   }
 
@@ -472,13 +530,16 @@ int HttpsUpstream::on_read() {
     if (htperr == HPE_INVALID_METHOD) {
       status_code = 501;
     } else if (downstream) {
-      if (downstream->get_request_state() == Downstream::CONNECT_FAIL) {
-        status_code = 503;
-      } else if (downstream->get_request_state() ==
-                 Downstream::HTTP1_REQUEST_HEADER_TOO_LARGE) {
-        status_code = 431;
-      } else {
-        status_code = 400;
+      status_code = downstream->get_response_http_status();
+      if (status_code == 0) {
+        if (downstream->get_request_state() == Downstream::CONNECT_FAIL) {
+          status_code = 503;
+        } else if (downstream->get_request_state() ==
+                   Downstream::HTTP1_REQUEST_HEADER_TOO_LARGE) {
+          status_code = 431;
+        } else {
+          status_code = 400;
+        }
       }
     } else {
       status_code = 400;
@@ -552,6 +613,11 @@ int HttpsUpstream::on_write() {
     // We need this if response ends before request.
     if (downstream->get_request_state() == Downstream::MSG_COMPLETE) {
       delete_downstream();
+
+      if (handler_->get_should_close_after_write()) {
+        return 0;
+      }
+
       return resume_read(SHRPX_NO_BUFFER, nullptr, 0);
     }
   }
@@ -592,6 +658,11 @@ int HttpsUpstream::downstream_read(DownstreamConnection *dconn) {
 
   if (rv == SHRPX_ERR_EOF) {
     return downstream_eof(dconn);
+  }
+
+  if (rv == SHRPX_ERR_DCONN_CANCELED) {
+    downstream->pop_downstream_connection();
+    goto end;
   }
 
   if (rv < 0) {
@@ -703,6 +774,60 @@ int HttpsUpstream::downstream_error(DownstreamConnection *dconn, int events) {
   return 0;
 }
 
+int HttpsUpstream::send_reply(Downstream *downstream, const uint8_t *body,
+                              size_t bodylen) {
+  auto major = downstream->get_request_major();
+  auto minor = downstream->get_request_minor();
+
+  auto connection_close = false;
+  if (major <= 0 || (major == 1 && minor == 0)) {
+    connection_close = true;
+  } else {
+    auto c = downstream->get_response_header(http2::HD_CONNECTION);
+    if (c && util::strieq_l("close", c->value)) {
+      connection_close = true;
+    }
+  }
+
+  if (connection_close) {
+    downstream->set_response_connection_close(true);
+    handler_->set_should_close_after_write(true);
+  }
+
+  auto output = downstream->get_response_buf();
+
+  output->append("HTTP/1.1 ");
+  output->append(
+      http2::get_status_string(downstream->get_response_http_status()));
+  output->append("\r\n");
+
+  for (auto &kv : downstream->get_response_headers()) {
+    if (kv.name.empty() || kv.name[0] == ':') {
+      continue;
+    }
+    http2::capitalize(output, kv.name);
+    output->append(": ");
+    output->append(kv.value);
+    output->append("\r\n");
+  }
+
+  if (!downstream->get_response_header(http2::HD_SERVER)) {
+    output->append("Server: ");
+    output->append(get_config()->server_name,
+                   strlen(get_config()->server_name));
+    output->append("\r\n");
+  }
+
+  output->append("\r\n");
+
+  output->append(body, bodylen);
+
+  downstream->add_response_sent_bodylen(bodylen);
+  downstream->set_response_state(Downstream::MSG_COMPLETE);
+
+  return 0;
+}
+
 void HttpsUpstream::error_reply(unsigned int status_code) {
   auto html = http::create_error_html(status_code);
   auto downstream = get_downstream();
@@ -729,6 +854,11 @@ void HttpsUpstream::error_reply(unsigned int status_code) {
   output->append("\r\nContent-Length: ");
   auto cl = util::utos(html.size());
   output->append(cl.c_str(), cl.size());
+  output->append("\r\nDate: ");
+  auto lgconf = log_config();
+  lgconf->update_tstamp(std::chrono::system_clock::now());
+  auto &date = lgconf->time_http_str;
+  output->append(date.c_str(), date.size());
   output->append("\r\nContent-Type: text/html; "
                  "charset=UTF-8\r\nConnection: close\r\n\r\n");
   output->append(html.c_str(), html.size());
@@ -756,6 +886,17 @@ std::unique_ptr<Downstream> HttpsUpstream::pop_downstream() {
   return std::unique_ptr<Downstream>(downstream_.release());
 }
 
+namespace {
+void write_altsvc(DefaultMemchunks *buf, const AltSvc &altsvc) {
+  buf->append(util::percent_encode_token(altsvc.protocol_id));
+  buf->append("=\"");
+  buf->append(util::quote_string(altsvc.host));
+  buf->append(":");
+  buf->append(altsvc.service);
+  buf->append("\"");
+}
+} // namespace
+
 int HttpsUpstream::on_downstream_header_complete(Downstream *downstream) {
   if (LOG_ENABLED(INFO)) {
     if (downstream->get_non_final_response()) {
@@ -765,15 +906,33 @@ int HttpsUpstream::on_downstream_header_complete(Downstream *downstream) {
     }
   }
 
+#ifdef HAVE_MRUBY
+  if (!downstream->get_non_final_response()) {
+    auto worker = handler_->get_worker();
+    auto mruby_ctx = worker->get_mruby_context();
+
+    if (mruby_ctx->run_on_response_proc(downstream) != 0) {
+      error_reply(500);
+      return -1;
+    }
+
+    if (downstream->get_response_state() == Downstream::MSG_COMPLETE) {
+      return -1;
+    }
+  }
+#endif // HAVE_MRUBY
+
   auto connect_method = downstream->get_request_method() == HTTP_CONNECT;
 
-  std::string hdrs = "HTTP/";
-  hdrs += util::utos(downstream->get_request_major());
-  hdrs += ".";
-  hdrs += util::utos(downstream->get_request_minor());
-  hdrs += " ";
-  hdrs += http2::get_status_string(downstream->get_response_http_status());
-  hdrs += "\r\n";
+  auto buf = downstream->get_response_buf();
+
+  buf->append("HTTP/");
+  buf->append(util::utos(downstream->get_request_major()));
+  buf->append(".");
+  buf->append(util::utos(downstream->get_request_minor()));
+  buf->append(" ");
+  buf->append(http2::get_status_string(downstream->get_response_http_status()));
+  buf->append("\r\n");
 
   if (!get_config()->http2_proxy && !get_config()->client_proxy &&
       !get_config()->no_location_rewrite) {
@@ -781,19 +940,15 @@ int HttpsUpstream::on_downstream_header_complete(Downstream *downstream) {
         get_client_handler()->get_upstream_scheme());
   }
 
-  http2::build_http1_headers_from_headers(hdrs,
+  http2::build_http1_headers_from_headers(buf,
                                           downstream->get_response_headers());
 
-  auto output = downstream->get_response_buf();
-
   if (downstream->get_non_final_response()) {
-    hdrs += "\r\n";
+    buf->append("\r\n");
 
     if (LOG_ENABLED(INFO)) {
-      log_response_headers(hdrs);
+      log_response_headers(buf);
     }
-
-    output->append(hdrs.c_str(), hdrs.size());
 
     downstream->clear_response_headers();
 
@@ -815,92 +970,86 @@ int HttpsUpstream::on_downstream_header_complete(Downstream *downstream) {
     if (downstream->get_request_major() <= 0 ||
         downstream->get_request_minor() <= 0) {
       // We add this header for HTTP/1.0 or HTTP/0.9 clients
-      hdrs += "Connection: Keep-Alive\r\n";
+      buf->append("Connection: Keep-Alive\r\n");
     }
   } else if (!downstream->get_upgraded()) {
-    hdrs += "Connection: close\r\n";
+    buf->append("Connection: close\r\n");
   }
 
   if (!connect_method && downstream->get_upgraded()) {
     auto connection = downstream->get_response_header(http2::HD_CONNECTION);
     if (connection) {
-      hdrs += "Connection: ";
-      hdrs += (*connection).value;
-      hdrs += "\r\n";
+      buf->append("Connection: ");
+      buf->append((*connection).value);
+      buf->append("\r\n");
     }
 
     auto upgrade = downstream->get_response_header(http2::HD_UPGRADE);
     if (upgrade) {
-      hdrs += "Upgrade: ";
-      hdrs += (*upgrade).value;
-      hdrs += "\r\n";
+      buf->append("Upgrade: ");
+      buf->append((*upgrade).value);
+      buf->append("\r\n");
     }
   }
 
   if (!downstream->get_response_header(http2::HD_ALT_SVC)) {
     // We won't change or alter alt-svc from backend for now
     if (!get_config()->altsvcs.empty()) {
-      hdrs += "Alt-Svc: ";
+      buf->append("Alt-Svc: ");
 
-      for (const auto &altsvc : get_config()->altsvcs) {
-        hdrs += util::percent_encode_token(altsvc.protocol_id);
-        hdrs += "=\"";
-        hdrs += util::quote_string(altsvc.host);
-        hdrs += ":";
-        hdrs += altsvc.service;
-        hdrs += "\", ";
+      auto &altsvcs = get_config()->altsvcs;
+      write_altsvc(buf, altsvcs[0]);
+      for (size_t i = 1; i < altsvcs.size(); ++i) {
+        buf->append(", ");
+        write_altsvc(buf, altsvcs[i]);
       }
-
-      hdrs[hdrs.size() - 2] = '\r';
-      hdrs[hdrs.size() - 1] = '\n';
+      buf->append("\r\n");
     }
   }
 
   if (!get_config()->http2_proxy && !get_config()->client_proxy) {
-    hdrs += "Server: ";
-    hdrs += get_config()->server_name;
-    hdrs += "\r\n";
+    buf->append("Server: ");
+    buf->append(get_config()->server_name, strlen(get_config()->server_name));
+    buf->append("\r\n");
   } else {
     auto server = downstream->get_response_header(http2::HD_SERVER);
     if (server) {
-      hdrs += "Server: ";
-      hdrs += (*server).value;
-      hdrs += "\r\n";
+      buf->append("Server: ");
+      buf->append((*server).value);
+      buf->append("\r\n");
     }
   }
 
   auto via = downstream->get_response_header(http2::HD_VIA);
   if (get_config()->no_via) {
     if (via) {
-      hdrs += "Via: ";
-      hdrs += (*via).value;
-      hdrs += "\r\n";
+      buf->append("Via: ");
+      buf->append((*via).value);
+      buf->append("\r\n");
     }
   } else {
-    hdrs += "Via: ";
+    buf->append("Via: ");
     if (via) {
-      hdrs += (*via).value;
-      hdrs += ", ";
+      buf->append((*via).value);
+      buf->append(", ");
     }
-    hdrs += http::create_via_header_value(downstream->get_response_major(),
-                                          downstream->get_response_minor());
-    hdrs += "\r\n";
+    buf->append(http::create_via_header_value(
+        downstream->get_response_major(), downstream->get_response_minor()));
+    buf->append("\r\n");
   }
 
   for (auto &p : get_config()->add_response_headers) {
-    hdrs += p.first;
-    hdrs += ": ";
-    hdrs += p.second;
-    hdrs += "\r\n";
+    buf->append(p.first);
+    buf->append(": ");
+    buf->append(p.second);
+    buf->append("\r\n");
   }
 
-  hdrs += "\r\n";
+  buf->append("\r\n");
 
   if (LOG_ENABLED(INFO)) {
-    log_response_headers(hdrs);
+    log_response_headers(buf);
   }
-
-  output->append(hdrs.c_str(), hdrs.size());
 
   return 0;
 }
@@ -936,9 +1085,7 @@ int HttpsUpstream::on_downstream_body_complete(Downstream *downstream) {
       output->append("0\r\n\r\n");
     } else {
       output->append("0\r\n");
-      std::string trailer_part;
-      http2::build_http1_headers_from_headers(trailer_part, trailers);
-      output->append(trailer_part.c_str(), trailer_part.size());
+      http2::build_http1_headers_from_headers(output, trailers);
       output->append("\r\n");
     }
   }
@@ -965,16 +1112,15 @@ int HttpsUpstream::on_downstream_abort_request(Downstream *downstream,
   return 0;
 }
 
-void HttpsUpstream::log_response_headers(const std::string &hdrs) const {
-  const char *hdrp;
+void HttpsUpstream::log_response_headers(DefaultMemchunks *buf) const {
   std::string nhdrs;
-  if (log_config()->errorlog_tty) {
-    nhdrs = http::colorizeHeaders(hdrs.c_str());
-    hdrp = nhdrs.c_str();
-  } else {
-    hdrp = hdrs.c_str();
+  for (auto chunk = buf->head; chunk; chunk = chunk->next) {
+    nhdrs.append(chunk->pos, chunk->last);
   }
-  ULOG(INFO, this) << "HTTP response headers\n" << hdrp;
+  if (log_config()->errorlog_tty) {
+    nhdrs = http::colorizeHeaders(nhdrs.c_str());
+  }
+  ULOG(INFO, this) << "HTTP response headers\n" << nhdrs;
 }
 
 void HttpsUpstream::on_handler_delete() {
@@ -1013,6 +1159,11 @@ fail:
   }
   downstream_->pop_downstream_connection();
 
+  return 0;
+}
+
+int HttpsUpstream::initiate_push(Downstream *downstream, const char *uri,
+                                 size_t len) {
   return 0;
 }
 

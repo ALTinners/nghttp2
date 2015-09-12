@@ -209,188 +209,155 @@ int HttpDownstreamConnection::attach_downstream(Downstream *downstream) {
 }
 
 int HttpDownstreamConnection::push_request_headers() {
-  const char *authority = nullptr, *host = nullptr;
   auto downstream_hostport = get_config()
                                  ->downstream_addr_groups[group_]
                                  .addrs[addr_idx_]
                                  .hostport.get();
-  auto connect_method = downstream_->get_request_method() == HTTP_CONNECT;
+  auto method = downstream_->get_request_method();
+  auto connect_method = method == HTTP_CONNECT;
 
-  if (!get_config()->no_host_rewrite && !get_config()->http2_proxy &&
-      !get_config()->client_proxy && !connect_method) {
-    if (!downstream_->get_request_http2_authority().empty()) {
-      authority = downstream_hostport;
-    }
-    if (downstream_->get_request_header(http2::HD_HOST)) {
-      host = downstream_hostport;
-    }
-  } else {
-    if (!downstream_->get_request_http2_authority().empty()) {
-      authority = downstream_->get_request_http2_authority().c_str();
-    }
-    auto h = downstream_->get_request_header(http2::HD_HOST);
-    if (h) {
-      host = h->value.c_str();
-    }
-  }
+  // For HTTP/1.0 request, there is no authority in request.  In that
+  // case, we use backend server's host nonetheless.
+  const char *authority = downstream_hostport;
+  auto &req_authority = downstream_->get_request_http2_authority();
+  auto no_host_rewrite = get_config()->no_host_rewrite ||
+                         get_config()->http2_proxy ||
+                         get_config()->client_proxy || connect_method;
 
-  if (!authority && !host) {
-    // upstream is HTTP/1.0.  We use backend server's host
-    // nonetheless.
-    host = downstream_hostport;
+  if (no_host_rewrite && !req_authority.empty()) {
+    authority = req_authority.c_str();
   }
+  auto authoritylen = strlen(authority);
 
-  if (authority) {
-    downstream_->set_request_downstream_host(authority);
-  } else {
-    downstream_->set_request_downstream_host(host);
-  }
+  downstream_->set_request_downstream_host(authority);
 
   downstream_->assemble_request_cookie();
 
+  auto buf = downstream_->get_request_buf();
+
   // Assume that method and request path do not contain \r\n.
-  std::string hdrs = http2::to_method_string(downstream_->get_request_method());
-  hdrs += ' ';
+  auto meth = http2::to_method_string(method);
+  buf->append(meth, strlen(meth));
+  buf->append(" ");
 
   auto &scheme = downstream_->get_request_http2_scheme();
+  auto &path = downstream_->get_request_path();
 
   if (connect_method) {
-    if (authority) {
-      hdrs += authority;
-    } else {
-      hdrs += downstream_->get_request_path();
-    }
+    buf->append(authority, authoritylen);
   } else if (get_config()->http2_proxy || get_config()->client_proxy) {
     // Construct absolute-form request target because we are going to
     // send a request to a HTTP/1 proxy.
     assert(!scheme.empty());
-    hdrs += scheme;
-    hdrs += "://";
-
-    if (authority) {
-      hdrs += authority;
-    } else {
-      hdrs += host;
-    }
-
-    // Server-wide OPTIONS takes following form in proxy request:
-    //
-    // OPTIONS http://example.org HTTP/1.1
-    //
-    // Notice that no slash after authority. See
-    // http://tools.ietf.org/html/rfc7230#section-5.3.4
-    if (downstream_->get_request_path() != "*") {
-      hdrs += downstream_->get_request_path();
-    }
+    buf->append(scheme);
+    buf->append("://");
+    buf->append(authority, authoritylen);
+    buf->append(path);
+  } else if (method == HTTP_OPTIONS && path.empty()) {
+    // Server-wide OPTIONS
+    buf->append("*");
   } else {
-    // No proxy case.
-    hdrs += downstream_->get_request_path();
+    buf->append(path);
   }
-  hdrs += " HTTP/1.1\r\nHost: ";
-  if (authority) {
-    hdrs += authority;
-  } else {
-    hdrs += host;
-  }
-  hdrs += "\r\n";
+  buf->append(" HTTP/1.1\r\nHost: ");
+  buf->append(authority, authoritylen);
+  buf->append("\r\n");
 
-  http2::build_http1_headers_from_headers(hdrs,
+  http2::build_http1_headers_from_headers(buf,
                                           downstream_->get_request_headers());
 
   if (!downstream_->get_assembled_request_cookie().empty()) {
-    hdrs += "Cookie: ";
-    hdrs += downstream_->get_assembled_request_cookie();
-    hdrs += "\r\n";
+    buf->append("Cookie: ");
+    buf->append(downstream_->get_assembled_request_cookie());
+    buf->append("\r\n");
   }
 
   if (!connect_method && downstream_->get_request_http2_expect_body() &&
       !downstream_->get_request_header(http2::HD_CONTENT_LENGTH)) {
 
     downstream_->set_chunked_request(true);
-    hdrs += "Transfer-Encoding: chunked\r\n";
+    buf->append("Transfer-Encoding: chunked\r\n");
   }
 
   if (downstream_->get_request_connection_close()) {
-    hdrs += "Connection: close\r\n";
+    buf->append("Connection: close\r\n");
   }
 
   if (!connect_method && downstream_->get_upgrade_request()) {
     auto connection = downstream_->get_request_header(http2::HD_CONNECTION);
     if (connection) {
-      hdrs += "Connection: ";
-      hdrs += (*connection).value;
-      hdrs += "\r\n";
+      buf->append("Connection: ");
+      buf->append((*connection).value);
+      buf->append("\r\n");
     }
 
     auto upgrade = downstream_->get_request_header(http2::HD_UPGRADE);
     if (upgrade) {
-      hdrs += "Upgrade: ";
-      hdrs += (*upgrade).value;
-      hdrs += "\r\n";
+      buf->append("Upgrade: ");
+      buf->append((*upgrade).value);
+      buf->append("\r\n");
     }
   }
 
   auto xff = downstream_->get_request_header(http2::HD_X_FORWARDED_FOR);
   if (get_config()->add_x_forwarded_for) {
-    hdrs += "X-Forwarded-For: ";
+    buf->append("X-Forwarded-For: ");
     if (xff && !get_config()->strip_incoming_x_forwarded_for) {
-      hdrs += (*xff).value;
-      hdrs += ", ";
+      buf->append((*xff).value);
+      buf->append(", ");
     }
-    hdrs += client_handler_->get_ipaddr();
-    hdrs += "\r\n";
+    buf->append(client_handler_->get_ipaddr());
+    buf->append("\r\n");
   } else if (xff && !get_config()->strip_incoming_x_forwarded_for) {
-    hdrs += "X-Forwarded-For: ";
-    hdrs += (*xff).value;
-    hdrs += "\r\n";
+    buf->append("X-Forwarded-For: ");
+    buf->append((*xff).value);
+    buf->append("\r\n");
   }
   if (!get_config()->http2_proxy && !get_config()->client_proxy &&
       !connect_method) {
-    hdrs += "X-Forwarded-Proto: ";
+    buf->append("X-Forwarded-Proto: ");
     assert(!scheme.empty());
-    hdrs += scheme;
-    hdrs += "\r\n";
+    buf->append(scheme);
+    buf->append("\r\n");
   }
   auto via = downstream_->get_request_header(http2::HD_VIA);
   if (get_config()->no_via) {
     if (via) {
-      hdrs += "Via: ";
-      hdrs += (*via).value;
-      hdrs += "\r\n";
+      buf->append("Via: ");
+      buf->append((*via).value);
+      buf->append("\r\n");
     }
   } else {
-    hdrs += "Via: ";
+    buf->append("Via: ");
     if (via) {
-      hdrs += (*via).value;
-      hdrs += ", ";
+      buf->append((*via).value);
+      buf->append(", ");
     }
-    hdrs += http::create_via_header_value(downstream_->get_request_major(),
-                                          downstream_->get_request_minor());
-    hdrs += "\r\n";
+    buf->append(http::create_via_header_value(
+        downstream_->get_request_major(), downstream_->get_request_minor()));
+    buf->append("\r\n");
   }
 
   for (auto &p : get_config()->add_request_headers) {
-    hdrs += p.first;
-    hdrs += ": ";
-    hdrs += p.second;
-    hdrs += "\r\n";
+    buf->append(p.first);
+    buf->append(": ");
+    buf->append(p.second);
+    buf->append("\r\n");
   }
 
-  hdrs += "\r\n";
+  buf->append("\r\n");
+
   if (LOG_ENABLED(INFO)) {
-    const char *hdrp;
     std::string nhdrs;
+    for (auto chunk = buf->head; chunk; chunk = chunk->next) {
+      nhdrs.append(chunk->pos, chunk->last);
+    }
     if (log_config()->errorlog_tty) {
-      nhdrs = http::colorizeHeaders(hdrs.c_str());
-      hdrp = nhdrs.c_str();
-    } else {
-      hdrp = hdrs.c_str();
+      nhdrs = http::colorizeHeaders(nhdrs.c_str());
     }
     DCLOG(INFO, this) << "HTTP request headers. stream_id="
-                      << downstream_->get_stream_id() << "\n" << hdrp;
+                      << downstream_->get_stream_id() << "\n" << nhdrs;
   }
-  auto output = downstream_->get_request_buf();
-  output->append(hdrs.c_str(), hdrs.size());
 
   signal_write();
 
@@ -430,9 +397,7 @@ int HttpDownstreamConnection::end_upload_data() {
     output->append("0\r\n\r\n");
   } else {
     output->append("0\r\n");
-    std::string trailer_part;
-    http2::build_http1_headers_from_headers(trailer_part, trailers);
-    output->append(trailer_part.c_str(), trailer_part.size());
+    http2::build_http1_headers_from_headers(output, trailers);
     output->append("\r\n");
   }
 
@@ -774,6 +739,12 @@ int HttpDownstreamConnection::on_read() {
     auto htperr = HTTP_PARSER_ERRNO(&response_htp_);
 
     if (htperr != HPE_OK) {
+      // Handling early return (in other words, response was hijacked
+      // by mruby scripting).
+      if (downstream_->get_response_state() == Downstream::MSG_COMPLETE) {
+        return SHRPX_ERR_DCONN_CANCELED;
+      }
+
       if (LOG_ENABLED(INFO)) {
         DCLOG(INFO, this) << "HTTP parser failure: "
                           << "(" << http_errno_name(htperr) << ") "

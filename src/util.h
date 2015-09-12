@@ -158,11 +158,15 @@ std::string joinPath(InputIterator first, InputIterator last) {
   return strjoin(elements.begin(), elements.end(), "/");
 }
 
-bool isAlpha(const char c);
+inline bool isAlpha(const char c) {
+  return ('A' <= c && c <= 'Z') || ('a' <= c && c <= 'z');
+}
 
-bool isDigit(const char c);
+inline bool isDigit(const char c) { return '0' <= c && c <= '9'; }
 
-bool isHexDigit(const char c);
+inline bool isHexDigit(const char c) {
+  return isDigit(c) || ('A' <= c && c <= 'F') || ('a' <= c && c <= 'f');
+}
 
 bool inRFC3986UnreservedChars(const char c);
 
@@ -512,6 +516,8 @@ void write_uri_field(std::ostream &o, const char *uri, const http_parser_url &u,
 
 bool numeric_host(const char *hostname);
 
+bool numeric_host(const char *hostname, int family);
+
 // Returns numeric address string of |addr|.  If getnameinfo() is
 // failed, "unknown" is returned.
 std::string numeric_name(const struct sockaddr *sa, socklen_t salen);
@@ -586,6 +592,13 @@ template <typename T> std::string format_iso8601(const T &tp) {
   auto t = std::chrono::duration_cast<std::chrono::milliseconds>(
       tp.time_since_epoch());
   return iso8601_date(t.count());
+}
+
+// Returns given time |tp| in HTTP date format.
+template <typename T> std::string format_http_date(const T &tp) {
+  auto t =
+      std::chrono::duration_cast<std::chrono::seconds>(tp.time_since_epoch());
+  return http_date(t.count());
 }
 
 // Return the system precision of the template parameter |Clock| as
