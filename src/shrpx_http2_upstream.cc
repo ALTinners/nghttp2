@@ -1321,8 +1321,9 @@ int Http2Upstream::on_downstream_header_complete(Downstream *downstream) {
 
   size_t nheader = downstream->get_response_headers().size();
   auto nva = std::vector<nghttp2_nv>();
-  // 3 means :status and possible server and via header field.
-  nva.reserve(nheader + 3 + get_config()->add_response_headers.size());
+  // 4 means :status and possible server, via and x-http2-push header
+  // field.
+  nva.reserve(nheader + 4 + get_config()->add_response_headers.size());
   std::string via_value;
   auto response_status = util::utos(downstream->get_response_http_status());
   nva.push_back(http2::make_nv_ls(":status", response_status));
@@ -1374,6 +1375,12 @@ int Http2Upstream::on_downstream_header_complete(Downstream *downstream) {
 
   for (auto &p : get_config()->add_response_headers) {
     nva.push_back(http2::make_nv(p.first, p.second));
+  }
+
+  if (downstream->get_stream_id() % 2 == 0) {
+    // This header field is basically for human on client side to
+    // figure out that the resource is pushed.
+    nva.push_back(http2::make_nv_ll("x-http2-push", "1"));
   }
 
   if (LOG_ENABLED(INFO)) {
@@ -1648,7 +1655,8 @@ int Http2Upstream::submit_push_promise(const std::string &scheme,
                                        Downstream *downstream) {
   int rv;
   std::vector<nghttp2_nv> nva;
-  nva.reserve(downstream->get_request_headers().size());
+  // 4 for :method, :scheme, :path and :authority
+  nva.reserve(4 + downstream->get_request_headers().size());
 
   // juse use "GET" for now
   nva.push_back(http2::make_nv_ll(":method", "GET"));
