@@ -1,910 +1,105 @@
-commit 7f12f0671c5320890dbf129025a754380ba44b3b (HEAD, tag: v1.3.1, origin/master, origin/HEAD, master)
+commit 818c3bcadc58f4b756a08af9f3b3d096e01df801 (HEAD, tag: v1.3.2, origin/master, origin/HEAD, master)
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-12
+AuthorDate: 2015-09-16
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-12
-
-    Update bash_completion
-
-commit 39fb5972d44f3a50c45d937b0f6e909138bb668a
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-12
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-12
+CommitDate: 2015-09-16
 
     Update man pages
 
-commit 063e1d76062568bec6d09e8abadcd23abd28b1aa
+commit cd845ae1116ef6ec9ed2b3551f083a1518d0c46d
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-12
+AuthorDate: 2015-09-16
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-12
+CommitDate: 2015-09-16
 
-    Bump up version number to 1.3.1, LT revision to 15:1:1
+    Bump up version number to 1.3.2, LT revision to 15:2:1
 
-commit 57aee184ca0d49695e2f7115a111a245e9444dbf
+commit c6785abd1f7db1f46e86bb19c58cb10c10082e12
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-12
+AuthorDate: 2015-09-16
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-12
+CommitDate: 2015-09-16
 
-    Update doc
+    nghttp: Check req is null, found by coverity
 
-commit 4ae2850aa6e84463f823e516c4874ed7c43a2afb
+commit ee4732a67699c3f1662295cdfcecc955e00bafc9
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-12
+AuthorDate: 2015-09-16
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-12
+CommitDate: 2015-09-16
 
-    Add sphinx rubydomain files to EXTRA_DIST
+    nghttp: Show error if HEADERS frame cannot be sent for whatever reason
 
-commit f586797f7d77791856ac275d1b17da6977b30380
+commit eacd6eeed270c4985f7b322651a348d9e302170a
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-12
+AuthorDate: 2015-09-16
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-12
+CommitDate: 2015-09-16
 
-    Use INSTALL_DIR to customize mruby local installation directory
+    Check header block limit after new stream is opened
+
+commit 4aaf111c5853f5d00594724ebbffffc5cd011931
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-15
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-15
+
+    nghttpx: Fix assertion failure on TLS handshake
+
+commit 991352d201ece861751147f3da111f45e13b55a1
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-14
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-14
+
+    Just assign stream->cycle to descendant_last_cycle
+
+commit d22573086f239a41cf36fc032b5a19389797806e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-14
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-14
+
+    nghttpx: Add x-http2-push header field for pushed resource
     
-    This change effectively makes `make distcheck` succeed.
+    Fixes GH-352
 
-commit 0d8c8ca033b73027d737fe5c07d9bdc0c9ce6c06
+commit 114858452643fa4beddd7849520873ad783b7727
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-14
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-14
+
+    nghttpx: Reserve room for required header fields for PUSH_PROMISE
+
+commit 5005369f715ca984393b943c0c08e08f5f45cf04
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-13
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-13
+
+    android-config: Use absolute path for compilers
+
+commit 33601f1a51e434d9ecec12c45f9c23411293476b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-13
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-13
+
+    nghttpx: Fix compile error with --disable-threads
+
+commit b97c088e87b8f0afbfd43f71584b7c8519833a57
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
 AuthorDate: 2015-09-12
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
 CommitDate: 2015-09-12
 
-    h2load: Record TTFB on first byte of response body, rather than first socket read
+    Bump up version number to 1.3.2-DEV
 
-commit 5ea90ba6bd5b0222369a1eea408de232e977afa3
+commit e93a1bdf6dea75265c67056d10d900754746a8d2
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
 AuthorDate: 2015-09-12
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
 CommitDate: 2015-09-12
 
-    nghttpx: Fix crash with signal QUIT if mruby is not initialized
-
-commit fd8067be94a92e676f0ef0880f00bee4b0f809f7
-Merge: d0f96da ad34b45
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-12
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-12
-
-    Merge branch 'thinred-fix-sysv-service'
-
-commit ad34b45782229af992a30c98529a4cc216ce8160
-Merge: d0f96da da57989
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-12
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-12
-
-    Merge branch 'fix-sysv-service' of https://github.com/thinred/nghttp2 into thinred-fix-sysv-service
-
-commit d0f96da2c02b83c247b567d9549ecc54822f6469
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-12
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-12
-
-    src: Cleanup
-
-commit da57989cf6bc3aae6b3f116da8d704ace53666da
-Author:     Tomasz Buchert <tomasz@buchert.pl>
-AuthorDate: 2015-09-11
-Commit:     Tomasz Buchert <tomasz@buchert.pl>
-CommitDate: 2015-09-11
-
-    start nghttpx with --daemon
-
-commit f086b7b67eb84083cf60088c00235f2d9915a20c
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-12
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-12
-
-    nghttpx: Fix busy loop
-
-commit 471fd688b9855fc97eab8636cfa7789e7a773db7
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-12
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-12
-
-    Update mruby
-
-commit 02adaac3686120a73489061d1cf32ab834ef24c5
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-11
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-11
-
-    nghttpx: Write h1 header into downstream buffer directly
-
-commit 1bbef4be743d32fb8ee300d11eef55eaea51bb1a
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-10
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-10
-
-    Avoid usage of typeof and replace __builtin_offsetof with offsetof
-
-commit 918f8cca36c4349a3b03f834201f3c4e181b32d9
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-09
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-09
-
-    Honor stream->weight even if stream->last_writelen is 0
-
-commit 22b39f03376d078efd1cedf6c365e65d930be6c3
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-09
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-09
-
-    Revert "last_write_len must not be 0, which makes weight useless"
-    
-    This reverts commit e260006182067ef0f34523f13f64481b32e52314.
-
-commit e282462e1f91e489dddf07592423a7c407e24f4c
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-09
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-09
-
-    Set have_mruby=no so that we can show it in summary
-
-commit e4843201b0f5021b629dddbcd7f1ef96e6e49b94
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-09
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-09
-
-    Compile third-party libraries if hpack-tools is enabled
-
-commit 753f6d4a3e5696438d96f560f79352a59841ef08
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-09
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-09
-
-    src: Fix compiler warning
-
-commit aba2dbddc2f7bebd5c6b27cc64bec68a99b2ecd5
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-09
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-09
-
-    nghttpx: Don't allow partial PROXY protocol line
-
-commit 510dff4c394c9bbe197af5e6a5cfb52581574a8e
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-08
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-08
-
-    Add mruby requirements
-
-commit e260006182067ef0f34523f13f64481b32e52314
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-08
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-08
-
-    last_write_len must not be 0, which makes weight useless
-
-commit 7d481db2481f2a52de75b9616f64893c9c96c061
-Merge: 4f52f60 026ab79
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-07
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-07
-
-    Merge branch 'nghttpx-proxyprotocol'
-
-commit 4f52f60b3c3acec7278b30a7f833c8ae5b6453ca
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-07
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-07
-
-    src: Inline some single character categorization functions
-
-commit 5afc25623e213f639403cf31f959a430bc565c92
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-07
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-07
-
-    Pass CFLAGS, CXXFLAGS and LDFLAGS to mruby build
-
-commit 3ce1c1d39ff66383d797d61042d6ac67d42169ad
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-07
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-07
-
-    nghttpx: Add date header field to error_reply and send_reply
-
-commit 21a3edfc60578d28524c46f51209b31a81c191ed
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-07
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-07
-
-    nghttpx: Use 's' for param of Response::return
-
-commit 026ab797eb49c4e148a266f4d88f5a7ddab14027
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-07
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-07
-
-    src: util::numeric_host: Use inet_pton instead of getaddrinfo
-
-commit 79945c0c45cdf7230a29132bdabaf87de0594430
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-07
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-07
-
-    nghttpx: Robust PROXY protocol implementation
-
-commit f8c1da7f3c30d0bff3fe67f776fc92b36a1bbaec
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-06
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-06
-
-    nghttpx: Add --accept-proxy-protocol usage to help message
-
-commit a1bb48770c939dcd21951545f674af098ae60c69
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-06
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-06
-
-    nghttpx: Add tests for PROXY protocol handling
-
-commit d05b77b36ce01ed025c8cdf47e87936aaba31078
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-06
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-06
-
-    nghttpx: More logging for PROXY protocol handling
-
-commit ce53bd239e7a139db1409b00b409b04e295072d9
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-06
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-06
-
-    nghttpx: Implement PROXY protocol version 1
-    
-    Use --accept-proxy-protocol to enable PROXY protocol handling
-
-commit 39287314d383dae178f057828ea3b51969a8ee19
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-06
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-06
-
-    nghttpx: Fix missing `break`
-
-commit 231db4a3e6c6f878e90a772bfbd8a94e1c18cb20
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-06
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-06
-
-    Update man pages
-
-commit c30d252f944d791275871dadf10e74aa67fc05fd
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-06
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-06
-
-    nghttpx: Show warning if certain feature is not compiled in
-
-commit 6d46249b7b0747bf95f86b91229bff8575764c7b
-Merge: 8f41acc 1b63e6d
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-06
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-06
-
-    Merge branch 'nghttpx-mruby'
-
-commit 1b63e6d478b75736cbcd75e3db98d3a86205ddbe
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-06
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-06
-
-    nghttpx: Call request phase hook for pushed resource as well
-
-commit 28defbfb4a82f153b5e3d076bbd82d048214f343
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-06
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-06
-
-    nghttpx: Allow link header server push for HTTP/2 backend as well
-
-commit 75b98662befbd4b66e7713e262b46e285ff3d4b3
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-06
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-06
-
-    Don't use `git submodule update --init` in Makefile
-    
-    This is because when we make tar ball, we are no longer under git
-    control.  git submodule does not work there.  We instead bundle mruby
-    source tree in archive.  git submodule command is only required when
-    building from git repository.
-
-commit 1df682140c0c03f93e7d3b378dce84a284aa8493
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-06
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-06
-
-    nghttpx: Don't do mruby push with --no-server-push option
-
-commit 7273c7d688cb3af6855a10829845405dce62c541
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-06
-
-    Document mruby push
-
-commit ef1595672c7136f57a4f45d879474e559f1a1d6d
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-06
-
-    nghttpx: Add Request#push in mruby scripting
-    
-    Refactor Http2Upstream so that we can share code between link header
-    field based push and mruby push.
-
-commit 98c959291f7e16752a8907d6c68915b7c769f015
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-05
-
-    Update README.rst
-
-commit 2135c87f944f97fddaba4037777fe8ce67cea7af
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-05
-
-    Update README.rst
-
-commit e1106e0f9130d2ca8478a68b35855c17698e155c
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-05
-
-    Update doc
-
-commit 7b0113ac7766fa730accc8f05b0e1b56afb7ce3c
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-05
-
-    Remove \r
-
-commit 6f0c88580f6c685d8b77c29a35d2bd5002713837
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-05
-
-    Add *.pyc to .gitignore
-
-commit 18064d1626bef70a606e125d55e4b60032bf77a5
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-05
-
-    Document nghttpx mruby extension
-
-commit 3029e5c53019042dc54a71e33623df69ea4475bc
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-05
-
-    Bundle sphinxcontrib.rubydomain
-    
-    Source files were downloaded from
-    https://bitbucket.org/birkenfeld/sphinx-contrib/src/default/rubydomain/
-
-commit be77b47ab5efababe1c2008471e99ecfd1894b84
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-05
-
-    integration: Add ruby scripts to EXTRA_DIST
-
-commit 77958eab463c0224be4be26b91a46ab3161da167
-Merge: 69c3e21 8f41acc
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-05
-
-    Merge branch 'master' into nghttpx-mruby
-
-commit 8f41accf41b8f6bf4a4b6726f1df40828838f1b5
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-05
-
-    nghttpx: Don't initiate push if client disabled push
-
-commit e19d5efced60797b3d495075868ffc3c6e0de205
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-05
-
-    nghttpx: Allow absolute URI in Link header field for push
-
-commit 69c3e2114a4d583f92219fa865dc2e7f9d12e3c6
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-05
-
-    Again fix mruby build properly; pass CC, CXX and LD to build_config.rb
-
-commit 6dcfe1c3f84480392391bd7a892142ed044d645f
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-05
-
-    Add missing build_config.rb
-
-commit d076d54f67c3014dbf1121c589deb7bfcae850f9
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-05
-
-    nghttpx: Don't add mruby related CPPFLAGS and LDFLAGS if it is disabled
-    
-    Setting unused -L really makes libtool get angry
-
-commit aba7e9e7f9efc0133dcce543cc668eb0c6929abd
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-05
-
-    Add mruby as submodule; disable mruby by default for now
-
-commit 4ac7152f94c5735dcb4dd39726b904b09c445e5a
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-05
-
-    nghttpx: Fix build failure without mruby
-
-commit d348ea338468e58b1ada0f20af5a76c69a33ae86
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-05
-
-    integration: Fix test failures
-
-commit b4709b9e8c5cbd5b98271613158cd9965bdf45e6
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-05
-
-    nghttpx: Fix crash without mruby script
-
-commit 21e1af2ae7616e4f63928431bb4b28e29ae8cc79
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-05
-
-    nghttpx: Delete replaced header fields
-
-commit 226a09b04a0e007041165351eb2dc8a5a662a90e
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-05
-
-    nghttpx: Use gc arena save/restore when creating headers hash
-
-commit 587f37a59749b0370bce11fbd06b0096910cbfa7
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-05
-
-    nghttpx: Remove unused includes
-
-commit 97f488a5c7265ec7ecdea095d098fdac60e8b518
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-05
-
-    nghttpx: Add Env.phase method
-
-commit 45e0d42c51bf847be676357d4a817847b285c639
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-05
-
-    nghttpx: Check allowed operations per phase
-
-commit bddc4a0a04e2296a8ae9a2e5d2069f8f24a85869
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-04
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-05
-
-    nghttpx: Rewrite API; introduce Env object
-
-commit a9338f1c0efa37d65a04fc17280b9fa0aa161d21
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-04
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-04
-
-    nghttpx: Fix hang when error page is sent on response phase hook error
-
-commit 4ad00200a247ce50ffc01d5237a6c0dbd110a190
-Merge: 4872c9b 6b38f7e
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-04
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-04
-
-    Merge branch 'master' into nghttpx-mruby
-
-commit 6b38f7e0d215256e1e59136b474e98a20a14c6d4
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-04
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-04
-
-    nghttpx: Fix crash with multi workers and QUIT signal
-
-commit 4872c9b4c9e6e960628083769e8b43500cf646d5
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-04
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-04
-
-    Use C++ compiler to detect mruby since we have to enable C++ ABI mode
-    
-    Since default Debian/Ubuntu mruby package does not enable C++ ABI
-    mode, it cannot be used with our C++ code, since mruby exception does
-    not properly cleanup C++ object allocated on stack.  We have to build
-    mruby with conf.enable_cxx_abi explicitly.  It is safe for us to build
-    our own mruby.
-
-commit d8ca0a8d4712b1e2f0df7a03fe45c115f73e8655
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-04
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-04
-
-    nghttpx: Add clear_headers and add_header methods to Request and Response
-
-commit 2222a898a19744a3a54326d492a6b33c97d91807
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-04
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-04
-
-    integration: Add mruby tests
-
-commit 9e685a2734be556244cfca3ebab7d4660936a935
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-04
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-04
-
-    nghttpx: Various test failures
-
-commit c86e8390912800dc88d41b2078d27e3fd03f490e
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-04
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-04
-
-    nghttpx: Fix mruby detection
-
-commit d722a095813a1f9957e62ab821b0e59401d20598
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-04
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-04
-
-    nghttpx: Rename mruby script options
-
-commit 5967667e9e190cd3dbcd172f6e4023a76b4d6e80
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-04
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-04
-
-    nghttpx: Allow empty path assignment in mruby code
-
-commit d044c58558bbcdc6cc1add493fbedf71630a9108
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-04
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-04
-
-    nghttpx: Detect mruby presence and guard mruby related code with ifdef
-
-commit 200217d8eaec1292880b92389b808f48f7511abd
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-04
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-04
-
-    nghttpx: Store empty string to path for server-wide OPTIONS request
-    
-    This change is required to show path attribute to mruby script.  It is
-    desirable to construct URI from parts.  Just checking method and path
-    is "*" is awkward.
-
-commit 02bb2c3e835880253078ed5a2014408bdd7e9993
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-03
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-03
-
-    nghttpx: Create authority from host or authority-form for CONNECT request
-
-commit 64c754e2c560e9fffba63c426538e490da18c9c3
-Merge: 3235b88 ad65121
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-03
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-03
-
-    Merge branch 'master' into nghttpx-mruby
-
-commit ad65121496823e53d879ce64445fd7a0b4cfda0f
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-03
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-03
-
-    nghttpx: Fix assertion error because of empty scheme
-
-commit 3235b88253d552c77f0f1badc2f5b3024feeef60
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-03
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-03
-
-    nghttpx: Fix assertion error because of empty scheme
-
-commit 5e3ab6da5a00157f3fc0089113f67c4df925a4b9
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-03
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-03
-
-    nghttpx: Perhaps this looks right, but not sure
-
-commit 6f9c9f85188714f70f8a9daefe1c4dd2c8fcbb57
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-03
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-03
-
-    nghttpx: Fix assertion failure when response was commited early
-
-commit 65f2b16132c446f6d47ef513c0b299398c85aed8
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-03
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-03
-
-    nghttpx: More freedom for custom response headers
-
-commit 05a761b628011a1afad32b701983c25c1897c584
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-03
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-03
-
-    nghttpx: Add Request.remote_addr which returns client remote address
-
-commit 14f5240d8f9ff124199bb29319428ede6482b4c9
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-03
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-03
-
-    nghttpx: Update doc
-
-commit baadec5ef4eafb30dd7f42239bb096abc2dc12b5
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-03
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-03
-
-    nghttpx: Add response mruby hook
-
-commit d20229d9b9b307d85247a9fc0c46e320b8e4f831
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-03
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-03
-
-    nghttpx: Handle block is not passed
-
-commit e06af02573f4183111726225cc01ed1b7adfc42d
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-03
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-03
-
-    nghttpx: Add Response mruby object
-
-commit 5cd34920b74ac1979be21fc6c861e97c1abdaabb
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-02
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-02
-
-    nghttpx: Add Request class accessors
-
-commit e436caf0bb81d0c7af44010c7e37f2badae34723
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-02
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-02
-
-    nghttpx: Don't forward request if response was commited in mruby hook
-
-commit f0d41a5ac2d3ccbc35b1818be1c860c63325f0d2
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-02
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-02
-
-    nghttpx: Handle nil given to request.set_header as value
-
-commit 068529586d10a939fdef5e767aae322a53005c3a
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-02
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-02
-
-    nghttpx: Split up request class definition to dedicated files
-
-commit 45cdb10c4640ec3d88fe96e0e5a8195b041f4694
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-02
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-02
-
-    nghttpx: Use ruby block to run request hook
-
-commit 2170d958d518fc8c714b838700cb334faedf0972
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-02
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-02
-
-    nghttpx: Return copied string for safety
-
-commit 9d786919361f9d134217061512332a9db6262b8a
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-02
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-02
-
-    nghttpx: Fix copy-and-paste bug
-
-commit 1508c50a45b5321c7ba902c18369be8376ae3308
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-02
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-02
-
-    nghttpx: Add basic infrastructure for mruby support
-
-commit dd0a72579fdbb4183959a5612b7b07b93358a027
-Merge: e255705 e7bc269
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-02
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-02
-
-    Merge branch 'LPardue-issue-339'
-
-commit e7bc269e970b69e74401875ea5a545595a50830a
-Merge: 0c4e26f e255705
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-02
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-02
-
-    Merge branch 'master' into LPardue-issue-339
-
-commit e2557059e5b00c2b45804e6d420a0e956ee71be6
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-02
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-02
-
-    h2load: Fix crash with --timing-script option
-
-commit 0c4e26fd246af268c70b1c533d1601b1fd2f3a12
-Merge: e1f7643 3002674
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-02
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-02
-
-    Merge branch 'issue-339' of https://github.com/LPardue/nghttp2 into LPardue-issue-339
-
-commit 3002674bacbbaeecf91318fe5170df1f9ca1ccf4
-Author:     Lucas Pardue <lucas.pardue@bbc.co.uk>
-AuthorDate: 2015-09-01
-Commit:     Lucas Pardue <lucas.pardue@bbc.co.uk>
-CommitDate: 2015-09-01
-
-    h2load: Improve checking for timing script imput, prevent false positive in certain situations
-
-commit e1f7643c92e78dfbc659b16c47d5cdaaf41520ff
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-02
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-02
-
-    nghttpx: Fix memory leak
-
-commit d70eb14ce0cd3ab8353ae206e554c604d0d99661
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-08-31
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-08-31
-
-    nghttpx: Drop connection before TLS finish if h2 requirement is not fulfilled
-
-commit 31c19cbda428984b64e8cfe2f40783fd52d23387
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-08-30
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-08-30
-
-    Bump up version number to 1.3.1-DEV
+    Call git submodule before creating packages
