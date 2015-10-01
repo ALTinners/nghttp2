@@ -71,8 +71,9 @@ static int32_t submit_headers_shared(nghttp2_session *session, uint8_t flags,
   item->aux_data.headers.stream_user_data = stream_user_data;
   item->aux_data.headers.attach_stream = attach_stream;
 
-  flags_copy = (flags & (NGHTTP2_FLAG_END_STREAM | NGHTTP2_FLAG_PRIORITY)) |
-               NGHTTP2_FLAG_END_HEADERS;
+  flags_copy =
+      (uint8_t)((flags & (NGHTTP2_FLAG_END_STREAM | NGHTTP2_FLAG_PRIORITY)) |
+                NGHTTP2_FLAG_END_HEADERS);
 
   if (stream_id == -1) {
     if (session->next_stream_id > INT32_MAX) {
@@ -80,7 +81,7 @@ static int32_t submit_headers_shared(nghttp2_session *session, uint8_t flags,
       goto fail;
     }
 
-    stream_id = session->next_stream_id;
+    stream_id = (int32_t)session->next_stream_id;
     session->next_stream_id += 2;
 
     hcat = NGHTTP2_HCAT_REQUEST;
@@ -313,7 +314,7 @@ int32_t nghttp2_submit_push_promise(nghttp2_session *session, uint8_t flags _U_,
 
   flags_copy = NGHTTP2_FLAG_END_HEADERS;
 
-  promised_stream_id = session->next_stream_id;
+  promised_stream_id = (int32_t)session->next_stream_id;
   session->next_stream_id += 2;
 
   nghttp2_frame_push_promise_init(&frame->push_promise, flags_copy, stream_id,
@@ -475,5 +476,5 @@ ssize_t nghttp2_pack_settings_payload(uint8_t *buf, size_t buflen,
     return NGHTTP2_ERR_INSUFF_BUFSIZE;
   }
 
-  return nghttp2_frame_pack_settings_payload(buf, iv, niv);
+  return (ssize_t)nghttp2_frame_pack_settings_payload(buf, iv, niv);
 }

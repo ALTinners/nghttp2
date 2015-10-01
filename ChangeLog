@@ -1,105 +1,253 @@
-commit 818c3bcadc58f4b756a08af9f3b3d096e01df801 (HEAD, tag: v1.3.2, origin/master, origin/HEAD, master)
+commit 1d88f02b1024f8ae6ab25bf4e72dfd64df4faf98 (HEAD, tag: v1.3.3, origin/master, origin/HEAD, master)
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-16
+AuthorDate: 2015-09-24
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-16
+CommitDate: 2015-09-24
+
+    Update bash_completion
+
+commit a0643b86eb253a8e0d0e298f0b1c1eba5c570e8a
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-24
 
     Update man pages
 
-commit cd845ae1116ef6ec9ed2b3551f083a1518d0c46d
+commit 53270fac8833697108dd64c6e52806d83eb73a5d
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-16
+AuthorDate: 2015-09-24
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-16
+CommitDate: 2015-09-24
 
-    Bump up version number to 1.3.2, LT revision to 15:2:1
+    Bump up version number to 1.3.3, LT revision to 15:3:1
 
-commit c6785abd1f7db1f46e86bb19c58cb10c10082e12
+commit 25db23e3c8e5e0ab1e880b2a6188f9e456178575
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-16
+AuthorDate: 2015-09-24
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-16
+CommitDate: 2015-09-24
 
-    nghttp: Check req is null, found by coverity
+    integration: Workaround flaky test around signal
 
-commit ee4732a67699c3f1662295cdfcecc955e00bafc9
+commit a54062bd5eb2be68f13c94a0d23a4d6269b94575
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-16
+AuthorDate: 2015-09-24
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-16
+CommitDate: 2015-09-24
 
-    nghttp: Show error if HEADERS frame cannot be sent for whatever reason
+    nghttpx: Fix output glitch
 
-commit eacd6eeed270c4985f7b322651a348d9e302170a
+commit c3283e1c6ec211eb98ab45e62cdc14e3a54ed2d3
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-16
+AuthorDate: 2015-09-23
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-16
+CommitDate: 2015-09-23
 
-    Check header block limit after new stream is opened
+    Update tutorial
 
-commit 4aaf111c5853f5d00594724ebbffffc5cd011931
+commit 25e2adbfe92668162de8cd5845db30c4146acd50
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-23
+
+    Update mruby
+
+commit fec7ef61d35b91014cb5955e5e16a1f776bab3e5
+Merge: 50ec17c 2269b99
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-23
+
+    Merge branch 'rraptorr-unix-tcp-nodelay'
+
+commit 2269b99b4fb3bbf2752fbd7a1e62b3193e3e8365
+Merge: 50ec17c 84f96a2
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-23
+
+    Merge branch 'unix-tcp-nodelay' of https://github.com/rraptorr/nghttp2 into rraptorr-unix-tcp-nodelay
+
+commit 84f96a2fd57592b5bbd0ee72bc677bc76c089df7
+Author:     Janusz Dziemidowicz <rraptorr@nails.eu.org>
+AuthorDate: 2015-09-23
+Commit:     Janusz Dziemidowicz <rraptorr@nails.eu.org>
+CommitDate: 2015-09-23
+
+    Do not try to set TCP_NODELAY when frontend is an UNIX socket
+    
+    This silences warning log that otherwise spams logs on every accepted
+    connection.
+
+commit 50ec17c4af8db7deb4cb9db1392969339185ce7b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-23
+
+    Add more tests for handling padding in DATA frame
+
+commit 170f2a144a19a2eb63a2e22a8dbb3ddf67998e8e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-23
+
+    Fix warning with gcc
+
+commit 28fe3e7e891a37e46234368f95d68dcc20e3168f
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-23
+
+    More warning flags for --enable-werror
+
+commit 2be6a94d70bf6a03cfaac625b10e64b2af9006df
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-22
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-22
+
+    nghttpx: Show textual signal description when worker process exited
+
+commit e77f9d95d36e27a2b490501c5ae4921d7d7d2958
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-22
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-22
+
+    nghttpx: Set CLOEXEC for ipc fds
+
+commit 87a38bdf8d16d225ed3eca6548901e91d0d7562c
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-22
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-22
+
+    nghttpx: Chown UNIX domain socket to user specified as --user
+
+commit 03bb58006b03ee1567e18e3f2e4e52ceeaa17502
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-22
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-22
+
+    nghttpx: Extract several chown() usages into 1 function
+
+commit 230b1f927f30cfab305e0a2f8ba367a6b6e01686
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
 AuthorDate: 2015-09-15
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-15
+CommitDate: 2015-09-19
 
-    nghttpx: Fix assertion failure on TLS handshake
+    Use hash table for dynamic table lookup
 
-commit 991352d201ece861751147f3da111f45e13b55a1
+commit 4ac8edfe27dab7ba4f5ef0f190be5cbfa1df08c3
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-14
+AuthorDate: 2015-09-19
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-14
+CommitDate: 2015-09-19
 
-    Just assign stream->cycle to descendant_last_cycle
+    Update doc
 
-commit d22573086f239a41cf36fc032b5a19389797806e
+commit ab824d12305e41bf642f46ee1f44423c2993ed1e
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-14
+AuthorDate: 2015-09-19
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-14
+CommitDate: 2015-09-19
 
-    nghttpx: Add x-http2-push header field for pushed resource
+    nghttpx: Add missing sys/wait.h
+
+commit e67bb7ca62c28f4457ddad36a46477888814a29e
+Merge: b57b0db da9e535
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-18
+
+    Merge branch 'nghttpx-process'
+
+commit da9e535c7aa0d7298e0c09e024548816cbb29daa
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-18
+
+    nghttpx: Log worker thread creating in NOTICE level
+
+commit dbbc7296f5b9f82319df6cd9f24b3e0cd806f493
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-18
+
+    strdup is not required here
+
+commit ce1b11e3a061e8b977f033f31dc00110804e6c52
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-18
+
+    nghttpx: Split monolithic one process into control and worker processes
     
-    Fixes GH-352
+    The control process handles signals, reads configuration, reads
+    private keys, and bind port (which may be privileged one).  It never
+    drop privileges, so that it can execute new binary with the same
+    privilege.  It forks worker process.  The worker process handles all
+    incoming connections.  It drops privilege.
 
-commit 114858452643fa4beddd7849520873ad783b7727
+commit b57b0db5bfd6375caf358a2f486d503ec71eca87
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-18
+
+    h2load: Fix npn defualt list
+
+commit 03b32d92b7f39cd838482fac4e9ba7990772eb9c
+Merge: 1c2fcc2 604732b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-18
+
+    Merge branch 'LPardue-h2load-http1_a'
+
+commit 604732b650aeff5fc905447f222c8072e0e531e0
+Merge: 1c2fcc2 ec47dfb
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-18
+
+    Merge branch 'h2load-http1_a' of https://github.com/LPardue/nghttp2 into LPardue-h2load-http1_a
+
+commit ec47dfb9b8649a712f5819f8f74863beba62eaf8
+Author:     Lucas Pardue <lucas.pardue@bbc.co.uk>
 AuthorDate: 2015-09-14
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-14
+Commit:     Lucas Pardue <lucas.pardue@bbc.co.uk>
+CommitDate: 2015-09-17
 
-    nghttpx: Reserve room for required header fields for PUSH_PROMISE
+    Initial HTTP/1.1 capability. Add npn-list option to h2load. Make NPN/ALPN more runtime dependent
 
-commit 5005369f715ca984393b943c0c08e08f5f45cf04
+commit 1c2fcc2a55d5857883d13b91bd6dd4ede9e5e022
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-13
+AuthorDate: 2015-09-17
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-13
+CommitDate: 2015-09-17
 
-    android-config: Use absolute path for compilers
+    nghttpx: Handle SSL/TLS data following PROXY protocol line
 
-commit 33601f1a51e434d9ecec12c45f9c23411293476b
+commit 83ff3de9aef1f56e7302017a8ee6af9e343a4bda
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-13
+AuthorDate: 2015-09-16
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-13
+CommitDate: 2015-09-16
 
-    nghttpx: Fix compile error with --disable-threads
-
-commit b97c088e87b8f0afbfd43f71584b7c8519833a57
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-12
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-12
-
-    Bump up version number to 1.3.2-DEV
-
-commit e93a1bdf6dea75265c67056d10d900754746a8d2
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-12
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-12
-
-    Call git submodule before creating packages
+    Bump up version number to 1.3.3-DEV

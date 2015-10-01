@@ -86,7 +86,8 @@ h2load_SOURCES = util.cc util.h \
 	timegm.c timegm.h \
 	ssl.cc ssl.h \
 	h2load_session.h \
-	h2load_http2_session.cc h2load_http2_session.h
+	h2load_http2_session.cc h2load_http2_session.h \
+	h2load_http1_session.cc h2load_http1_session.h
 
 if HAVE_SPDYLAY
 h2load_SOURCES += h2load_spdy_session.cc h2load_spdy_session.h
@@ -124,6 +125,8 @@ NGHTTPX_SRCS = \
 	shrpx_memcached_connection.cc shrpx_memcached_connection.h \
 	shrpx_memcached_request.h \
 	shrpx_memcached_result.h \
+	shrpx_worker_process.cc shrpx_worker_process.h \
+	shrpx_process.h \
 	buffer.h memchunk.h template.h
 
 if HAVE_SPDYLAY

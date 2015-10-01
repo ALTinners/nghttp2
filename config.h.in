@@ -200,6 +200,9 @@
 /* Define to 1 if assertions should be disabled. */
 #undef NDEBUG
 
+/* Hint to the compiler that a function never return */
+#undef NGHTTP2_NORETURN
+
 /* Define to 1 if you want to disable threads. */
 #undef NOTHREADS
 
@@ -309,7 +312,9 @@
    #define below would cause a syntax error. */
 #undef _UINT8_T
 
-/* Hint to the compiler that a function parameters is not used */
+/* Hint to the compiler that a function parameters is not use
+   AC_DEFINE([NGHTTP2_NORETURN], , [Hint to the compiler that a function never
+   return]) d */
 #undef _U_
 
 /* Define to `int' if <sys/types.h> doesn't define. */

@@ -327,6 +327,7 @@ struct Config {
   nghttp2_option *http2_client_option;
   const EVP_CIPHER *tls_ticket_key_cipher;
   const char *server_name;
+  char **original_argv;
   char **argv;
   char *cwd;
   size_t num_worker;
@@ -432,20 +433,6 @@ int load_config(const char *filename, std::set<std::string> &include_set);
 
 // Read passwd from |filename|
 std::string read_passwd_from_file(const char *filename);
-
-template <typename T> using Range = std::pair<T, T>;
-
-// Parses delimited strings in |s| and returns the array of substring,
-// delimited by |delim|.  The any white spaces around substring are
-// treated as a part of substring.
-std::vector<std::string> parse_config_str_list(const char *s, char delim = ',');
-
-// Parses delimited strings in |s| and returns the array of pointers,
-// each element points to the beginning and one beyond last of
-// substring in |s|.  The delimiter is given by |delim|.  The any
-// white spaces around substring are treated as a part of substring.
-std::vector<Range<const char *>> split_config_str_list(const char *s,
-                                                       char delim);
 
 // Parses header field in |optarg|.  We expect header field is formed
 // like "NAME: VALUE".  We require that NAME is non empty string.  ":"
