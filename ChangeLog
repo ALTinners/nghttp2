@@ -1,253 +1,136 @@
-commit 1d88f02b1024f8ae6ab25bf4e72dfd64df4faf98 (HEAD, tag: v1.3.3, origin/master, origin/HEAD, master)
+commit 895da9a7aa7b84c91b41fbbb8bad42e8a976eaf3 (HEAD, tag: v1.3.4, origin/master, origin/HEAD, master)
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-24
+AuthorDate: 2015-09-25
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-24
-
-    Update bash_completion
-
-commit a0643b86eb253a8e0d0e298f0b1c1eba5c570e8a
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-24
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-24
+CommitDate: 2015-09-25
 
     Update man pages
 
-commit 53270fac8833697108dd64c6e52806d83eb73a5d
+commit f9eaaa9da5918bd258d75cbcf9247c3c4a21cf95
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-25
+
+    Bump up version number to 1.3.4, LT revision to 15:4:1
+
+commit 6680d8b792108a03342f3d918b8327a4d71dd7a9
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-25
+
+    nghttpx: Call setsid after executing new binary
+
+commit 0b32df94a59bafd61ae91b5a7d4d58017ee5175a
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-25
+
+    nghttpx: Log when worker process exits
+
+commit 913b95336b8be9356ff754c77d788445b4816f76
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-25
+
+    Fix warning 'this decimal constant is unsigned only in ISO C90'
+
+commit c44587a70cbae0985c7e4cc5c231af88c0d20331
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
 AuthorDate: 2015-09-24
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
 CommitDate: 2015-09-24
 
-    Bump up version number to 1.3.3, LT revision to 15:3:1
+    nghttpx: Use _Exit when exiting from child process
 
-commit 25db23e3c8e5e0ab1e880b2a6188f9e456178575
+commit 938fa9a1e289409ccb1212bff63a2194a723c307
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
 AuthorDate: 2015-09-24
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
 CommitDate: 2015-09-24
 
-    integration: Workaround flaky test around signal
+    nghttpx: Fix compile error with --disable-threads
 
-commit a54062bd5eb2be68f13c94a0d23a4d6269b94575
+commit 206eab3b334da7c77b2345b81fef2e068aecde18
+Merge: bff59e0 bb4ab7e
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
 AuthorDate: 2015-09-24
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
 CommitDate: 2015-09-24
 
-    nghttpx: Fix output glitch
+    Merge branch 'fix-signal-handling'
 
-commit c3283e1c6ec211eb98ab45e62cdc14e3a54ed2d3
+commit bb4ab7e33351d304fc7a8ef24186066f2b7cfac3 (origin/fix-signal-handling)
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-23
+AuthorDate: 2015-09-24
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-23
+CommitDate: 2015-09-24
 
-    Update tutorial
+    integration: Robust process termination
 
-commit 25e2adbfe92668162de8cd5845db30c4146acd50
+commit f470d1cc06bfbd1fafdb188f9e73bef0cc9d70c3
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-23
+AuthorDate: 2015-09-24
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-23
+CommitDate: 2015-09-24
 
-    Update mruby
+    Document that sending signal to nghttpx worker process may not work
 
-commit fec7ef61d35b91014cb5955e5e16a1f776bab3e5
-Merge: 50ec17c 2269b99
+commit 3d5493c3f180ee9355b7fe760a97a778345d953d
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-23
+AuthorDate: 2015-09-24
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-23
+CommitDate: 2015-09-24
 
-    Merge branch 'rraptorr-unix-tcp-nodelay'
+    nghttpx-logrotate: Don't use killall since we have multiple processes
 
-commit 2269b99b4fb3bbf2752fbd7a1e62b3193e3e8365
-Merge: 50ec17c 84f96a2
+commit 389a96483a32b10be76554dd7bb7849547bdebd9
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-23
+AuthorDate: 2015-09-24
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-23
+CommitDate: 2015-09-24
 
-    Merge branch 'unix-tcp-nodelay' of https://github.com/rraptorr/nghttp2 into rraptorr-unix-tcp-nodelay
+    nghttpx: Fix improper signal handling
 
-commit 84f96a2fd57592b5bbd0ee72bc677bc76c089df7
+commit bff59e09dcb088c57212c01021dad2d2927ea267
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-24
+
+    src: Robust make_array implementation
+    
+    This is meant to be used for ints, but unfortunately std::forward is
+    not constexpr in C++11.
+
+commit 1e96a2d357e77cc072e53e8bb8b6105074c9f0b0
+Merge: b7fd0fd 4a5d1b6
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-24
+
+    Merge branch 'rraptorr-init-upgrade'
+
+commit 4a5d1b6708ba35cebc7b9c0e17fb983d27307017
 Author:     Janusz Dziemidowicz <rraptorr@nails.eu.org>
-AuthorDate: 2015-09-23
+AuthorDate: 2015-09-24
 Commit:     Janusz Dziemidowicz <rraptorr@nails.eu.org>
-CommitDate: 2015-09-23
+CommitDate: 2015-09-24
 
-    Do not try to set TCP_NODELAY when frontend is an UNIX socket
+    Make traditional init script fail if new config file is broken
     
-    This silences warning log that otherwise spams logs on every accepted
-    connection.
+    Instead of assuming that upgrade is always successful, check if a new
+    process actually started. Do not kill old process if the new one
+    failed.
 
-commit 50ec17c4af8db7deb4cb9db1392969339185ce7b
+commit b7fd0fdd966b35491276b542bbf142ca00bb2172
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-23
+AuthorDate: 2015-09-24
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-23
+CommitDate: 2015-09-24
 
-    Add more tests for handling padding in DATA frame
-
-commit 170f2a144a19a2eb63a2e22a8dbb3ddf67998e8e
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-23
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-23
-
-    Fix warning with gcc
-
-commit 28fe3e7e891a37e46234368f95d68dcc20e3168f
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-23
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-23
-
-    More warning flags for --enable-werror
-
-commit 2be6a94d70bf6a03cfaac625b10e64b2af9006df
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-22
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-22
-
-    nghttpx: Show textual signal description when worker process exited
-
-commit e77f9d95d36e27a2b490501c5ae4921d7d7d2958
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-22
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-22
-
-    nghttpx: Set CLOEXEC for ipc fds
-
-commit 87a38bdf8d16d225ed3eca6548901e91d0d7562c
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-22
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-22
-
-    nghttpx: Chown UNIX domain socket to user specified as --user
-
-commit 03bb58006b03ee1567e18e3f2e4e52ceeaa17502
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-22
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-22
-
-    nghttpx: Extract several chown() usages into 1 function
-
-commit 230b1f927f30cfab305e0a2f8ba367a6b6e01686
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-15
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-19
-
-    Use hash table for dynamic table lookup
-
-commit 4ac8edfe27dab7ba4f5ef0f190be5cbfa1df08c3
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-19
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-19
-
-    Update doc
-
-commit ab824d12305e41bf642f46ee1f44423c2993ed1e
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-19
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-19
-
-    nghttpx: Add missing sys/wait.h
-
-commit e67bb7ca62c28f4457ddad36a46477888814a29e
-Merge: b57b0db da9e535
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-18
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-18
-
-    Merge branch 'nghttpx-process'
-
-commit da9e535c7aa0d7298e0c09e024548816cbb29daa
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-18
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-18
-
-    nghttpx: Log worker thread creating in NOTICE level
-
-commit dbbc7296f5b9f82319df6cd9f24b3e0cd806f493
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-18
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-18
-
-    strdup is not required here
-
-commit ce1b11e3a061e8b977f033f31dc00110804e6c52
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-18
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-18
-
-    nghttpx: Split monolithic one process into control and worker processes
-    
-    The control process handles signals, reads configuration, reads
-    private keys, and bind port (which may be privileged one).  It never
-    drop privileges, so that it can execute new binary with the same
-    privilege.  It forks worker process.  The worker process handles all
-    incoming connections.  It drops privilege.
-
-commit b57b0db5bfd6375caf358a2f486d503ec71eca87
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-18
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-18
-
-    h2load: Fix npn defualt list
-
-commit 03b32d92b7f39cd838482fac4e9ba7990772eb9c
-Merge: 1c2fcc2 604732b
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-18
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-18
-
-    Merge branch 'LPardue-h2load-http1_a'
-
-commit 604732b650aeff5fc905447f222c8072e0e531e0
-Merge: 1c2fcc2 ec47dfb
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-18
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-18
-
-    Merge branch 'h2load-http1_a' of https://github.com/LPardue/nghttp2 into LPardue-h2load-http1_a
-
-commit ec47dfb9b8649a712f5819f8f74863beba62eaf8
-Author:     Lucas Pardue <lucas.pardue@bbc.co.uk>
-AuthorDate: 2015-09-14
-Commit:     Lucas Pardue <lucas.pardue@bbc.co.uk>
-CommitDate: 2015-09-17
-
-    Initial HTTP/1.1 capability. Add npn-list option to h2load. Make NPN/ALPN more runtime dependent
-
-commit 1c2fcc2a55d5857883d13b91bd6dd4ede9e5e022
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-17
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-17
-
-    nghttpx: Handle SSL/TLS data following PROXY protocol line
-
-commit 83ff3de9aef1f56e7302017a8ee6af9e343a4bda
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-16
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-16
-
-    Bump up version number to 1.3.3-DEV
+    Bump up version to 1.3.4-DEV
