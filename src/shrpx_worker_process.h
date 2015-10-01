@@ -1,7 +1,7 @@
 /*
  * nghttp2 - HTTP/2 C Library
  *
- * Copyright (c) 2012, 2013 Tatsuhiro Tsujikawa
+ * Copyright (c) 2015 Tatsuhiro Tsujikawa
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -22,21 +22,28 @@
  * OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-#ifndef NGHTTP2VER_H
-#define NGHTTP2VER_H
+#ifndef SHRPX_WORKER_PROCESS_H
+#define SHRPX_WORKER_PROCESS_H
 
-/**
- * @macro
- * Version number of the nghttp2 library release
- */
-#define NGHTTP2_VERSION "1.3.3"
+#include "shrpx.h"
 
-/**
- * @macro
- * Numerical representation of the version number of the nghttp2 library
- * release. This is a 24 bit number with 8 bits for major number, 8 bits
- * for minor and 8 bits for patch. Version 1.2.3 becomes 0x010203.
- */
-#define NGHTTP2_VERSION_NUM 0x010303
+using namespace nghttp2;
 
-#endif /* NGHTTP2VER_H */
+namespace shrpx {
+
+class ConnectionHandler;
+
+struct WorkerProcessConfig {
+  // IPC socket to read event from master process
+  int ipc_fd;
+  // IPv4 or UNIX domain socket, or -1 if not used
+  int server_fd;
+  // IPv6 socket, or -1 if not used
+  int server_fd6;
+};
+
+int worker_process_event_loop(WorkerProcessConfig *wpconf);
+
+} // namespace shrpx
+
+#endif // SHRPX_WORKER_PROCESS_H

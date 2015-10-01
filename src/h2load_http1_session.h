@@ -1,7 +1,7 @@
 /*
  * nghttp2 - HTTP/2 C Library
  *
- * Copyright (c) 2012, 2013 Tatsuhiro Tsujikawa
+ * Copyright (c) 2015 British Broadcasting Corporation
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -22,21 +22,37 @@
  * OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-#ifndef NGHTTP2VER_H
-#define NGHTTP2VER_H
+#ifndef H2LOAD_HTTP1_SESSION_H
+#define H2LOAD_HTTP1_SESSION_H
 
-/**
- * @macro
- * Version number of the nghttp2 library release
- */
-#define NGHTTP2_VERSION "1.3.3"
+#include "h2load_session.h"
 
-/**
- * @macro
- * Numerical representation of the version number of the nghttp2 library
- * release. This is a 24 bit number with 8 bits for major number, 8 bits
- * for minor and 8 bits for patch. Version 1.2.3 becomes 0x010203.
- */
-#define NGHTTP2_VERSION_NUM 0x010303
+#include <nghttp2/nghttp2.h>
 
-#endif /* NGHTTP2VER_H */
+namespace h2load {
+
+struct Client;
+
+class Http1Session : public Session {
+public:
+  Http1Session(Client *client);
+  virtual ~Http1Session();
+  virtual void on_connect();
+  virtual void submit_request(RequestStat *req_stat);
+  virtual int on_read(const uint8_t *data, size_t len);
+  virtual int on_write();
+  virtual void terminate();
+  Client *get_client();
+  int32_t stream_req_counter_;
+  int32_t stream_resp_counter_;
+  std::unordered_map<int32_t, RequestStat *> req_stats_;
+
+private:
+  Client *client_;
+  http_parser htp_;
+  bool complete_;
+};
+
+} // namespace h2load
+
+#endif // H2LOAD_HTTP1_SESSION_H

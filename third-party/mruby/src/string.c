@@ -56,7 +56,7 @@ mrb_utf8_from_locale(const char *str, size_t len)
   if (len == 0)
     return strdup("");
   if (len == -1)
-	len = strlen(str);
+    len = strlen(str);
   wcssize = MultiByteToWideChar(GetACP(), 0, str, len,  NULL, 0);
   wcsp = (wchar_t*) malloc((wcssize + 1) * sizeof(wchar_t));
   if (!wcsp)
@@ -86,7 +86,7 @@ mrb_locale_from_utf8(const char *utf8, size_t len)
   if (len == 0)
     return strdup("");
   if (len == -1)
-	len = strlen(utf8);
+    len = strlen(utf8);
   wcssize = MultiByteToWideChar(CP_UTF8, 0, utf8, len,  NULL, 0);
   wcsp = (wchar_t*) malloc((wcssize + 1) * sizeof(wchar_t));
   if (!wcsp)
@@ -1389,17 +1389,6 @@ mrb_str_index_m(mrb_state *mrb, mrb_value str)
   }
 
   switch (mrb_type(sub)) {
-    case MRB_TT_FIXNUM: {
-      mrb_int c = mrb_fixnum(sub);
-      mrb_int len = RSTRING_LEN(str);
-      unsigned char *p = (unsigned char*)RSTRING_PTR(str);
-
-      for (;pos<len;pos++) {
-        if (p[pos] == c) return mrb_fixnum_value(pos);
-      }
-      return mrb_nil_value();
-    }
-
     default: {
       mrb_value tmp;
 
@@ -1736,16 +1725,6 @@ mrb_str_rindex_m(mrb_state *mrb, mrb_value str)
   mrb_regexp_check(mrb, sub);
 
   switch (mrb_type(sub)) {
-    case MRB_TT_FIXNUM: {
-      mrb_int c = mrb_fixnum(sub);
-      unsigned char *p = (unsigned char*)RSTRING_PTR(str);
-
-      for (pos=len-1;pos>=0;pos--) {
-        if (p[pos] == c) return mrb_fixnum_value(pos);
-      }
-      return mrb_nil_value();
-    }
-
     default: {
       mrb_value tmp;
 
