@@ -1,5 +1,6 @@
 Source: nghttp2
 Maintainer: Dave Beckett <dajobe@debian.org>
+Uploaders: Tomasz Buchert <tomasz@debian.org>
 Section: httpd
 Priority: optional
 Build-Depends: debhelper (>= 9),
