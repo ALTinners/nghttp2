@@ -2,7 +2,7 @@ nghttp2 (1.3.4-2) unstable; urgency=medium
 
   * Split into subpackages (nghttp2-{client,proxy,server})
 
- -- Tomasz Buchert <tomasz@debian.org>  Fri, 23 Oct 2015 01:56:24 +0200
+ -- Tomasz Buchert <tomasz@debian.org>  Fri, 23 Oct 2015 17:39:22 +0200
 
 nghttp2 (1.3.4-1) unstable; urgency=medium
 
