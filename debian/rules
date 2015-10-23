@@ -22,7 +22,7 @@ override_dh_auto_install: custom_install_manual custom_install_init_scripts cust
 	dh_auto_install
 
 override_dh_installinit:
-	dh_installinit -pnghttp2 --onlyscripts --name=nghttpx
+	dh_installinit -pnghttp2-proxy --onlyscripts --name=nghttpx
 
 .PHONY: custom_install_manual custom_install_init_scripts custom_install_systemd
 
@@ -34,7 +34,7 @@ custom_install_manual:
 	ln -sf /usr/share/javascript/jquery/jquery.js $(DOCDIR)/_static/jquery.js
 	ln -sf /usr/share/javascript/underscore/underscore.js $(DOCDIR)/_static/underscore.js
 
-ETCDIR="debian/nghttp2/etc"
+ETCDIR="debian/nghttp2-proxy/etc"
 custom_install_init_scripts:
 	install -d $(ETCDIR)/init.d
 	sed -e 's,^DAEMON=.*/,DAEMON=/usr/sbin/,' contrib/nghttpx-init > $(ETCDIR)/init.d/nghttpx
@@ -47,7 +47,7 @@ custom_install_init_scripts:
 
 # Currently we install our own systemd unit because
 # the original one is slightly broken
-SYSTEMD="debian/nghttp2/lib/systemd/system"
+SYSTEMD="debian/nghttp2-proxy/lib/systemd/system"
 custom_install_systemd:
 	install -d $(SYSTEMD)
 	install -p -m644 debian/nghttpx.service $(SYSTEMD)/nghttpx.service
