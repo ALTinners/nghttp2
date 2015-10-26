@@ -40,3 +40,6 @@ Synopsis
         when *session* was configured as server and
         `nghttp2_option_set_no_recv_client_magic()` is not used with
         nonzero value.
+    :macro:`NGHTTP2_ERR_FLOODED`
+        Flooding was detected in this HTTP/2 session, and it must be
+        closed.  This is most likely caused by misbehaviour of peer.

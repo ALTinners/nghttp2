@@ -128,6 +128,7 @@ NGHTTPX_SRCS = \
 	shrpx_worker_process.cc shrpx_worker_process.h \
 	shrpx_process.h \
 	shrpx_signal.cc shrpx_signal.h \
+	shrpx_router.cc shrpx_router.h \
 	buffer.h memchunk.h template.h
 
 if HAVE_SPDYLAY
@@ -157,6 +158,11 @@ libnghttpx_a_CPPFLAGS += \
 nghttpx_LDADD += -L${top_builddir}/third-party/mruby/build/lib @LIBMRUBY_LIBS@
 endif # HAVE_MRUBY
 
+if HAVE_NEVERBLEED
+libnghttpx_a_CPPFLAGS += -I${top_srcdir}/third-party/neverbleed
+nghttpx_LDADD += ${top_builddir}/third-party/libneverbleed.la
+endif # HAVE_NEVERBLEED
+
 if HAVE_CUNIT
 check_PROGRAMS += nghttpx-unittest
 nghttpx_unittest_SOURCES = shrpx-unittest.cc \
@@ -179,6 +185,11 @@ nghttpx_unittest_CPPFLAGS += \
 nghttpx_unittest_LDADD += \
 	-L${top_builddir}/third-party/mruby/build/lib @LIBMRUBY_LIBS@
 endif # HAVE_MRUBY
+
+if HAVE_NEVERBLEED
+nghttpx_unittest_CPPFLAGS += -I${top_srcdir}/third-party/neverbleed
+nghttpx_unittest_LDADD += ${top_builddir}/third-party/libneverbleed.la
+endif # HAVE_NEVERBLEED
 
 TESTS += nghttpx-unittest
 endif # HAVE_CUNIT

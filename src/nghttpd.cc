@@ -43,7 +43,6 @@
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
-#include <openssl/conf.h>
 #include <nghttp2/nghttp2.h>
 
 #include "app_helper.h"
@@ -88,7 +87,7 @@ void print_version(std::ostream &out) {
 namespace {
 void print_usage(std::ostream &out) {
   out << "Usage: nghttpd [OPTION]... <PORT> [<PRIVATE_KEY> <CERT>]\n"
-      << "HTTP/2 experimental server" << std::endl;
+      << "HTTP/2 server" << std::endl;
 }
 } // namespace
 
@@ -172,13 +171,11 @@ Options:
 } // namespace
 
 int main(int argc, char **argv) {
+  ssl::libssl_init();
+
 #ifndef NOTHREADS
   ssl::LibsslGlobalLock lock;
 #endif // NOTHREADS
-  SSL_load_error_strings();
-  SSL_library_init();
-  OpenSSL_add_all_algorithms();
-  OPENSSL_config(nullptr);
 
   Config config;
   bool color = false;
@@ -386,4 +383,6 @@ int main(int argc, char **argv) {
 
 } // namespace nghttp2
 
-int main(int argc, char **argv) { return nghttp2::main(argc, argv); }
+int main(int argc, char **argv) {
+  return nghttp2::run_app(nghttp2::main, argc, argv);
+}

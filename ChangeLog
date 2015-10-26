@@ -1,136 +1,1067 @@
-commit 895da9a7aa7b84c91b41fbbb8bad42e8a976eaf3 (HEAD, tag: v1.3.4, origin/master, origin/HEAD, master)
+commit da1eb19a73900356348e0d3d8bc5d2cc8cc782cb (HEAD, tag: v1.4.0, origin/master, origin/HEAD, master)
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-25
+AuthorDate: 2015-10-25
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-25
+CommitDate: 2015-10-25
+
+    Add missing documents to APIDOCS
+
+commit af3bc533321fcd8bf514865dc35cecf4d2c79096
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-25
+
+    Update bash_completion files
+
+commit 86911bd67d1e9e59224365c729700941b2a1c6a1
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-25
 
     Update man pages
 
-commit f9eaaa9da5918bd258d75cbcf9247c3c4a21cf95
+commit 6b0bde6c314a3380a29e28c5b54dd25bd381fe35
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-25
+AuthorDate: 2015-10-25
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-25
+CommitDate: 2015-10-25
 
-    Bump up version number to 1.3.4, LT revision to 15:4:1
+    Update doc so that we can use hyperlink to referred options
 
-commit 6680d8b792108a03342f3d918b8327a4d71dd7a9
+commit 9231a4ba57f36561151b33dd83d6eebc78fe716f
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-25
+AuthorDate: 2015-10-25
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-25
+CommitDate: 2015-10-25
 
-    nghttpx: Call setsid after executing new binary
+    nghttpx: Replace old script file options with --mruby-file
 
-commit 0b32df94a59bafd61ae91b5a7d4d58017ee5175a
+commit 0b2c139eaac5dc28088febe1f3701991fdbf05fd
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-25
+AuthorDate: 2015-10-25
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-25
+CommitDate: 2015-10-25
 
-    nghttpx: Log when worker process exits
+    clang-format-3.5
 
-commit 913b95336b8be9356ff754c77d788445b4816f76
+commit 2b769bc16274201994fcb75e9bf837741f8ecd0a
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-25
+AuthorDate: 2015-10-25
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-25
+CommitDate: 2015-10-25
 
-    Fix warning 'this decimal constant is unsigned only in ISO C90'
+    Bump up version number to 1.4.0, LT revision to 16:0:2
 
-commit c44587a70cbae0985c7e4cc5c231af88c0d20331
+commit 5d3d377c03abd0f89c0208d4fc970a6e1ffcade9
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-24
+AuthorDate: 2015-10-25
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-24
+CommitDate: 2015-10-25
 
-    nghttpx: Use _Exit when exiting from child process
+    Add missing NGHTTP2_EXTERN to public functions
 
-commit 938fa9a1e289409ccb1212bff63a2194a723c307
+commit 8770c82832c34eb14332c38d0ba68197368aaba6
+Merge: 4960583 4e6eed9
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-24
+AuthorDate: 2015-10-25
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-24
+CommitDate: 2015-10-25
 
-    nghttpx: Fix compile error with --disable-threads
-
-commit 206eab3b334da7c77b2345b81fef2e068aecde18
-Merge: bff59e0 bb4ab7e
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-24
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-24
-
-    Merge branch 'fix-signal-handling'
-
-commit bb4ab7e33351d304fc7a8ef24186066f2b7cfac3 (origin/fix-signal-handling)
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-24
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-24
-
-    integration: Robust process termination
-
-commit f470d1cc06bfbd1fafdb188f9e73bef0cc9d70c3
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-24
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-24
-
-    Document that sending signal to nghttpx worker process may not work
-
-commit 3d5493c3f180ee9355b7fe760a97a778345d953d
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-24
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-24
-
-    nghttpx-logrotate: Don't use killall since we have multiple processes
-
-commit 389a96483a32b10be76554dd7bb7849547bdebd9
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-24
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-24
-
-    nghttpx: Fix improper signal handling
-
-commit bff59e09dcb088c57212c01021dad2d2927ea267
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-24
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-24
-
-    src: Robust make_array implementation
+    Merge pull request #407 from 187j3x1/doc-update
     
-    This is meant to be used for ints, but unfortunately std::forward is
-    not constexpr in C++11.
+    Update doc for Debian 7.0 or above and add g++ requirement
 
-commit 1e96a2d357e77cc072e53e8bb8b6105074c9f0b0
-Merge: b7fd0fd 4a5d1b6
+commit 4960583637e20bee729de7f06f80c0798e533d7b
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-24
+AuthorDate: 2015-10-25
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-24
+CommitDate: 2015-10-25
 
-    Merge branch 'rraptorr-init-upgrade'
+    Increase NGHTTP2_MAX_OBQ_FLOOD_ITEM to avoid false positives
 
-commit 4a5d1b6708ba35cebc7b9c0e17fb983d27307017
+commit 4e6eed9189a783694c134353545033e4c6f4a042
+Author:     187j3x1 <187j3x1@gmail.com>
+AuthorDate: 2015-10-25
+Commit:     187j3x1 <187j3x1@gmail.com>
+CommitDate: 2015-10-25
+
+    Update doc: rename python3.4-dev and add g++ build requirement
+
+commit 166433f78029a795de0c442b1732a4bc397fa256
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-25
+
+    Update README.rst
+
+commit b832caccd4be80cf4ce8ee976dad43deb8a00391
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-25
+
+    Fix typo
+
+commit 907798707c0c860e29b2bf55c52f5516f8215d9c
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-24
+
+    nghttpx: Fix compile error with Android NDK
+
+commit 9c43acfd3a6a03ebf106146e60371a4e678e2ee5
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-24
+
+    Update sphinx_rtd_theme
+
+commit d1b8f607769575dad910c86a47ff7cbadfe96e65
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-24
+
+    nghttp: Allow multiple -c option occurrence, and take min and last value
+
+commit 62a8132c02eff662b994505cbe9824ee0822cc1c
+Merge: 7eddf19 25bf567
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-24
+
+    Merge branch 'fix-hpack'
+
+commit 25bf567cd746e3f56e61dfc771f4487a4c222926
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-24
+
+    Don't always expect dynamic table size update
+    
+    The encoder is not required to send dynamic table size update if the
+    table size is not changed from the previous value after accepting new
+    maximum value.
+
+commit 5bc3dfa1cd3e668a6cc0fb05a3d1598dd7fe75ab
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-24
+
+    Shrink to the minimum table size seen in local SETTINGS
+
+commit 7eddf1975e49cdc9c5ca2eeff3539e4d708a56ec
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-23
+
+    src: Fix Memchunks move ctor
+
+commit d3475f5fe29ccd4592f8c6b841568e90ed540ef9
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-23
+
+    nghttp: Remove redundant std::move
+
+commit ce74a309903d30254914b6859b13c90c34e1fd60
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-22
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-23
+
+    Use -fvisibility=hidden for internal functions
+    
+    This will improve performance since we can avoid indirect call of
+    internal functions.  The downside is we now require libnghttp2 static
+    library to run unit tests.
+
+commit 7b35c28c7dc13efa390af924c27999aeece0866a
+Merge: 20ac0e3 fad1def
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-22
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-22
+
+    Merge branch 'LPardue-nghttpx-tls-dyn-rec-config'
+
+commit fad1def7b9021cfad195609e8abd0654a420926b
+Merge: 20ac0e3 dcc9aaa
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-22
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-22
+
+    Merge branch 'nghttpx-tls-dyn-rec-config' of https://github.com/LPardue/nghttp2 into LPardue-nghttpx-tls-dyn-rec-config
+
+commit dcc9aaaa240b0523d95d9b9771fe05cd44f2f853
+Author:     Lucas Pardue <lucas.pardue@bbc.co.uk>
+AuthorDate: 2015-10-21
+Commit:     Lucas Pardue <lucas.pardue@bbc.co.uk>
+CommitDate: 2015-10-22
+
+    Add TLS dynamic record size behaviour command line options
+
+commit 20ac0e3e4874ab41a3dc1dba5314d4b5673316a1
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-22
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-22
+
+    src: Print out exception type
+
+commit e3c95265a4f8fb0ca5588025799e9d6182998503
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-21
+
+    nghttpd: Fix leak when server failed to listen to given port
+
+commit 46d7c30c17a2c4ca53a437bed3e45830eb0c29de
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-20
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-21
+
+    Update doc
+
+commit 1fdf208a2874e1b49f866f073969e8f193cba4cd
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-20
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-20
+
+    Update man pages
+
+commit f0bf2233d2dd18efcab6ec5e961aad55466087a2
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-20
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-20
+
+    Remove the word "experimental" since HTTP/2 has been finalized
+
+commit 48edbc8687f387a200c4b115d08ecd2105b8b0d5
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-18
+
+    nghttpx: Reduce default timeouts for read sockets to 1m
+
+commit b9a9e3a5960fb7d6764178f764c9097ac83907a7
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-18
+
+    src: s/custom/unknown/
+
+commit ad2c53c6d201d7e4ea90d25e7a1a9f4b2c11e3cc
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-17
+
+    Update mruby
+
+commit eff3dfd50bb773086540f68c33ca62818b63310b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-17
+
+    src: Move exception handling code to one function
+
+commit 11cb4ea214f3432f9117f4e95663aeffcfff9c0f
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-17
+
+    h2load: Don't DOS our server!
+
+commit 5594e3df254281b5e4d402fd9c2cdca93bdb5305
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-17
+
+    src: Handle exception in main
+
+commit 5d002ff6caddd3283b6b01efd5a20382e8df6866
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-17
+
+    Fix `make dist`
+
+commit 4674a9f6fbbce0b023f30a6051d997c617c119fd
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-16
+
+    Show more information in configure summary
+
+commit 85bc696c38ee8b980e1c694233edaa50f9c4a007
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-16
+
+    nghttpx: Add error handling for strdup and sigaction
+
+commit 54bf2256926d180b35a0b03141ce6d478c8bcda4
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-15
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-15
+
+    clang-format-3.5
+
+commit bb43b8e4c16e89643a12d7030b90075df4e79efc
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-15
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-15
+
+    Update Firefox version as well
+
+commit 605a4e131726d46d02563df2580be85ee9de5088
+Merge: e8c608a 751766a
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-15
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-15
+
+    Merge pull request #390 from wzyboy/patch-doc-update
+    
+    Update doc for Chromium HTTP/2 proxy support
+
+commit 751766a46f44981e09c3952dda140a557f914700
+Author:     Zhuoyun Wei <wzyboy@wzyboy.org>
+AuthorDate: 2015-10-15
+Commit:     Zhuoyun Wei <wzyboy@wzyboy.org>
+CommitDate: 2015-10-15
+
+    Update doc for Chromium HTTP/2 proxy support
+
+commit e8c608a4d98c07f02695e76c08dc998e37871918
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-15
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-15
+
+    nghttpx: Fix bug that PUT is replaced with POST
+
+commit 338b4ba7396816323da30f9f69c77c8fa723bcfa
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-14
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-14
+
+    nghttpx: Don't use units to display fastopen default
+
+commit 41710bfc7eb0268c6c059e62af00a89a673804b5
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-14
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-14
+
+    nghttpx: Add description about error message when TLS protocols do not overlap
+
+commit 0e87d464a26668421fae0a56ec130d3556359435
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-14
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-14
+
+    clang-format
+
+commit 2fb8c260b3940c8a8c28a42e0fb4125afa5c52d8
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-14
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-14
+
+    Update OpenSSL version in Dockerfile.android
+
+commit ed1e84fc0a438282f68f736c7bc7a9f34cb006d1
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-14
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-14
+
+    nghttpx: Improve libssl error logging
+
+commit 1ca64788ebb68fedfe68216cd6892d4554ec0638
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-10
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-13
+
+    h2load: Use duration syntax for timeouts
+
+commit eb3505af02adffecde1636777a9f1004aed4f741
+Merge: 3f4b6f2 47f1d17
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-13
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-13
+
+    Merge branch 'h2load-subsecond-rate-period'
+
+commit 47f1d17ad30df5662fdf663e32f5f0b504fc335b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-10
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-13
+
+    h2load: Support subsecond rate period
+    
+    This change adds subsecond rate period support to h2load.  Now
+    --rate-period option only accepts integer, but it can be followed by
+    units.  Currently, h, m, s, and ms are supported, which are hours,
+    minutes, seconds, and milliseconds respectively.  The underlying
+    functionality and usecase are already extensively used in nghttpx.
+
+commit 3f4b6f2b1c236ca6b061e5472208fcce1b355b77
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-11
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-11
+
+    Clean up
+
+commit a0e884836eb0f621e641e886af172433de33db72
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-11
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-11
+
+    Fix wrong test name
+
+commit ac317321fc29d0377c273e9cc2f22bebd92133fe
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-10
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-10
+
+    h2load: Format doc
+
+commit ca9e7c2c2dffaf0f5b1832955d1704c6c1ba16aa
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-10
+
+    h2load: Start thread execution using conditional variable
+    
+    When thread is created, we pause them.  After all threads are created,
+    master thread sends signal to all worker threads and let them start to
+    benchmark.  This will make thread start almost at the same time since
+    we can avoid thread creation overhead.  It also exclude thread
+    creating time from benchmark time.  We also simplified thread creation
+    routine, and now we always use dedicted worker thread to issue
+    requests even if -t1.
+
+commit 0d27a8991588020274eae7047b53a0f7bab0e244
+Merge: 509c515 4030060
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-10
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-10
+
+    Merge branch 'h2load-refactor-rate-mode'
+
+commit 4030060db80a7ff6508ebff62b5ed091b156639e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-10
+
+    h2load: Simplify rate mode
+    
+    This change simplifies rate mode as proposed idea as plan B in GH-382.
+    
+    In this change, we removed -C option.  Instead, -c option is used to
+    specify the number of connections to be made, and it is now required
+    argument if more than 1 clients are required (this is usually the
+    case).  The number of requests made per connection is calculated
+    simply by -n / -c.
+    
+    -n option is handled specially when --timing-script-file is used.  If
+    -n is used with --timing-script, it specifies the number of requests
+    -each client will make rather than the total number of requests h2load
+    -will perform across clients.  This handling applies to rate mode too.
+    
+    We also clarified the sematics about distribution of rate among the
+    threads.
+
+commit 509c515575a0c5167be32658971da4e88c4d4537
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-09
+
+    integration: Update go's http2 package URI
+
+commit 8e6b92bdd79f4d6abf62e7e9edd0cc0393d6e592
+Merge: c71c357 2b8b8f1
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-08
+
+    Merge branch 'nghttpx-mruby'
+
+commit 2b8b8f1ffd23d41204537e23d5bfe4386773596c
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-06
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-08
+
+    Update mruby doc
+
+commit f1eb7638d15b82e879b9d0dd203074e64c3c189f
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-06
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-08
+
+    nghttpx: Change mruby script handling
+    
+    This commit changes nghttpx's mruby script handling.  Previously we
+    have 2 options to specify the mruby script file to be run on request
+    and on response.  Now they are merged into 1 option, namely
+    --mruby-file.  It now must return object.  On request, the object's
+    on_req(env) method is invoked with env object.  Similarly, on
+    response, the object's on_resp(env) method is invoked.  The
+    specification of Env object has not changed.
+
+commit c71c357fa67e310fb38d978eb09cf4cc194bb1a2
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-08
+
+    src: Call OpenSSL_add_all_algorithms to attempt to set up cpuid explicitly
+    
+    See GH-377
+
+commit 10134097c3a709adc16b5f6f6ec08a69f89e2d5a
+Merge: 758c29d 2f4395d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-08
+
+    Merge branch 'LPardue-h2load-rateperiod'
+
+commit 2f4395da224e009857d4ed8912e6364be2ea5db5
+Merge: 758c29d afa14d3
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-07
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-07
+
+    Merge branch 'h2load-rateperiod' of https://github.com/LPardue/nghttp2 into LPardue-h2load-rateperiod
+
+commit afa14d36a86bb211769057efa40bf9bd2125f3bb
+Author:     Lucas Pardue <lucas.pardue@bbc.co.uk>
+AuthorDate: 2015-10-05
+Commit:     Lucas Pardue <lucas.pardue@bbc.co.uk>
+CommitDate: 2015-10-07
+
+    h2load: Add option for user-definable rate period
+
+commit 758c29d3fa1d817adeb98aaccdfc7aeb92eb17c9
+Merge: e262c01 349f3e2
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-06
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-06
+
+    Merge branch 'serioussam-master'
+
+commit 349f3e2c7ba8b50e275192f7b525f1735a47cb94
+Author:     Peeyush Aggarwal <peeyush_16@yahoo.com>
+AuthorDate: 2015-10-02
+Commit:     Peeyush Aggarwal <peeyush_16@yahoo.com>
+CommitDate: 2015-10-05
+
+    Added support for RFC 7413 (TCP Fast Open) on nghttpx proxy listening connections.
+    
+    Fixed code as per PR comments
+
+commit e262c013bd75b144a258fb6f6e6357565cb07636
+Merge: 0155c91 ba08948
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-04
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-04
+
+    Merge branch 'alagoutte-master'
+
+commit ba08948307d7b9f3bb008a96ebf94cb26bd5dfe7
+Merge: 0155c91 81addc7
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-04
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-04
+
+    Merge branch 'master' of https://github.com/alagoutte/nghttp2 into alagoutte-master
+
+commit 81addc77b4e3ebff94e33537c409e7e8d6686e1b
+Author:     Alexis La Goutte <alexis.lagoutte@gmail.com>
+AuthorDate: 2015-10-04
+Commit:     Alexis La Goutte <alexis.lagoutte@gmail.com>
+CommitDate: 2015-10-04
+
+    Add (and fix) -Wredundant-decls
+
+commit 0155c9115a43a85f376e5564b8736d1de3c244a8
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-04
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-04
+
+    nghttpx: Fix so that --padding option works again
+
+commit b1de6ca390caf8fc0fe188d24451d09cfcd1559a
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-04
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-04
+
+    Update doc
+
+commit 49573e0aa261a07b398cd4651493100693961940
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-03
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-03
+
+    Cleanup
+
+commit e95b39d534b6b42638a4edc9b1f8adc23f7d97ae
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-03
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-03
+
+    nghttpx: Fix sent bodylen logging
+
+commit ccbaaa1e1486773d907f95167bf27f8a0d7e80f9
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-03
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-03
+
+    nghttpx: Fix freeze in large transfer
+
+commit 9fa5010eacb82f1dd372ed83f88f570aefa6c937
+Merge: fe79b6d 777e1ee
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-03
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-03
+
+    Merge branch 'nghttpx-response-buffer'
+
+commit 777e1ee2c5edfd87a888eca95a97cf0c9b56ff95
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-03
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-03
+
+    nghttpx: Use send_data_callback for higher throughput
+
+commit 45d4c9dece1f154f470eedd3c9a8647ab03ec410
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-03
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-03
+
+    Add new error code NGHTTP2_ERR_PAUSE to send_data_callback
+    
+    If application returns NGHTTP2_ERR_PAUSE from send_data_callback, it
+    means application processed all data, but wants to make
+    nghttp2_session_mem_send or nghttp2_session_send return immediately.
+    This is useful if application writes to fixed sized buffers, and there
+    is no room to write more data.
+
+commit da89f9c150817ab12153789395751474df7191e2
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-02
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-03
+
+    nghttpx: Refactor client handler write
+    
+    Move write buffer to Upstream objects
+
+commit fe79b6d11817e19265def0a670c51967ba7cdef4
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-01
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-01
+
+    nghttpx: Avoid last buffer copy when HTTP/1.1 is used
+
+commit a5b0ad04d36b9a5b50a12d21a5ccffe518023943
+Merge: f7fdb65 19c095a
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-01
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-01
+
+    Merge branch 'thinred-add-pidfile'
+
+commit 19c095a8172441690f30a21e70f73a0ec8475b2f
+Author:     Tomasz Buchert <tomasz@buchert.pl>
+AuthorDate: 2015-10-01
+Commit:     Tomasz Buchert <tomasz@buchert.pl>
+CommitDate: 2015-10-01
+
+    add PIDFile directive to systemd service
+
+commit f7fdb6503786fc6e4fc9ba5b34cf217debea6f31
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-01
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-01
+
+    Pass OpenSSL flags to libneverbleed
+
+commit cea76226b1367e6bbd05f3a07b5a9ec6a7e20371
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-01
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-01
+
+    Avoid excessive WINDOW_UPDATE queuing
+
+commit 2aa8d9642cb60b7c05336b75e6b350ad649866ec
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-30
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-30
+
+    nghttpx: Fix crash on http2/client proxy mode
+
+commit d22ced77c03112040799e0009dda320a0fcd368a
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-30
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-30
+
+    Return fatal error if flooding is detected to close session immediately
+    
+    This change adds new return error code from nghttp2_session_mem_recv
+    and nghttp2_session_recv functions, namely NGHTTP2_ERR_FLOODED.  It is
+    fatal error, and is returned when flooding was detected.
+
+commit 0cb8c82125eb83a7daed15794ea9629bcab621d7
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-30
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-30
+
+    Detect flooding and tear down session
+
+commit f150f9aec441b6dc05c52bd571b1e6cec83340cc
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-29
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-29
+
+    Fix compile error without BoringSSL
+
+commit 22a89ff7a65a0d003dcd31f5631915ed5495531e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-29
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-29
+
+    Fix compile error and warning with gcc
+
+commit f0d2c9f94bbc08b22633f1a20a9ee1982c50d208
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-29
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-29
+
+    Compile with BoringSSL
+    
+    Compile with BoringSSL except for neverbleed and libnghttp2_asio.  The
+    former uses ENGINE and RSA_METHOD, and they are quite different
+    between OpenSSL and BoringSSL.  The latter uses boost::asio, which
+    calls OpenSSL functions deleted in BoringSSL.
+
+commit 49ef571ecfa9d2b316a2f538ab2978b0e9bda094
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-29
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-29
+
+    nghttpx: Stop watchers in ConnectionHandler dtor
+
+commit 75ff04f87a7211c5e1b19788aa17a5f5ab3e0859
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-29
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-29
+
+    nghttpx: Don't stop default loop of worker process on graceful shutdown
+    
+    To keep ipc channel being read from worker process, default loop
+    should not be stopped.  To join all worker threads, now we use
+    dedicated thread to do this.  When all worker threads are joined,
+    ev_async_send sends message to default loop, and it is finally
+    stopped.
+
+commit 3fca142e5f58061166244426ecd38f3a0338cd79
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-29
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-29
+
+    nghttpx: Exit immediately if IPC channel read failed on worker process
+
+commit a28aee058f8fba22b3ee87ee8551fe5ed61b4685
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-29
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-29
+
+    nghttpx: Don't need to trap SIGTERM and SIGINT signals
+
+commit ad5d73738cb11d823e5b5c51a06d5f218efc3fed
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-29
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-29
+
+    Return type of nghttp2_submit_trailer is int
+
+commit 55075516c97ad053e4169fb2ae6e16a1a7d9174d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-28
+
+    h2load: Reuse SSL/TLS session
+
+commit ff87bf7584aca6c68ed96282a35c01f718a9bf7e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-28
+
+    h2load: Fix compile error
+
+commit 252df2d22c845ff0808fe4fdd2122981d7f33ea3
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-28
+
+    h2load: Reconnect server on connection: close
+
+commit 4e2ff875dca984bf0af6a52d1d393c73600aa38e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-28
+
+    h2load: Don't exit in the case of no ALPN protocol overlap
+
+commit 3fafbfe1ed1f5ce6c3ce27a26dd2171c775cf1fd
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-27
+
+    Fix gcc build
+
+commit ef3e2c7764c6177ca29ede8131c15a8b9fa7ed87
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-27
+
+    Don't send WINDOW_UPDATE with 0 increment
+
+commit b5427d9651178a84702474d4cf4f69a78f9be2a5
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-26
+
+    Remove unused nghttp2_memdup
+
+commit 2d5b42693d083fa07e1970cbcb21a8b61421be7d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-26
+
+    Don't expect NULL terminated name/value in nghttp2_hd_deflate_hd
+    
+    If it is called through libnghttp2 internally, name/value pairs are
+    all NULL-terminated.  But it is one of public API, and we cannot
+    expect that applications always make NULL-terminated string for
+    name/value pairs.
+
+commit c2eacc8b1089c88297280c62f261863eccb3be05
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-26
+
+    Update doc
+
+commit 8acf9a2802989ffe328a365e4dc11948b30b0f1f
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-26
+
+    nghttpx: Trie based routing
+
+commit 566b0476d703e74c7a6b65664164b79953e12e1c
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-26
+
+    nghttpx: Enable neverbleed for client private key; don't run nb without TLS
+
+commit 8dd5f7585e09dab51dd2ee2f7777af65704f104e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-26
+
+    Update doc
+
+commit 45366ae9dc155716f7b906b7d41a6d0543dad2ec
+Merge: c749ae0 044385a
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-26
+
+    Merge branch 'neverbleed'
+
+commit 044385ab6ef54e02cd3c62d4b887886c1793197e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-26
+
+    Add neverbleed support
+    
+    neverbleed is disabled by default.  To enable it, use
+    --with-neverbleed configure option.
+
+commit f337b945373887db2c0c1fd885605d2e5ece08e7
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-26
+
+    Add neverbleed as submodule
+
+commit c749ae0cac83277f9ab0eaf7285379e53ce8da3e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-26
+
+    Add doc
+
+commit 637288359eb68ba1f7f4746908f0453e6e05fa79
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-25
+
+    Ignore 0 length header partial block if it is not final
+
+commit d618cd92ccc02962745cec317f8e60b85f137945
+Merge: 93ba75b 86663ff
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-25
+
+    Merge branch 'rraptorr-systemd'
+
+commit 86663ff333e17f079246af4fc1322db146b84eec
+Merge: 93ba75b 1cdd8b1
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-25
+
+    Merge branch 'systemd' of https://github.com/rraptorr/nghttp2 into rraptorr-systemd
+
+commit 93ba75b60254db898e849e4f6bd11a9ff46a8cd4
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-25
+
+    Fix bug that headers in CONTINUATION were ignored after HEADERS with padding
+
+commit 1f72648b0e31e8b1df107d9b0162b0b16b4fb7ae
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-25
+
+    Fix compile error with --enable-debug and --enable-werror
+
+commit 1cdd8b1c58f549b45c2a8e8165806b8bb798fe03
 Author:     Janusz Dziemidowicz <rraptorr@nails.eu.org>
-AuthorDate: 2015-09-24
+AuthorDate: 2015-09-25
 Commit:     Janusz Dziemidowicz <rraptorr@nails.eu.org>
-CommitDate: 2015-09-24
+CommitDate: 2015-09-25
 
-    Make traditional init script fail if new config file is broken
+    Fix daemon upgrade when running under systemd
     
-    Instead of assuming that upgrade is always successful, check if a new
-    process actually started. Do not kill old process if the new one
-    failed.
+    Systemd assumes that service of type simple is stopped when the main
+    process exits. This causes systemd to kill all nghttpx processes when
+    doing a process upgrade (via USR2/QUIT signals). Change the service
+    type to forking which behaves correctly on upgrade.
 
-commit b7fd0fdd966b35491276b542bbf142ca00bb2172
+commit d804780c25590b1e9d13c4cb63aef74f6580bbc6
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2015-09-24
+AuthorDate: 2015-09-25
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2015-09-24
+CommitDate: 2015-09-25
 
-    Bump up version to 1.3.4-DEV
+    Fix compile error with Android NDK and --enable-werror
+
+commit 6200bf33292faa071daddd604bfe905c168c8d74
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-09-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-09-25
+
+    Bump up version number to 1.3.5-DEV

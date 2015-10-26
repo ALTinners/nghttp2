@@ -42,8 +42,7 @@
 
 /* The global variable for tests where we want to disable strict
    preface handling. */
-/* Specify NGHTTP2_EXTERN, so that we can test using Win build dll. */
-NGHTTP2_EXTERN extern int nghttp2_enable_strict_preface;
+extern int nghttp2_enable_strict_preface;
 
 /*
  * Option flags.
@@ -73,6 +72,16 @@ typedef struct {
 
 /* The default maximum number of incoming reserved streams */
 #define NGHTTP2_MAX_INCOMING_RESERVED_STREAMS 200
+
+/* The maximum number of items in outbound queue, which is considered
+   as flooding caused by peer.  All frames are not considered here.
+   We only consider PING + ACK and SETTINGS + ACK.  This is because
+   they both are response to the frame initiated by peer and peer can
+   send as many of them as they want.  If peer does not read network,
+   response frames are stacked up, which leads to memory exhaustion.
+   The value selected here is arbitrary, but safe value and if we have
+   these frames in this number, it is considered suspicious. */
+#define NGHTTP2_MAX_OBQ_FLOOD_ITEM 10000
 
 /* Internal state when receiving incoming frame */
 typedef enum {
@@ -227,6 +236,8 @@ struct nghttp2_session {
   size_t num_idle_streams;
   /* The number of bytes allocated for nvbuf */
   size_t nvbuflen;
+  /* Counter for detecting flooding in outbound queue */
+  size_t obq_flood_counter_;
   /* Next Stream ID. Made unsigned int to detect >= (1 << 31). */
   uint32_t next_stream_id;
   /* The largest stream ID received so far */
@@ -279,6 +290,10 @@ struct nghttp2_session {
   /* Flags indicating GOAWAY is sent and/or recieved. The flags are
      composed by bitwise OR-ing nghttp2_goaway_flag. */
   uint8_t goaway_flags;
+  /* This flag is used to reduce excessive queuing of WINDOW_UPDATE to
+     this session.  The nonzero does not necessarily mean
+     WINDOW_UPDATE is not queued. */
+  uint8_t window_update_queued;
 };
 
 /* Struct used when updating initial window size of each active
@@ -355,6 +370,9 @@ int nghttp2_session_add_rst_stream(nghttp2_session *session, int32_t stream_id,
  *
  * NGHTTP2_ERR_NOMEM
  *     Out of memory.
+ * NGHTTP2_ERR_FLOODED
+ *     There are too many items in outbound queue; this only happens
+ *     if NGHTTP2_FLAG_ACK is set in |flags|
  */
 int nghttp2_session_add_ping(nghttp2_session *session, uint8_t flags,
                              const uint8_t *opaque_data);
@@ -402,6 +420,9 @@ int nghttp2_session_add_window_update(nghttp2_session *session, uint8_t flags,
  *
  * NGHTTP2_ERR_NOMEM
  *     Out of memory.
+ * NGHTTP2_ERR_FLOODED
+ *     There are too many items in outbound queue; this only happens
+ *     if NGHTTP2_FLAG_ACK is set in |flags|
  */
 int nghttp2_session_add_settings(nghttp2_session *session, uint8_t flags,
                                  const nghttp2_settings_entry *iv, size_t niv);
@@ -625,6 +646,9 @@ int nghttp2_session_on_rst_stream_received(nghttp2_session *session,
  *     Out of memory
  * NGHTTP2_ERR_CALLBACK_FAILURE
  *     The read_callback failed
+ * NGHTTP2_ERR_FLOODED
+ *     There are too many items in outbound queue, and this is most
+ *     likely caused by misbehaviour of peer.
  */
 int nghttp2_session_on_settings_received(nghttp2_session *session,
                                          nghttp2_frame *frame, int noack);
@@ -658,6 +682,9 @@ int nghttp2_session_on_push_promise_received(nghttp2_session *session,
  *     Out of memory.
  * NGHTTP2_ERR_CALLBACK_FAILURE
  *   The callback function failed.
+ * NGHTTP2_ERR_FLOODED
+ *     There are too many items in outbound queue, and this is most
+ *     likely caused by misbehaviour of peer.
  */
 int nghttp2_session_on_ping_received(nghttp2_session *session,
                                      nghttp2_frame *frame);

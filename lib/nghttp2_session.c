@@ -733,7 +733,18 @@ int nghttp2_session_add_item(nghttp2_session *session,
       if (stream) {
         stream->state = NGHTTP2_STREAM_CLOSING;
       }
-    /* fall through */
+      nghttp2_outbound_queue_push(&session->ob_reg, item);
+      item->queued = 1;
+      break;
+    case NGHTTP2_WINDOW_UPDATE:
+      if (stream) {
+        stream->window_update_queued = 1;
+      } else if (frame->hd.stream_id == 0) {
+        session->window_update_queued = 1;
+      }
+      nghttp2_outbound_queue_push(&session->ob_reg, item);
+      item->queued = 1;
+      break;
     default:
       nghttp2_outbound_queue_push(&session->ob_reg, item);
       item->queued = 1;
@@ -890,7 +901,14 @@ nghttp2_stream *nghttp2_session_open_stream(nghttp2_session *session,
       }
     } else if (!dep_stream || !nghttp2_stream_in_dep_tree(dep_stream)) {
       /* If dep_stream is not part of dependency tree, stream will get
-         default priority. */
+         default priority.  This handles the case when
+         pri_spec->stream_id == stream_id.  This happens because we
+         don't check pri_spec->stream_id against new stream ID in
+         nghttp2_submit_request.  This also handles the case when idle
+         stream created by PRIORITY frame was opened.  Somehow we
+         first remove the idle stream from dependency tree.  This is
+         done to simplify code base, but ideally we should retain old
+         dependency.  But I'm not sure this adds values. */
       nghttp2_priority_spec_default_init(&pri_spec_default);
       pri_spec = &pri_spec_default;
     }
@@ -1853,6 +1871,11 @@ static int session_prep_frame(nghttp2_session *session,
                                     &frame->rst_stream);
       break;
     case NGHTTP2_SETTINGS: {
+      if (frame->hd.flags & NGHTTP2_FLAG_ACK) {
+        assert(session->obq_flood_counter_ > 0);
+        --session->obq_flood_counter_;
+      }
+
       rv = nghttp2_frame_pack_settings(&session->aob.framebufs,
                                        &frame->settings);
       if (rv != 0) {
@@ -1914,20 +1937,16 @@ static int session_prep_frame(nghttp2_session *session,
       break;
     }
     case NGHTTP2_PING:
+      if (frame->hd.flags & NGHTTP2_FLAG_ACK) {
+        assert(session->obq_flood_counter_ > 0);
+        --session->obq_flood_counter_;
+      }
+
       if (session_is_closing(session)) {
         return NGHTTP2_ERR_SESSION_CLOSING;
       }
       nghttp2_frame_pack_ping(&session->aob.framebufs, &frame->ping);
       break;
-    case NGHTTP2_WINDOW_UPDATE: {
-      rv = session_predicate_window_update_send(session, frame->hd.stream_id);
-      if (rv != 0) {
-        return rv;
-      }
-      nghttp2_frame_pack_window_update(&session->aob.framebufs,
-                                       &frame->window_update);
-      break;
-    }
     case NGHTTP2_GOAWAY:
       rv = nghttp2_frame_pack_goaway(&session->aob.framebufs, &frame->goaway);
       if (rv != 0) {
@@ -1935,6 +1954,14 @@ static int session_prep_frame(nghttp2_session *session,
       }
       session->local_last_stream_id = frame->goaway.last_stream_id;
 
+      break;
+    case NGHTTP2_WINDOW_UPDATE:
+      rv = session_predicate_window_update_send(session, frame->hd.stream_id);
+      if (rv != 0) {
+        return rv;
+      }
+      nghttp2_frame_pack_window_update(&session->aob.framebufs,
+                                       &frame->window_update);
       break;
     default:
       return NGHTTP2_ERR_INVALID_ARGUMENT;
@@ -2196,6 +2223,21 @@ static void reschedule_stream(nghttp2_stream *stream) {
   nghttp2_stream_reschedule(stream);
 }
 
+static int session_update_stream_consumed_size(nghttp2_session *session,
+                                               nghttp2_stream *stream,
+                                               size_t delta_size);
+
+static int session_update_connection_consumed_size(nghttp2_session *session,
+                                                   size_t delta_size);
+
+static int session_update_recv_connection_window_size(nghttp2_session *session,
+                                                      size_t delta_size);
+
+static int session_update_recv_stream_window_size(nghttp2_session *session,
+                                                  nghttp2_stream *stream,
+                                                  size_t delta_size,
+                                                  int send_window_update);
+
 /*
  * Called after a frame is sent.  This function runs
  * on_frame_send_callback and handles stream closure upon END_STREAM
@@ -2357,6 +2399,44 @@ static int session_after_frame_sent1(nghttp2_session *session) {
 
       break;
     }
+    case NGHTTP2_WINDOW_UPDATE:
+      rv = 0;
+
+      if (frame->hd.stream_id == 0) {
+        session->window_update_queued = 0;
+        if (session->opt_flags & NGHTTP2_OPTMASK_NO_AUTO_WINDOW_UPDATE) {
+          rv = session_update_connection_consumed_size(session, 0);
+        } else {
+          rv = session_update_recv_connection_window_size(session, 0);
+        }
+      } else {
+        nghttp2_stream *stream;
+
+        stream = nghttp2_session_get_stream(session, frame->hd.stream_id);
+        if (!stream) {
+          break;
+        }
+
+        stream->window_update_queued = 0;
+
+        /* We don't have to send WINDOW_UPDATE if END_STREAM from peer
+           is seen. */
+        if (stream->shut_flags & NGHTTP2_SHUT_RD) {
+          break;
+        }
+
+        if (session->opt_flags & NGHTTP2_OPTMASK_NO_AUTO_WINDOW_UPDATE) {
+          rv = session_update_stream_consumed_size(session, stream, 0);
+        } else {
+          rv = session_update_recv_stream_window_size(session, stream, 0, 1);
+        }
+      }
+
+      if (nghttp2_is_fatal(rv)) {
+        return rv;
+      }
+
+      break;
     default:
       break;
     }
@@ -2536,12 +2616,15 @@ static int session_call_send_data(nghttp2_session *session,
                                              &aux_data->data_prd.source,
                                              session->user_data);
 
-  if (rv == 0 || rv == NGHTTP2_ERR_WOULDBLOCK ||
-      rv == NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE) {
+  switch (rv) {
+  case 0:
+  case NGHTTP2_ERR_WOULDBLOCK:
+  case NGHTTP2_ERR_PAUSE:
+  case NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE:
     return rv;
+  default:
+    return NGHTTP2_ERR_CALLBACK_FAILURE;
   }
-
-  return NGHTTP2_ERR_CALLBACK_FAILURE;
 }
 
 static ssize_t nghttp2_session_mem_send_internal(nghttp2_session *session,
@@ -2716,6 +2799,7 @@ static ssize_t nghttp2_session_mem_send_internal(nghttp2_session *session,
     case NGHTTP2_OB_SEND_NO_COPY: {
       nghttp2_stream *stream;
       nghttp2_frame *frame;
+      int pause;
 
       DEBUGF(fprintf(stderr, "send: no copy DATA\n"));
 
@@ -2759,7 +2843,7 @@ static ssize_t nghttp2_session_mem_send_internal(nghttp2_session *session,
         return 0;
       }
 
-      assert(rv == 0);
+      pause = (rv == NGHTTP2_ERR_PAUSE);
 
       rv = session_after_frame_sent1(session);
       if (rv < 0) {
@@ -2773,6 +2857,10 @@ static ssize_t nghttp2_session_mem_send_internal(nghttp2_session *session,
       }
 
       /* We have already adjusted the next state */
+
+      if (pause) {
+        return 0;
+      }
 
       break;
     }
@@ -3745,19 +3833,19 @@ static int update_local_initial_window_size_func(nghttp2_map_entry *entry,
     return nghttp2_session_terminate_session(arg->session,
                                              NGHTTP2_FLOW_CONTROL_ERROR);
   }
-  if (!(arg->session->opt_flags & NGHTTP2_OPTMASK_NO_AUTO_WINDOW_UPDATE)) {
+  if (!(arg->session->opt_flags & NGHTTP2_OPTMASK_NO_AUTO_WINDOW_UPDATE) &&
+      stream->window_update_queued == 0 &&
+      nghttp2_should_send_window_update(stream->local_window_size,
+                                        stream->recv_window_size)) {
 
-    if (nghttp2_should_send_window_update(stream->local_window_size,
-                                          stream->recv_window_size)) {
-
-      rv = nghttp2_session_add_window_update(arg->session, NGHTTP2_FLAG_NONE,
-                                             stream->stream_id,
-                                             stream->recv_window_size);
-      if (rv != 0) {
-        return rv;
-      }
-      stream->recv_window_size = 0;
+    rv = nghttp2_session_add_window_update(arg->session, NGHTTP2_FLAG_NONE,
+                                           stream->stream_id,
+                                           stream->recv_window_size);
+    if (rv != 0) {
+      return rv;
     }
+
+    stream->recv_window_size = 0;
   }
   return 0;
 }
@@ -3804,13 +3892,17 @@ int nghttp2_session_update_local_settings(nghttp2_session *session,
   size_t i;
   int32_t new_initial_window_size = -1;
   uint32_t header_table_size = 0;
+  uint32_t min_header_table_size = UINT32_MAX;
   uint8_t header_table_size_seen = 0;
-  /* Use the value last seen. */
+  /* For NGHTTP2_SETTINGS_INITIAL_WINDOW_SIZE, use the value last
+     seen.  For NGHTTP2_SETTINGS_HEADER_TABLE_SIZE, use both minimum
+     value and last seen value. */
   for (i = 0; i < niv; ++i) {
     switch (iv[i].settings_id) {
     case NGHTTP2_SETTINGS_HEADER_TABLE_SIZE:
       header_table_size_seen = 1;
       header_table_size = iv[i].value;
+      min_header_table_size = nghttp2_min(min_header_table_size, iv[i].value);
       break;
     case NGHTTP2_SETTINGS_INITIAL_WINDOW_SIZE:
       new_initial_window_size = (int32_t)iv[i].value;
@@ -3818,6 +3910,14 @@ int nghttp2_session_update_local_settings(nghttp2_session *session,
     }
   }
   if (header_table_size_seen) {
+    if (min_header_table_size < header_table_size) {
+      rv = nghttp2_hd_inflate_change_table_size(&session->hd_inflater,
+                                                min_header_table_size);
+      if (rv != 0) {
+        return rv;
+      }
+    }
+
     rv = nghttp2_hd_inflate_change_table_size(&session->hd_inflater,
                                               header_table_size);
     if (rv != 0) {
@@ -4403,21 +4503,21 @@ static int session_update_recv_stream_window_size(nghttp2_session *session,
   }
   /* We don't have to send WINDOW_UPDATE if the data received is the
      last chunk in the incoming stream. */
+  /* We have to use local_settings here because it is the constraint
+     the remote endpoint should honor. */
   if (send_window_update &&
-      !(session->opt_flags & NGHTTP2_OPTMASK_NO_AUTO_WINDOW_UPDATE)) {
-    /* We have to use local_settings here because it is the constraint
-       the remote endpoint should honor. */
-    if (nghttp2_should_send_window_update(stream->local_window_size,
-                                          stream->recv_window_size)) {
-      rv = nghttp2_session_add_window_update(session, NGHTTP2_FLAG_NONE,
-                                             stream->stream_id,
-                                             stream->recv_window_size);
-      if (rv == 0) {
-        stream->recv_window_size = 0;
-      } else {
-        return rv;
-      }
+      !(session->opt_flags & NGHTTP2_OPTMASK_NO_AUTO_WINDOW_UPDATE) &&
+      stream->window_update_queued == 0 &&
+      nghttp2_should_send_window_update(stream->local_window_size,
+                                        stream->recv_window_size)) {
+    rv = nghttp2_session_add_window_update(session, NGHTTP2_FLAG_NONE,
+                                           stream->stream_id,
+                                           stream->recv_window_size);
+    if (rv != 0) {
+      return rv;
     }
+
+    stream->recv_window_size = 0;
   }
   return 0;
 }
@@ -4443,20 +4543,19 @@ static int session_update_recv_connection_window_size(nghttp2_session *session,
     return nghttp2_session_terminate_session(session,
                                              NGHTTP2_FLOW_CONTROL_ERROR);
   }
-  if (!(session->opt_flags & NGHTTP2_OPTMASK_NO_AUTO_WINDOW_UPDATE)) {
-
-    if (nghttp2_should_send_window_update(session->local_window_size,
-                                          session->recv_window_size)) {
-      /* Use stream ID 0 to update connection-level flow control
-         window */
-      rv = nghttp2_session_add_window_update(session, NGHTTP2_FLAG_NONE, 0,
-                                             session->recv_window_size);
-      if (rv != 0) {
-        return rv;
-      }
-
-      session->recv_window_size = 0;
+  if (!(session->opt_flags & NGHTTP2_OPTMASK_NO_AUTO_WINDOW_UPDATE) &&
+      session->window_update_queued == 0 &&
+      nghttp2_should_send_window_update(session->local_window_size,
+                                        session->recv_window_size)) {
+    /* Use stream ID 0 to update connection-level flow control
+       window */
+    rv = nghttp2_session_add_window_update(session, NGHTTP2_FLAG_NONE, 0,
+                                           session->recv_window_size);
+    if (rv != 0) {
+      return rv;
     }
+
+    session->recv_window_size = 0;
   }
   return 0;
 }
@@ -4464,6 +4563,7 @@ static int session_update_recv_connection_window_size(nghttp2_session *session,
 static int session_update_consumed_size(nghttp2_session *session,
                                         int32_t *consumed_size_ptr,
                                         int32_t *recv_window_size_ptr,
+                                        uint8_t window_update_queued,
                                         int32_t stream_id, size_t delta_size,
                                         int32_t local_window_size) {
   int32_t recv_size;
@@ -4476,21 +4576,23 @@ static int session_update_consumed_size(nghttp2_session *session,
 
   *consumed_size_ptr += (int32_t)delta_size;
 
-  /* recv_window_size may be smaller than consumed_size, because it
-     may be decreased by negative value with
-     nghttp2_submit_window_update(). */
-  recv_size = nghttp2_min(*consumed_size_ptr, *recv_window_size_ptr);
+  if (window_update_queued == 0) {
+    /* recv_window_size may be smaller than consumed_size, because it
+       may be decreased by negative value with
+       nghttp2_submit_window_update(). */
+    recv_size = nghttp2_min(*consumed_size_ptr, *recv_window_size_ptr);
 
-  if (nghttp2_should_send_window_update(local_window_size, recv_size)) {
-    rv = nghttp2_session_add_window_update(session, NGHTTP2_FLAG_NONE,
-                                           stream_id, recv_size);
+    if (nghttp2_should_send_window_update(local_window_size, recv_size)) {
+      rv = nghttp2_session_add_window_update(session, NGHTTP2_FLAG_NONE,
+                                             stream_id, recv_size);
 
-    if (rv != 0) {
-      return rv;
+      if (rv != 0) {
+        return rv;
+      }
+
+      *recv_window_size_ptr -= recv_size;
+      *consumed_size_ptr -= recv_size;
     }
-
-    *recv_window_size_ptr -= recv_size;
-    *consumed_size_ptr -= recv_size;
   }
 
   return 0;
@@ -4501,14 +4603,15 @@ static int session_update_stream_consumed_size(nghttp2_session *session,
                                                size_t delta_size) {
   return session_update_consumed_size(
       session, &stream->consumed_size, &stream->recv_window_size,
-      stream->stream_id, delta_size, stream->local_window_size);
+      stream->window_update_queued, stream->stream_id, delta_size,
+      stream->local_window_size);
 }
 
 static int session_update_connection_consumed_size(nghttp2_session *session,
                                                    size_t delta_size) {
-  return session_update_consumed_size(session, &session->consumed_size,
-                                      &session->recv_window_size, 0, delta_size,
-                                      session->local_window_size);
+  return session_update_consumed_size(
+      session, &session->consumed_size, &session->recv_window_size,
+      session->window_update_queued, 0, delta_size, session->local_window_size);
 }
 
 /*
@@ -5326,6 +5429,8 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
     case NGHTTP2_IB_READ_HEADER_BLOCK:
     case NGHTTP2_IB_IGN_HEADER_BLOCK: {
       ssize_t data_readlen;
+      size_t trail_padlen;
+      int final;
 #ifdef DEBUGBUILD
       if (iframe->state == NGHTTP2_IB_READ_HEADER_BLOCK) {
         fprintf(stderr, "recv: [IB_READ_HEADER_BLOCK]\n");
@@ -5341,21 +5446,20 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
 
       data_readlen = inbound_frame_effective_readlen(
           iframe, iframe->payloadleft - readlen, readlen);
-      if (data_readlen >= 0) {
-        size_t trail_padlen;
-        size_t hd_proclen = 0;
-        trail_padlen =
-            nghttp2_frame_trail_padlen(&iframe->frame, iframe->padlen);
-        DEBUGF(fprintf(stderr, "recv: block final=%d\n",
-                       (iframe->frame.hd.flags & NGHTTP2_FLAG_END_HEADERS) &&
-                           iframe->payloadleft - data_readlen == trail_padlen));
+      trail_padlen = nghttp2_frame_trail_padlen(&iframe->frame, iframe->padlen);
 
-        rv = inflate_header_block(
-            session, &iframe->frame, &hd_proclen, (uint8_t *)in,
-            (size_t)data_readlen,
-            (iframe->frame.hd.flags & NGHTTP2_FLAG_END_HEADERS) &&
-                iframe->payloadleft - (size_t)data_readlen == trail_padlen,
-            iframe->state == NGHTTP2_IB_READ_HEADER_BLOCK);
+      final = (iframe->frame.hd.flags & NGHTTP2_FLAG_END_HEADERS) &&
+              iframe->payloadleft - (size_t)data_readlen == trail_padlen;
+
+      if (data_readlen > 0 || (data_readlen == 0 && final)) {
+        size_t hd_proclen = 0;
+
+        DEBUGF(fprintf(stderr, "recv: block final=%d\n", final));
+
+        rv =
+            inflate_header_block(session, &iframe->frame, &hd_proclen,
+                                 (uint8_t *)in, (size_t)data_readlen, final,
+                                 iframe->state == NGHTTP2_IB_READ_HEADER_BLOCK);
 
         if (nghttp2_is_fatal(rv)) {
           return rv;
@@ -5907,6 +6011,12 @@ int nghttp2_session_add_ping(nghttp2_session *session, uint8_t flags,
   nghttp2_mem *mem;
 
   mem = &session->mem;
+
+  if ((flags & NGHTTP2_FLAG_ACK) &&
+      session->obq_flood_counter_ >= NGHTTP2_MAX_OBQ_FLOOD_ITEM) {
+    return NGHTTP2_ERR_FLOODED;
+  }
+
   item = nghttp2_mem_malloc(mem, sizeof(nghttp2_outbound_item));
   if (item == NULL) {
     return NGHTTP2_ERR_NOMEM;
@@ -5925,6 +6035,11 @@ int nghttp2_session_add_ping(nghttp2_session *session, uint8_t flags,
     nghttp2_mem_free(mem, item);
     return rv;
   }
+
+  if (flags & NGHTTP2_FLAG_ACK) {
+    ++session->obq_flood_counter_;
+  }
+
   return 0;
 }
 
@@ -6043,8 +6158,14 @@ int nghttp2_session_add_settings(nghttp2_session *session, uint8_t flags,
 
   mem = &session->mem;
 
-  if ((flags & NGHTTP2_FLAG_ACK) && niv != 0) {
-    return NGHTTP2_ERR_INVALID_ARGUMENT;
+  if (flags & NGHTTP2_FLAG_ACK) {
+    if (niv != 0) {
+      return NGHTTP2_ERR_INVALID_ARGUMENT;
+    }
+
+    if (session->obq_flood_counter_ >= NGHTTP2_MAX_OBQ_FLOOD_ITEM) {
+      return NGHTTP2_ERR_FLOODED;
+    }
   }
 
   if (!nghttp2_iv_check(iv, niv)) {
@@ -6092,6 +6213,10 @@ int nghttp2_session_add_settings(nghttp2_session *session, uint8_t flags,
     nghttp2_mem_free(mem, item);
 
     return rv;
+  }
+
+  if (flags & NGHTTP2_FLAG_ACK) {
+    ++session->obq_flood_counter_;
   }
 
   session_append_inflight_settings(session, inflight_settings);

@@ -147,6 +147,8 @@ int main(int argc _U_, char *argv[] _U_) {
       !CU_add_test(pSuite, "submit_data", test_nghttp2_submit_data) ||
       !CU_add_test(pSuite, "submit_data_read_length_too_large",
                    test_nghttp2_submit_data_read_length_too_large) ||
+      !CU_add_test(pSuite, "submit_data_read_length_smallest",
+                   test_nghttp2_submit_data_read_length_smallest) ||
       !CU_add_test(pSuite, "submit_data_twice",
                    test_nghttp2_submit_data_twice) ||
       !CU_add_test(pSuite, "submit_request_with_data",
@@ -277,6 +279,7 @@ int main(int argc _U_, char *argv[] _U_) {
                    test_nghttp2_session_defer_then_close) ||
       !CU_add_test(pSuite, "session_detach_item_from_closed_stream",
                    test_nghttp2_session_detach_item_from_closed_stream) ||
+      !CU_add_test(pSuite, "session_flooding", test_nghttp2_session_flooding) ||
       !CU_add_test(pSuite, "http_mandatory_headers",
                    test_nghttp2_http_mandatory_headers) ||
       !CU_add_test(pSuite, "http_content_length",
@@ -299,8 +302,6 @@ int main(int argc _U_, char *argv[] _U_) {
                    test_nghttp2_frame_pack_headers) ||
       !CU_add_test(pSuite, "frame_pack_headers_frame_too_large",
                    test_nghttp2_frame_pack_headers_frame_too_large) ||
-      !CU_add_test(pSuite, "frame_pack_headers_frame_smallest",
-                   test_nghttp2_submit_data_read_length_smallest) ||
       !CU_add_test(pSuite, "frame_pack_priority",
                    test_nghttp2_frame_pack_priority) ||
       !CU_add_test(pSuite, "frame_pack_rst_stream",

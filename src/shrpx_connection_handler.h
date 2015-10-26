@@ -34,10 +34,17 @@
 
 #include <memory>
 #include <vector>
+#ifndef NOTHREADS
+#include <future>
+#endif // NOTHREADS
 
 #include <openssl/ssl.h>
 
 #include <ev.h>
+
+#ifdef HAVE_NEVERBLEED
+#include <neverbleed.h>
+#endif // HAVE_NEVERBLEED
 
 #include "shrpx_downstream_connection_pool.h"
 
@@ -123,6 +130,11 @@ public:
                                 ev_timer *w);
   void schedule_next_tls_ticket_key_memcached_get(ev_timer *w);
 
+#ifdef HAVE_NEVERBLEED
+  void set_neverbleed(std::unique_ptr<neverbleed_t> nb);
+  neverbleed_t *get_neverbleed() const;
+#endif // HAVE_NEVERBLEED
+
 private:
   // Stores all SSL_CTX objects.
   std::vector<SSL_CTX *> all_ssl_ctx_;
@@ -144,8 +156,15 @@ private:
   std::unique_ptr<AcceptHandler> acceptor_;
   // acceptor for IPv6 address
   std::unique_ptr<AcceptHandler> acceptor6_;
+#ifdef HAVE_NEVERBLEED
+  std::unique_ptr<neverbleed_t> nb_;
+#endif // HAVE_NEVERBLEED
   ev_timer disable_acceptor_timer_;
   ev_timer ocsp_timer_;
+  ev_async thread_join_asyncev_;
+#ifndef NOTHREADS
+  std::future<void> thread_join_fut_;
+#endif // NOTHREADS
   size_t tls_ticket_key_memcached_get_retry_count_;
   size_t tls_ticket_key_memcached_fail_count_;
   unsigned int worker_round_robin_cnt_;

@@ -7,7 +7,7 @@ Synopsis
 
 *#include <nghttp2/nghttp2.h>*
 
-.. function:: nghttp2_stream *nghttp2_session_find_stream(nghttp2_session *session, int32_t stream_id)
+.. function:: nghttp2_stream * nghttp2_session_find_stream(nghttp2_session *session, int32_t stream_id)
 
     
     Returns pointer to :type:`nghttp2_stream` object denoted by

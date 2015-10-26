@@ -112,6 +112,7 @@ POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
 target_triplet = @target@
+@ENABLE_THIRD_PARTY_TRUE@@HAVE_NEVERBLEED_TRUE@am__append_1 = libneverbleed.la
 subdir = third-party
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/ax_boost_asio.m4 \
@@ -146,6 +147,12 @@ am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
 am__v_lt_0 = --silent
 am__v_lt_1 = 
 @ENABLE_THIRD_PARTY_TRUE@am_libhttp_parser_la_rpath =
+libneverbleed_la_DEPENDENCIES =
+am__libneverbleed_la_SOURCES_DIST = neverbleed/neverbleed.c \
+	neverbleed/neverbleed.h
+@ENABLE_THIRD_PARTY_TRUE@@HAVE_NEVERBLEED_TRUE@am_libneverbleed_la_OBJECTS = neverbleed/libneverbleed_la-neverbleed.lo
+libneverbleed_la_OBJECTS = $(am_libneverbleed_la_OBJECTS)
+@ENABLE_THIRD_PARTY_TRUE@@HAVE_NEVERBLEED_TRUE@am_libneverbleed_la_rpath =
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -180,8 +187,9 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
-SOURCES = $(libhttp_parser_la_SOURCES)
-DIST_SOURCES = $(am__libhttp_parser_la_SOURCES_DIST)
+SOURCES = $(libhttp_parser_la_SOURCES) $(libneverbleed_la_SOURCES)
+DIST_SOURCES = $(am__libhttp_parser_la_SOURCES_DIST) \
+	$(am__libneverbleed_la_SOURCES_DIST)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -246,6 +254,7 @@ ECHO_N = @ECHO_N@
 ECHO_T = @ECHO_T@
 EGREP = @EGREP@
 EXEEXT = @EXEEXT@
+EXTRACFLAG = @EXTRACFLAG@
 FGREP = @FGREP@
 GREP = @GREP@
 HAVE_CXX11 = @HAVE_CXX11@
@@ -385,11 +394,15 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 AM_CPPFLAGS = -Wall @DEFS@
-@ENABLE_THIRD_PARTY_TRUE@noinst_LTLIBRARIES = libhttp-parser.la
+@ENABLE_THIRD_PARTY_TRUE@noinst_LTLIBRARIES = libhttp-parser.la \
+@ENABLE_THIRD_PARTY_TRUE@	$(am__append_1)
 @ENABLE_THIRD_PARTY_TRUE@libhttp_parser_la_SOURCES = \
 @ENABLE_THIRD_PARTY_TRUE@	http-parser/http_parser.c \
 @ENABLE_THIRD_PARTY_TRUE@	http-parser/http_parser.h
 
+@ENABLE_THIRD_PARTY_TRUE@@HAVE_NEVERBLEED_TRUE@libneverbleed_la_CPPFLAGS = @OPENSSL_CFLAGS@
+@ENABLE_THIRD_PARTY_TRUE@@HAVE_NEVERBLEED_TRUE@libneverbleed_la_LIBADD = @OPENSSL_LIBS@
+@ENABLE_THIRD_PARTY_TRUE@@HAVE_NEVERBLEED_TRUE@libneverbleed_la_SOURCES = neverbleed/neverbleed.c neverbleed/neverbleed.h
 @ENABLE_THIRD_PARTY_TRUE@@HAVE_MRUBY_TRUE@EXTRA_DIST = build_config.rb mruby/*
 all: all-am
 
@@ -446,16 +459,30 @@ http-parser/http_parser.lo: http-parser/$(am__dirstamp) \
 
 libhttp-parser.la: $(libhttp_parser_la_OBJECTS) $(libhttp_parser_la_DEPENDENCIES) $(EXTRA_libhttp_parser_la_DEPENDENCIES) 
 	$(AM_V_CCLD)$(LINK) $(am_libhttp_parser_la_rpath) $(libhttp_parser_la_OBJECTS) $(libhttp_parser_la_LIBADD) $(LIBS)
+neverbleed/$(am__dirstamp):
+	@$(MKDIR_P) neverbleed
+	@: > neverbleed/$(am__dirstamp)
+neverbleed/$(DEPDIR)/$(am__dirstamp):
+	@$(MKDIR_P) neverbleed/$(DEPDIR)
+	@: > neverbleed/$(DEPDIR)/$(am__dirstamp)
+neverbleed/libneverbleed_la-neverbleed.lo: neverbleed/$(am__dirstamp) \
+	neverbleed/$(DEPDIR)/$(am__dirstamp)
+
+libneverbleed.la: $(libneverbleed_la_OBJECTS) $(libneverbleed_la_DEPENDENCIES) $(EXTRA_libneverbleed_la_DEPENDENCIES) 
+	$(AM_V_CCLD)$(LINK) $(am_libneverbleed_la_rpath) $(libneverbleed_la_OBJECTS) $(libneverbleed_la_LIBADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
 	-rm -f http-parser/*.$(OBJEXT)
 	-rm -f http-parser/*.lo
+	-rm -f neverbleed/*.$(OBJEXT)
+	-rm -f neverbleed/*.lo
 
 distclean-compile:
 	-rm -f *.tab.c
 
 @AMDEP_TRUE@@am__include@ @am__quote@http-parser/$(DEPDIR)/http_parser.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@neverbleed/$(DEPDIR)/libneverbleed_la-neverbleed.Plo@am__quote@
 
 .c.o:
 @am__fastdepCC_TRUE@	$(AM_V_CC)depbase=`echo $@ | sed 's|[^/]*$$|$(DEPDIR)/&|;s|\.o$$||'`;\
@@ -481,12 +508,20 @@ distclean-compile:
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LTCOMPILE) -c -o $@ $<
 
+neverbleed/libneverbleed_la-neverbleed.lo: neverbleed/neverbleed.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libneverbleed_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT neverbleed/libneverbleed_la-neverbleed.lo -MD -MP -MF neverbleed/$(DEPDIR)/libneverbleed_la-neverbleed.Tpo -c -o neverbleed/libneverbleed_la-neverbleed.lo `test -f 'neverbleed/neverbleed.c' || echo '$(srcdir)/'`neverbleed/neverbleed.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) neverbleed/$(DEPDIR)/libneverbleed_la-neverbleed.Tpo neverbleed/$(DEPDIR)/libneverbleed_la-neverbleed.Plo
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='neverbleed/neverbleed.c' object='neverbleed/libneverbleed_la-neverbleed.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libneverbleed_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o neverbleed/libneverbleed_la-neverbleed.lo `test -f 'neverbleed/neverbleed.c' || echo '$(srcdir)/'`neverbleed/neverbleed.c
+
 mostlyclean-libtool:
 	-rm -f *.lo
 
 clean-libtool:
 	-rm -rf .libs _libs
 	-rm -rf http-parser/.libs http-parser/_libs
+	-rm -rf neverbleed/.libs neverbleed/_libs
 it-local: 
 itprep-local: 
 
@@ -606,6 +641,8 @@ distclean-generic:
 	-test . = "$(srcdir)" || test -z "$(CONFIG_CLEAN_VPATH_FILES)" || rm -f $(CONFIG_CLEAN_VPATH_FILES)
 	-rm -f http-parser/$(DEPDIR)/$(am__dirstamp)
 	-rm -f http-parser/$(am__dirstamp)
+	-rm -f neverbleed/$(DEPDIR)/$(am__dirstamp)
+	-rm -f neverbleed/$(am__dirstamp)
 
 maintainer-clean-generic:
 	@echo "This command is intended for maintainers to use"
@@ -618,7 +655,7 @@ clean-am: clean-generic clean-libtool clean-local \
 	clean-noinstLTLIBRARIES mostlyclean-am
 
 distclean: distclean-am
-	-rm -rf http-parser/$(DEPDIR)
+	-rm -rf http-parser/$(DEPDIR) neverbleed/$(DEPDIR)
 	-rm -f Makefile
 distclean-am: clean-am distclean-compile distclean-generic \
 	distclean-tags
@@ -672,7 +709,7 @@ itprep: itprep-am
 itprep-am: itprep-local
 
 maintainer-clean: maintainer-clean-am
-	-rm -rf http-parser/$(DEPDIR)
+	-rm -rf http-parser/$(DEPDIR) neverbleed/$(DEPDIR)
 	-rm -f Makefile
 maintainer-clean-am: distclean-am maintainer-clean-generic
 

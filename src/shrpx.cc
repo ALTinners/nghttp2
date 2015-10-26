@@ -67,8 +67,6 @@
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
-#include <openssl/conf.h>
-
 #include <ev.h>
 
 #include <nghttp2/nghttp2.h>
@@ -108,6 +106,19 @@ namespace shrpx {
 // Environment variable to tell new binary the UNIX domain socket
 // path.
 #define ENV_UNIX_PATH "NGHTTP2_UNIX_PATH"
+
+#ifndef _KERNEL_FASTOPEN
+#define _KERNEL_FASTOPEN
+// conditional define for TCP_FASTOPEN mostly on ubuntu
+#ifndef TCP_FASTOPEN
+#define TCP_FASTOPEN 23
+#endif
+
+// conditional define for SOL_TCP mostly on ubuntu
+#ifndef SOL_TCP
+#define SOL_TCP 6
+#endif
+#endif
 
 struct SignalServer {
   SignalServer()
@@ -408,26 +419,9 @@ void signal_cb(struct ev_loop *loop, ev_signal *w, int revents) {
 
 namespace {
 void worker_process_child_cb(struct ev_loop *loop, ev_child *w, int revents) {
-  std::string signalstr;
-  if (WIFSIGNALED(w->rstatus)) {
-    signalstr += "; signal ";
-    auto sig = WTERMSIG(w->rstatus);
-    auto s = strsignal(sig);
-    if (s) {
-      signalstr += s;
-      signalstr += "(";
-    } else {
-      signalstr += "UNKNOWN(";
-    }
-    signalstr += util::utos(sig);
-    signalstr += ")";
-  }
+  log_chld(w->rpid, w->rstatus, "Worker process");
 
-  LOG(NOTICE) << "Worker process (" << w->rpid << ") exited "
-              << (WIFEXITED(w->rstatus) ? "normally" : "abnormally")
-              << " with status " << std::hex << w->rstatus << std::oct
-              << "; exit status " << WEXITSTATUS(w->rstatus)
-              << (signalstr.empty() ? "" : signalstr.c_str());
+  ev_child_stop(loop, w);
 
   ev_break(loop);
 }
@@ -624,6 +618,14 @@ int create_tcp_server_socket(int family) {
       continue;
     }
 
+    if (get_config()->fastopen > 0) {
+      val = get_config()->fastopen;
+      if (setsockopt(fd, SOL_TCP, TCP_FASTOPEN, &val,
+                     static_cast<socklen_t>(sizeof(val))) == -1) {
+        LOG(WARN) << "Failed to set TCP_FASTOPEN option to listener socket";
+      }
+    }
+
     if (listen(fd, get_config()->backlog) == -1) {
       auto error = errno;
       LOG(WARN) << "listen() syscall failed, error=" << error;
@@ -744,7 +746,7 @@ pid_t fork_worker_process(SignalServer *ssv) {
 
   close(ssv->ipc_fd[0]);
 
-  LOG(NOTICE) << "Worker process (" << pid << ") spawned";
+  LOG(NOTICE) << "Worker process [" << pid << "] spawned";
 
   return pid;
 }
@@ -835,9 +837,8 @@ int event_loop() {
 
   ssv.worker_process_pid = pid;
 
-  constexpr auto signals =
-      std::array<int, 5>{{REOPEN_LOG_SIGNAL, EXEC_BINARY_SIGNAL,
-                          GRACEFUL_SHUTDOWN_SIGNAL, SIGINT, SIGTERM}};
+  constexpr auto signals = std::array<int, 3>{
+      {REOPEN_LOG_SIGNAL, EXEC_BINARY_SIGNAL, GRACEFUL_SHUTDOWN_SIGNAL}};
   auto sigevs = std::array<ev_signal, signals.size()>();
 
   for (size_t i = 0; i < signals.size(); ++i) {
@@ -909,13 +910,13 @@ void fill_default_config() {
   mod_config()->http2_upstream_read_timeout = 3_min;
 
   // Read timeout for non-HTTP2 upstream connection
-  mod_config()->upstream_read_timeout = 3_min;
+  mod_config()->upstream_read_timeout = 1_min;
 
   // Write timeout for HTTP2/non-HTTP2 upstream connection
   mod_config()->upstream_write_timeout = 30.;
 
   // Read/Write timeouts for downstream connection
-  mod_config()->downstream_read_timeout = 3_min;
+  mod_config()->downstream_read_timeout = 1_min;
   mod_config()->downstream_write_timeout = 30.;
 
   // Read timeout for HTTP/2 stream
@@ -992,10 +993,6 @@ void fill_default_config() {
   mod_config()->padding = 0;
   mod_config()->worker_frontend_connections = 0;
 
-  mod_config()->http2_upstream_callbacks = create_http2_upstream_callbacks();
-  mod_config()->http2_downstream_callbacks =
-      create_http2_downstream_callbacks();
-
   nghttp2_option_new(&mod_config()->http2_option);
   nghttp2_option_set_no_auto_window_update(get_config()->http2_option, 1);
   nghttp2_option_set_no_recv_client_magic(get_config()->http2_option, 1);
@@ -1033,6 +1030,9 @@ void fill_default_config() {
   mod_config()->tls_ticket_key_memcached_max_retry = 3;
   mod_config()->tls_ticket_key_memcached_max_fail = 2;
   mod_config()->tls_ticket_key_memcached_interval = 10_min;
+  mod_config()->fastopen = 0;
+  mod_config()->tls_dyn_rec_warmup_threshold = 1_m;
+  mod_config()->tls_dyn_rec_idle_timeout = 1.;
 }
 } // namespace
 
@@ -1241,7 +1241,12 @@ Performance:
               Default: )"
       << util::utos_with_unit(get_config()->downstream_response_buffer_size)
       << R"(
-
+  --fastopen=<N>
+              Enables  "TCP Fast  Open" for  the listening  socket and
+              limits the  maximum length for the  queue of connections
+              that have not yet completed the three-way handshake.  If
+              value is 0 then fast open is disabled.
+              Default: )" << get_config()->fastopen << R"(
 Timeout:
   --frontend-http2-read-timeout=<DURATION>
               Specify  read  timeout  for  HTTP/2  and  SPDY  frontend
@@ -1343,7 +1348,10 @@ SSL/TLS:
               and   TLSv1.0.    The   name   matching   is   done   in
               case-insensitive   manner.    The  parameter   must   be
               delimited by  a single comma  only and any  white spaces
-              are treated as a part of protocol string.
+              are  treated  as a  part  of  protocol string.   If  the
+              protocol list advertised by client does not overlap this
+              list,  you  will  receive  the  error  message  "unknown
+              protocol".
               Default: )" << DEFAULT_TLS_PROTO_LIST << R"(
   --tls-ticket-key-file=<PATH>
               Path to file that contains  random data to construct TLS
@@ -1414,6 +1422,26 @@ SSL/TLS:
               Specify  address of  memcached server  to store  session
               cache.   This  enables   shared  session  cache  between
               multiple nghttpx instances.
+  --tls-dyn-rec-warmup-threshold=<SIZE>
+              Specify the  threshold size for TLS  dynamic record size
+              behaviour.  During  a TLS  session, after  the threshold
+              number of bytes  have been written, the  TLS record size
+              will be increased to the maximum allowed (16K).  The max
+              record size will  continue to be used on  the active TLS
+              session.  After  --tls-dyn-rec-idle-timeout has elapsed,
+              the record size is reduced  to 1300 bytes.  Specify 0 to
+              always use  the maximum record size,  regardless of idle
+              period.   This  behaviour  applies   to  all  TLS  based
+              frontends, and TLS HTTP/2 backends.
+              Default: )"
+      << util::utos_with_unit(get_config()->tls_dyn_rec_warmup_threshold) << R"(
+  --tls-dyn-rec-idle-timeout=<DURATION>
+              Specify TLS dynamic record  size behaviour timeout.  See
+              --tls-dyn-rec-warmup-threshold  for   more  information.
+              This behaviour  applies to all TLS  based frontends, and
+              TLS HTTP/2 backends.
+              Default: )"
+      << util::duration_str(get_config()->tls_dyn_rec_idle_timeout) << R"(
 
 HTTP/2 and SPDY:
   -c, --http2-max-concurrent-streams=<N>
@@ -1616,14 +1644,8 @@ Process:
               be used to drop root privileges.
 
 Scripting:
-  --request-phase-file=<PATH>
-              Set  mruby  script  file  which will  be  executed  when
-              request  header  fields  are  completely  received  from
-              frontend.  This hook is called request phase hook.
-  --response-phase-file=<PATH>
-              Set  mruby  script  file  which will  be  executed  when
-              response  header  fields  are completely  received  from
-              backend.  This hook is called response phase hook.
+  --mruby-file=<PATH>
+              Set mruby script file
 
 Misc:
   --conf=<PATH>
@@ -1651,15 +1673,11 @@ Misc:
 } // namespace
 
 int main(int argc, char **argv) {
+  nghttp2::ssl::libssl_init();
+
 #ifndef NOTHREADS
   nghttp2::ssl::LibsslGlobalLock lock;
 #endif // NOTHREADS
-  // Initialize OpenSSL before parsing options because we create
-  // SSL_CTX there.
-  SSL_load_error_strings();
-  SSL_library_init();
-  OpenSSL_add_all_algorithms();
-  OPENSSL_config(nullptr);
 
   Log::set_severity_level(NOTICE);
   create_config();
@@ -1680,6 +1698,11 @@ int main(int argc, char **argv) {
 
   for (int i = 0; i < argc; ++i) {
     mod_config()->argv[i] = strdup(argv[i]);
+    if (mod_config()->argv[i] == nullptr) {
+      auto error = errno;
+      LOG(FATAL) << "failed to copy argv: " << strerror(error);
+      exit(EXIT_FAILURE);
+    }
   }
 
   mod_config()->cwd = getcwd(nullptr, 0);
@@ -1800,9 +1823,11 @@ int main(int argc, char **argv) {
          89},
         {SHRPX_OPT_TLS_TICKET_KEY_MEMCACHED_MAX_FAIL, required_argument, &flag,
          90},
-        {SHRPX_OPT_REQUEST_PHASE_FILE, required_argument, &flag, 91},
-        {SHRPX_OPT_RESPONSE_PHASE_FILE, required_argument, &flag, 92},
+        {SHRPX_OPT_MRUBY_FILE, required_argument, &flag, 91},
         {SHRPX_OPT_ACCEPT_PROXY_PROTOCOL, no_argument, &flag, 93},
+        {SHRPX_OPT_FASTOPEN, required_argument, &flag, 94},
+        {SHRPX_OPT_TLS_DYN_REC_WARMUP_THRESHOLD, required_argument, &flag, 95},
+        {SHRPX_OPT_TLS_DYN_REC_IDLE_TIMEOUT, required_argument, &flag, 96},
         {nullptr, 0, nullptr, 0}};
 
     int option_index = 0;
@@ -2197,16 +2222,24 @@ int main(int argc, char **argv) {
                              optarg);
         break;
       case 91:
-        // --request-phase-file
-        cmdcfgs.emplace_back(SHRPX_OPT_REQUEST_PHASE_FILE, optarg);
-        break;
-      case 92:
-        // --response-phase-file
-        cmdcfgs.emplace_back(SHRPX_OPT_RESPONSE_PHASE_FILE, optarg);
+        // --mruby-file
+        cmdcfgs.emplace_back(SHRPX_OPT_MRUBY_FILE, optarg);
         break;
       case 93:
         // --accept-proxy-protocol
         cmdcfgs.emplace_back(SHRPX_OPT_ACCEPT_PROXY_PROTOCOL, "yes");
+        break;
+      case 94:
+        // --fastopen
+        cmdcfgs.emplace_back(SHRPX_OPT_FASTOPEN, optarg);
+        break;
+      case 95:
+        // --tls-dyn-rec-warmup-threshold
+        cmdcfgs.emplace_back(SHRPX_OPT_TLS_DYN_REC_WARMUP_THRESHOLD, optarg);
+        break;
+      case 96:
+        // --tls-dyn-rec-idle-timeout
+        cmdcfgs.emplace_back(SHRPX_OPT_TLS_DYN_REC_IDLE_TIMEOUT, optarg);
         break;
       default:
         break;
@@ -2387,6 +2420,8 @@ int main(int argc, char **argv) {
 
     DownstreamAddrGroup g("/");
     g.addrs.push_back(std::move(addr));
+    mod_config()->router.add_route(g.pattern.get(), 1,
+                                   get_config()->downstream_addr_groups.size());
     mod_config()->downstream_addr_groups.push_back(std::move(g));
   } else if (get_config()->http2_proxy || get_config()->client_proxy) {
     // We don't support host mapping in these cases.  Move all
@@ -2398,6 +2433,10 @@ int main(int argc, char **argv) {
     }
     std::vector<DownstreamAddrGroup>().swap(
         mod_config()->downstream_addr_groups);
+    // maybe not necessary?
+    mod_config()->router = Router();
+    mod_config()->router.add_route(catch_all.pattern.get(), 1,
+                                   get_config()->downstream_addr_groups.size());
     mod_config()->downstream_addr_groups.push_back(std::move(catch_all));
   }
 
@@ -2408,11 +2447,11 @@ int main(int argc, char **argv) {
   ssize_t catch_all_group = -1;
   for (size_t i = 0; i < mod_config()->downstream_addr_groups.size(); ++i) {
     auto &g = mod_config()->downstream_addr_groups[i];
-    if (g.pattern == "/") {
+    if (util::streq(g.pattern.get(), "/")) {
       catch_all_group = i;
     }
     if (LOG_ENABLED(INFO)) {
-      LOG(INFO) << "Host-path pattern: group " << i << ": '" << g.pattern
+      LOG(INFO) << "Host-path pattern: group " << i << ": '" << g.pattern.get()
                 << "'";
       for (auto &addr : g.addrs) {
         LOG(INFO) << "group " << i << " -> " << addr.host.get()
@@ -2521,6 +2560,10 @@ int main(int argc, char **argv) {
     reset_timer();
   }
 
+  mod_config()->http2_upstream_callbacks = create_http2_upstream_callbacks();
+  mod_config()->http2_downstream_callbacks =
+      create_http2_downstream_callbacks();
+
   if (event_loop() != 0) {
     return -1;
   }
@@ -2534,4 +2577,4 @@ int main(int argc, char **argv) {
 
 } // namespace shrpx
 
-int main(int argc, char **argv) { return shrpx::main(argc, argv); }
+int main(int argc, char **argv) { return run_app(shrpx::main, argc, argv); }

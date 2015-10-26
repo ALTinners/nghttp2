@@ -193,6 +193,7 @@ ECHO_N = @ECHO_N@
 ECHO_T = @ECHO_T@
 EGREP = @EGREP@
 EXEEXT = @EXEEXT@
+EXTRACFLAG = @EXTRACFLAG@
 FGREP = @FGREP@
 GREP = @GREP@
 HAVE_CXX11 = @HAVE_CXX11@
@@ -343,7 +344,8 @@ EXTRA_DIST = \
 	setenv \
 	req-set-header.rb \
 	resp-set-header.rb \
-	return.rb
+	req-return.rb \
+	resp-return.rb
 
 all: all-am
 
@@ -553,7 +555,7 @@ uninstall-am:
 
 
 itprep-local:
-	go get -d -v github.com/bradfitz/http2
+	go get -d -v golang.org/x/net/http2
 	go get -d -v github.com/tatsuhiro-t/go-nghttp2
 	go get -d -v github.com/tatsuhiro-t/spdy
 	go get -d -v golang.org/x/net/websocket

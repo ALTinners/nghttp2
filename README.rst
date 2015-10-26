@@ -104,11 +104,11 @@ The Python bindings require the following packages:
 * python >= 2.7
 * python-setuptools
 
-If you are using Ubuntu 14.04 LTS (trusty), run the following to install the needed packages::
+If you are using Ubuntu 14.04 LTS (trusty) or Debian 7.0 (wheezy) and above run the following to install the needed packages::
 
-    sudo apt-get install make binutils autoconf  automake autotools-dev libtool pkg-config \
+    sudo apt-get install g++ make binutils autoconf automake autotools-dev libtool pkg-config \
       zlib1g-dev libcunit1-dev libssl-dev libxml2-dev libev-dev libevent-dev libjansson-dev \
-      libjemalloc-dev cython python3.4-dev python-setuptools
+      libjemalloc-dev cython python3-dev python-setuptools
 
 spdylay is not packaged in Ubuntu, so you need to build it yourself:
 http://tatsuhiro-t.github.io/spdylay/
@@ -126,6 +126,12 @@ required:
 
 * ruby
 * bison
+
+nghttpx supports `neverbleed <https://github.com/h2o/neverbleed>`_,
+privilege separation engine for OpenSSL / LibreSSL.  In short, it
+minimizes the risk of private key leakage when serious bug like
+Heartbleed is exploited.  The neverbleed is disabled by default.  To
+enable it, use ``--with-neverbleed`` configure option.
 
 Building from git
 -----------------
@@ -202,7 +208,9 @@ https://nghttp2.org/documentation/
 Unit tests
 ----------
 
-Unit tests are done by simply running ``make check``.
+Unit tests are done by simply running ``make check``.  Currently,
+static library (enabled by default, see ``--enable-static`` configure
+option) is required to run tests.
 
 Integration tests
 -----------------
@@ -211,10 +219,10 @@ We have the integration tests for the nghttpx proxy server.  The tests are
 written in the `Go programming language <http://golang.org/>`_ and uses
 its testing framework.  We depend on the following libraries:
 
-* https://github.com/bradfitz/http2
+* golang.org/x/net/http2
+* golang.org/x/net/websocket
 * https://github.com/tatsuhiro-t/go-nghttp2
 * https://github.com/tatsuhiro-t/spdy
-* golang.org/x/net/websocket
 
 To download the above packages, after settings ``GOPATH``, run the
 following command under ``integration-tests`` directory::

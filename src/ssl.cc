@@ -30,6 +30,7 @@
 #include <iostream>
 
 #include <openssl/crypto.h>
+#include <openssl/conf.h>
 
 namespace nghttp2 {
 
@@ -693,6 +694,15 @@ bool check_http2_requirement(SSL *ssl) {
   }
 
   return true;
+}
+
+void libssl_init() {
+#ifndef OPENSSL_IS_BORINGSSL
+  OPENSSL_config(nullptr);
+#endif // OPENSSL_IS_BORINGSSL
+  SSL_load_error_strings();
+  SSL_library_init();
+  OpenSSL_add_all_algorithms();
 }
 
 } // namespace ssl
