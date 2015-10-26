@@ -122,10 +122,8 @@ public:
                        int64_t body_bytes_sent);
   Worker *get_worker() const;
 
-  using WriteBuf = Buffer<32768>;
   using ReadBuf = Buffer<8_k>;
 
-  WriteBuf *get_wb();
   ReadBuf *get_rb();
 
   RateLimit *get_rlimit();
@@ -151,7 +149,6 @@ private:
   // The number of bytes of HTTP/2 client connection header to read
   size_t left_connhd_len_;
   bool should_close_after_write_;
-  WriteBuf wb_;
   ReadBuf rb_;
 };
 

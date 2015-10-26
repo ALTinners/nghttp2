@@ -48,6 +48,7 @@
 #include "shrpx_memcached_dispatcher.h"
 #include "shrpx_memcached_request.h"
 #include "shrpx_process.h"
+#include "shrpx_ssl.h"
 #include "util.h"
 #include "app_helper.h"
 #include "template.h"
@@ -57,7 +58,11 @@ using namespace nghttp2;
 namespace shrpx {
 
 namespace {
-void drop_privileges() {
+void drop_privileges(
+#ifdef HAVE_NEVERBLEED
+    neverbleed_t *nb
+#endif // HAVE_NEVERBLEED
+    ) {
   if (getuid() == 0 && get_config()->uid != 0) {
     if (initgroups(get_config()->user.get(), get_config()->gid) != 0) {
       auto error = errno;
@@ -79,6 +84,11 @@ void drop_privileges() {
       LOG(FATAL) << "Still have root privileges?";
       exit(EXIT_FAILURE);
     }
+#ifdef HAVE_NEVERBLEED
+    if (nb) {
+      neverbleed_setuidgid(nb, get_config()->user.get(), 1);
+    }
+#endif // HAVE_NEVERBLEED
   }
 }
 } // namespace
@@ -102,15 +112,14 @@ void graceful_shutdown(ConnectionHandler *conn_handler) {
 
   conn_handler->graceful_shutdown_worker();
 
-  if (get_config()->num_worker == 1 &&
-      conn_handler->get_single_worker()->get_worker_stat()->num_connections >
-          0) {
+  if (get_config()->num_worker == 1) {
+    if (conn_handler->get_single_worker()->get_worker_stat()->num_connections ==
+        0) {
+      ev_break(conn_handler->get_loop());
+    }
+
     return;
   }
-
-  // We have accepted all pending connections.  Shutdown main event
-  // loop.
-  ev_break(conn_handler->get_loop());
 }
 } // namespace
 
@@ -143,8 +152,7 @@ void ipc_readcb(struct ev_loop *loop, ev_io *w, int revents) {
   if (nread == 0) {
     // IPC socket closed.  Perform immediate shutdown.
     LOG(FATAL) << "IPC socket is closed.  Perform immediate shutdown.";
-    ev_break(conn_handler->get_loop());
-    return;
+    _Exit(EXIT_FAILURE);
   }
 
   for (ssize_t i = 0; i < nread; ++i) {
@@ -355,6 +363,20 @@ void memcached_get_ticket_key_cb(struct ev_loop *loop, ev_timer *w,
 
 } // namespace
 
+#ifdef HAVE_NEVERBLEED
+namespace {
+void nb_child_cb(struct ev_loop *loop, ev_child *w, int revents) {
+  log_chld(w->rpid, w->rstatus, "neverbleed process");
+
+  ev_child_stop(loop, w);
+
+  LOG(FATAL) << "neverbleed process exitted; aborting now";
+
+  _Exit(EXIT_FAILURE);
+}
+} // namespace
+#endif // HAVE_NEVERBLEED
+
 int worker_process_event_loop(WorkerProcessConfig *wpconf) {
   if (reopen_log_files() != 0) {
     LOG(FATAL) << "Failed to open log file";
@@ -373,6 +395,31 @@ int worker_process_event_loop(WorkerProcessConfig *wpconf) {
     conn_handler.set_acceptor(
         make_unique<AcceptHandler>(wpconf->server_fd, &conn_handler));
   }
+
+#ifdef HAVE_NEVERBLEED
+  if (!get_config()->upstream_no_tls || ssl::downstream_tls_enabled()) {
+    std::array<char, NEVERBLEED_ERRBUF_SIZE> errbuf;
+    auto nb = make_unique<neverbleed_t>();
+    if (neverbleed_init(nb.get(), errbuf.data()) != 0) {
+      LOG(FATAL) << "neverbleed_init failed: " << errbuf.data();
+      return -1;
+    }
+
+    LOG(NOTICE) << "neverbleed process [" << nb->daemon_pid << "] spawned";
+
+    conn_handler.set_neverbleed(std::move(nb));
+  }
+
+  auto nb = conn_handler.get_neverbleed();
+
+  ev_child nb_childev;
+  if (nb) {
+    ev_child_init(&nb_childev, nb_child_cb, nb->daemon_pid, 0);
+    nb_childev.data = nullptr;
+    ev_child_start(loop, &nb_childev);
+  }
+
+#endif // HAVE_NEVERBLEED
 
   ev_timer renew_ticket_key_timer;
   if (!get_config()->upstream_no_tls) {
@@ -454,7 +501,11 @@ int worker_process_event_loop(WorkerProcessConfig *wpconf) {
 #endif // !NOTHREADS
   }
 
-  drop_privileges();
+  drop_privileges(
+#ifdef HAVE_NEVERBLEED
+      nb
+#endif // HAVE_NEVERBLEED
+      );
 
   ev_io ipcev;
   ev_io_init(&ipcev, ipc_readcb, wpconf->ipc_fd, EV_READ);
@@ -471,8 +522,13 @@ int worker_process_event_loop(WorkerProcessConfig *wpconf) {
 
   ev_run(loop, 0);
 
-  conn_handler.join_worker();
   conn_handler.cancel_ocsp_update();
+
+#ifdef HAVE_NEVERBLEED
+  if (nb && nb->daemon_pid != -1) {
+    kill(nb->daemon_pid, SIGTERM);
+  }
+#endif // HAVE_NEVERBLEED
 
   return 0;
 }

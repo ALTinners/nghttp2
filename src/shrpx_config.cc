@@ -79,9 +79,9 @@ TicketKeys::~TicketKeys() {
 }
 
 DownstreamAddr::DownstreamAddr(const DownstreamAddr &other)
-    : addr(other.addr), host(other.host ? strcopy(other.host.get()) : nullptr),
-      hostport(other.hostport ? strcopy(other.hostport.get()) : nullptr),
-      port(other.port), host_unix(other.host_unix) {}
+    : addr(other.addr), host(strcopy(other.host)),
+      hostport(strcopy(other.hostport)), port(other.port),
+      host_unix(other.host_unix) {}
 
 DownstreamAddr &DownstreamAddr::operator=(const DownstreamAddr &other) {
   if (this == &other) {
@@ -89,10 +89,25 @@ DownstreamAddr &DownstreamAddr::operator=(const DownstreamAddr &other) {
   }
 
   addr = other.addr;
-  host = (other.host ? strcopy(other.host.get()) : nullptr);
-  hostport = (other.hostport ? strcopy(other.hostport.get()) : nullptr);
+  host = strcopy(other.host);
+  hostport = strcopy(other.hostport);
   port = other.port;
   host_unix = other.host_unix;
+
+  return *this;
+}
+
+DownstreamAddrGroup::DownstreamAddrGroup(const DownstreamAddrGroup &other)
+    : pattern(strcopy(other.pattern)), addrs(other.addrs) {}
+
+DownstreamAddrGroup &DownstreamAddrGroup::
+operator=(const DownstreamAddrGroup &other) {
+  if (this == &other) {
+    return *this;
+  }
+
+  pattern = strcopy(other.pattern);
+  addrs = other.addrs;
 
   return *this;
 }
@@ -259,7 +274,6 @@ std::string read_passwd_from_file(const char *filename) {
   std::getline(in, line);
   return line;
 }
-
 
 std::pair<std::string, std::string> parse_header(const char *optarg) {
   // We skip possible ":" at the start of optarg.
@@ -576,7 +590,7 @@ void parse_mapping(const DownstreamAddr &addr, const char *src) {
       pattern += http2::normalize_path(slash, raw_pattern.second);
     }
     for (auto &g : mod_config()->downstream_addr_groups) {
-      if (g.pattern == pattern) {
+      if (g.pattern.get() == pattern) {
         g.addrs.push_back(addr);
         done = true;
         break;
@@ -587,6 +601,10 @@ void parse_mapping(const DownstreamAddr &addr, const char *src) {
     }
     DownstreamAddrGroup g(pattern);
     g.addrs.push_back(addr);
+
+    mod_config()->router.add_route(g.pattern.get(), strlen(g.pattern.get()),
+                                   get_config()->downstream_addr_groups.size());
+
     mod_config()->downstream_addr_groups.push_back(std::move(g));
   }
 }
@@ -631,6 +649,7 @@ enum {
   SHRPX_OPTID_DH_PARAM_FILE,
   SHRPX_OPTID_ERRORLOG_FILE,
   SHRPX_OPTID_ERRORLOG_SYSLOG,
+  SHRPX_OPTID_FASTOPEN,
   SHRPX_OPTID_FETCH_OCSP_RESPONSE_FILE,
   SHRPX_OPTID_FRONTEND,
   SHRPX_OPTID_FRONTEND_FRAME_DEBUG,
@@ -653,6 +672,7 @@ enum {
   SHRPX_OPTID_LISTENER_DISABLE_TIMEOUT,
   SHRPX_OPTID_LOG_LEVEL,
   SHRPX_OPTID_MAX_HEADER_FIELDS,
+  SHRPX_OPTID_MRUBY_FILE,
   SHRPX_OPTID_NO_HOST_REWRITE,
   SHRPX_OPTID_NO_LOCATION_REWRITE,
   SHRPX_OPTID_NO_OCSP,
@@ -666,14 +686,14 @@ enum {
   SHRPX_OPTID_PRIVATE_KEY_PASSWD_FILE,
   SHRPX_OPTID_READ_BURST,
   SHRPX_OPTID_READ_RATE,
-  SHRPX_OPTID_REQUEST_PHASE_FILE,
-  SHRPX_OPTID_RESPONSE_PHASE_FILE,
   SHRPX_OPTID_RLIMIT_NOFILE,
   SHRPX_OPTID_STREAM_READ_TIMEOUT,
   SHRPX_OPTID_STREAM_WRITE_TIMEOUT,
   SHRPX_OPTID_STRIP_INCOMING_X_FORWARDED_FOR,
   SHRPX_OPTID_SUBCERT,
   SHRPX_OPTID_SYSLOG_FACILITY,
+  SHRPX_OPTID_TLS_DYN_REC_IDLE_TIMEOUT,
+  SHRPX_OPTID_TLS_DYN_REC_WARMUP_THRESHOLD,
   SHRPX_OPTID_TLS_PROTO_LIST,
   SHRPX_OPTID_TLS_SESSION_CACHE_MEMCACHED,
   SHRPX_OPTID_TLS_TICKET_KEY_CIPHER,
@@ -796,6 +816,11 @@ int option_lookup_token(const char *name, size_t namelen) {
         return SHRPX_OPTID_PID_FILE;
       }
       break;
+    case 'n':
+      if (util::strieq_l("fastope", name, 7)) {
+        return SHRPX_OPTID_FASTOPEN;
+      }
+      break;
     case 't':
       if (util::strieq_l("npn-lis", name, 7)) {
         return SHRPX_OPTID_NPN_LIST;
@@ -820,6 +845,9 @@ int option_lookup_token(const char *name, size_t namelen) {
   case 10:
     switch (name[9]) {
     case 'e':
+      if (util::strieq_l("mruby-fil", name, 9)) {
+        return SHRPX_OPTID_MRUBY_FILE;
+      }
       if (util::strieq_l("write-rat", name, 9)) {
         return SHRPX_OPTID_WRITE_RATE;
       }
@@ -989,11 +1017,6 @@ int option_lookup_token(const char *name, size_t namelen) {
     break;
   case 18:
     switch (name[17]) {
-    case 'e':
-      if (util::strieq_l("request-phase-fil", name, 17)) {
-        return SHRPX_OPTID_REQUEST_PHASE_FILE;
-      }
-      break;
     case 'r':
       if (util::strieq_l("add-request-heade", name, 17)) {
         return SHRPX_OPTID_ADD_REQUEST_HEADER;
@@ -1011,9 +1034,6 @@ int option_lookup_token(const char *name, size_t namelen) {
     case 'e':
       if (util::strieq_l("no-location-rewrit", name, 18)) {
         return SHRPX_OPTID_NO_LOCATION_REWRITE;
-      }
-      if (util::strieq_l("response-phase-fil", name, 18)) {
-        return SHRPX_OPTID_RESPONSE_PHASE_FILE;
       }
       if (util::strieq_l("tls-ticket-key-fil", name, 18)) {
         return SHRPX_OPTID_TLS_TICKET_KEY_FILE;
@@ -1141,6 +1161,9 @@ int option_lookup_token(const char *name, size_t namelen) {
       if (util::strieq_l("listener-disable-timeou", name, 23)) {
         return SHRPX_OPTID_LISTENER_DISABLE_TIMEOUT;
       }
+      if (util::strieq_l("tls-dyn-rec-idle-timeou", name, 23)) {
+        return SHRPX_OPTID_TLS_DYN_REC_IDLE_TIMEOUT;
+      }
       break;
     }
     break;
@@ -1193,6 +1216,11 @@ int option_lookup_token(const char *name, size_t namelen) {
     break;
   case 28:
     switch (name[27]) {
+    case 'd':
+      if (util::strieq_l("tls-dyn-rec-warmup-threshol", name, 27)) {
+        return SHRPX_OPTID_TLS_DYN_REC_WARMUP_THRESHOLD;
+      }
+      break;
     case 's':
       if (util::strieq_l("http2-max-concurrent-stream", name, 27)) {
         return SHRPX_OPTID_HTTP2_MAX_CONCURRENT_STREAMS;
@@ -1426,6 +1454,21 @@ int parse_config(const char *opt, const char *optarg,
     mod_config()->errorlog_syslog = util::strieq(optarg, "yes");
 
     return 0;
+  case SHRPX_OPTID_FASTOPEN: {
+    int n;
+    if (parse_int(&n, opt, optarg) != 0) {
+      return -1;
+    }
+
+    if (n < 0) {
+      LOG(ERROR) << opt << ": " << optarg << " is not allowed";
+      return -1;
+    }
+
+    mod_config()->fastopen = n;
+
+    return 0;
+  }
   case SHRPX_OPTID_BACKEND_KEEP_ALIVE_TIMEOUT:
     return parse_duration(&mod_config()->downstream_idle_read_timeout, opt,
                           optarg);
@@ -1928,17 +1971,23 @@ int parse_config(const char *opt, const char *optarg,
   case SHRPX_OPTID_TLS_TICKET_KEY_MEMCACHED_MAX_FAIL:
     return parse_uint(&mod_config()->tls_ticket_key_memcached_max_fail, opt,
                       optarg);
-  case SHRPX_OPTID_REQUEST_PHASE_FILE:
-#ifdef HAVE_MRUBY
-    mod_config()->request_phase_file = strcopy(optarg);
-#else  // !HAVE_MRUBY
-    LOG(WARN) << opt
-              << ": ignored because mruby support is disabled at build time.";
-#endif // !HAVE_MRUBY
+  case SHRPX_OPTID_TLS_DYN_REC_WARMUP_THRESHOLD: {
+    size_t n;
+    if (parse_uint_with_unit(&n, opt, optarg) != 0) {
+      return -1;
+    }
+
+    mod_config()->tls_dyn_rec_warmup_threshold = n;
+
     return 0;
-  case SHRPX_OPTID_RESPONSE_PHASE_FILE:
+  }
+
+  case SHRPX_OPTID_TLS_DYN_REC_IDLE_TIMEOUT:
+    return parse_duration(&mod_config()->tls_dyn_rec_idle_timeout, opt, optarg);
+
+  case SHRPX_OPTID_MRUBY_FILE:
 #ifdef HAVE_MRUBY
-    mod_config()->response_phase_file = strcopy(optarg);
+    mod_config()->mruby_file = strcopy(optarg);
 #else  // !HAVE_MRUBY
     LOG(WARN) << opt
               << ": ignored because mruby support is disabled at build time.";
@@ -2128,67 +2177,17 @@ int int_syslog_facility(const char *strfacility) {
 }
 
 namespace {
-template <typename InputIt>
-bool path_match(const std::string &pattern, const std::string &host,
-                InputIt path_first, InputIt path_last) {
-  if (pattern.back() != '/') {
-    return pattern.size() == host.size() + (path_last - path_first) &&
-           std::equal(std::begin(host), std::end(host), std::begin(pattern)) &&
-           std::equal(path_first, path_last, std::begin(pattern) + host.size());
-  }
-
-  if (pattern.size() >= host.size() &&
-      std::equal(std::begin(host), std::end(host), std::begin(pattern)) &&
-      util::startsWith(path_first, path_last, std::begin(pattern) + host.size(),
-                       std::end(pattern))) {
-    return true;
-  }
-
-  // If pattern ends with '/', and pattern and path matches without
-  // that slash, we consider they match to deal with request to the
-  // directory without trailing slash.  That is if pattern is "/foo/"
-  // and path is "/foo", we consider they match.
-
-  assert(!pattern.empty());
-  return pattern.size() - 1 == host.size() + (path_last - path_first) &&
-         std::equal(std::begin(host), std::end(host), std::begin(pattern)) &&
-         std::equal(path_first, path_last, std::begin(pattern) + host.size());
-}
-} // namespace
-
-namespace {
-template <typename InputIt>
-ssize_t match(const std::string &host, InputIt path_first, InputIt path_last,
-              const std::vector<DownstreamAddrGroup> &groups) {
-  ssize_t res = -1;
-  size_t best = 0;
-  for (size_t i = 0; i < groups.size(); ++i) {
-    auto &g = groups[i];
-    auto &pattern = g.pattern;
-    if (!path_match(pattern, host, path_first, path_last)) {
-      continue;
-    }
-    if (res == -1 || best < pattern.size()) {
-      best = pattern.size();
-      res = i;
-    }
-  }
-  return res;
-}
-} // namespace
-
-namespace {
-template <typename InputIt>
-size_t match_downstream_addr_group_host(
-    const std::string &host, InputIt path_first, InputIt path_last,
-    const std::vector<DownstreamAddrGroup> &groups, size_t catch_all) {
-  if (path_first == path_last || *path_first != '/') {
-    constexpr const char P[] = "/";
-    auto group = match(host, P, P + 1, groups);
+size_t
+match_downstream_addr_group_host(const Router &router, const std::string &host,
+                                 const char *path, size_t pathlen,
+                                 const std::vector<DownstreamAddrGroup> &groups,
+                                 size_t catch_all) {
+  if (pathlen == 0 || *path != '/') {
+    auto group = router.match(host, "/", 1);
     if (group != -1) {
       if (LOG_ENABLED(INFO)) {
         LOG(INFO) << "Found pattern with query " << host
-                  << ", matched pattern=" << groups[group].pattern;
+                  << ", matched pattern=" << groups[group].pattern.get();
       }
       return group;
     }
@@ -2197,25 +2196,24 @@ size_t match_downstream_addr_group_host(
 
   if (LOG_ENABLED(INFO)) {
     LOG(INFO) << "Perform mapping selection, using host=" << host
-              << ", path=" << std::string(path_first, path_last);
+              << ", path=" << std::string(path, pathlen);
   }
 
-  auto group = match(host, path_first, path_last, groups);
+  auto group = router.match(host, path, pathlen);
   if (group != -1) {
     if (LOG_ENABLED(INFO)) {
       LOG(INFO) << "Found pattern with query " << host
-                << std::string(path_first, path_last)
-                << ", matched pattern=" << groups[group].pattern;
+                << std::string(path, pathlen)
+                << ", matched pattern=" << groups[group].pattern.get();
     }
     return group;
   }
 
-  group = match("", path_first, path_last, groups);
+  group = router.match("", path, pathlen);
   if (group != -1) {
     if (LOG_ENABLED(INFO)) {
-      LOG(INFO) << "Found pattern with query "
-                << std::string(path_first, path_last)
-                << ", matched pattern=" << groups[group].pattern;
+      LOG(INFO) << "Found pattern with query " << std::string(path, pathlen)
+                << ", matched pattern=" << groups[group].pattern.get();
     }
     return group;
   }
@@ -2227,9 +2225,11 @@ size_t match_downstream_addr_group_host(
 }
 } // namespace
 
-size_t match_downstream_addr_group(
-    const std::string &hostport, const std::string &raw_path,
-    const std::vector<DownstreamAddrGroup> &groups, size_t catch_all) {
+size_t
+match_downstream_addr_group(const Router &router, const std::string &hostport,
+                            const std::string &raw_path,
+                            const std::vector<DownstreamAddrGroup> &groups,
+                            size_t catch_all) {
   if (std::find(std::begin(hostport), std::end(hostport), '/') !=
       std::end(hostport)) {
     // We use '/' specially, and if '/' is included in host, it breaks
@@ -2239,11 +2239,11 @@ size_t match_downstream_addr_group(
 
   auto fragment = std::find(std::begin(raw_path), std::end(raw_path), '#');
   auto query = std::find(std::begin(raw_path), fragment, '?');
-  auto path_first = std::begin(raw_path);
-  auto path_last = query;
+  auto path = raw_path.c_str();
+  auto pathlen = query - std::begin(raw_path);
 
   if (hostport.empty()) {
-    return match_downstream_addr_group_host(hostport, path_first, path_last,
+    return match_downstream_addr_group_host(router, hostport, path, pathlen,
                                             groups, catch_all);
   }
 
@@ -2267,7 +2267,7 @@ size_t match_downstream_addr_group(
   }
 
   util::inp_strlower(host);
-  return match_downstream_addr_group_host(host, path_first, path_last, groups,
+  return match_downstream_addr_group_host(router, host, path, pathlen, groups,
                                           catch_all);
 }
 

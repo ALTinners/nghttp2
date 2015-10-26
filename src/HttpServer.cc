@@ -539,11 +539,7 @@ int Http2Handler::tls_handshake() {
 
   auto rv = SSL_do_handshake(ssl_);
 
-  if (rv == 0) {
-    return -1;
-  }
-
-  if (rv < 0) {
+  if (rv <= 0) {
     auto err = SSL_get_error(ssl_, rv);
     switch (err) {
     case SSL_ERROR_WANT_READ:
@@ -588,11 +584,7 @@ int Http2Handler::read_tls() {
   for (;;) {
     auto rv = SSL_read(ssl_, buf.data(), buf.size());
 
-    if (rv == 0) {
-      return -1;
-    }
-
-    if (rv < 0) {
+    if (rv <= 0) {
       auto err = SSL_get_error(ssl_, rv);
       switch (err) {
       case SSL_ERROR_WANT_READ:
@@ -634,11 +626,7 @@ int Http2Handler::write_tls() {
     if (wb_.rleft() > 0) {
       auto rv = SSL_write(ssl_, wb_.pos, wb_.rleft());
 
-      if (rv == 0) {
-        return -1;
-      }
-
-      if (rv < 0) {
+      if (rv <= 0) {
         auto err = SSL_get_error(ssl_, rv);
         switch (err) {
         case SSL_ERROR_WANT_READ:
@@ -1683,7 +1671,7 @@ int start_listen(HttpServer *sv, struct ev_loop *loop, Sessions *sessions,
   bool ok = false;
   const char *addr = nullptr;
 
-  auto acceptor = std::make_shared<AcceptHandler>(sv, sessions, config);
+  std::shared_ptr<AcceptHandler> acceptor;
   auto service = util::utos(config->port);
 
   addrinfo hints{};
@@ -1727,6 +1715,9 @@ int start_listen(HttpServer *sv, struct ev_loop *loop, Sessions *sessions,
     }
 #endif // IPV6_V6ONLY
     if (bind(fd, rp->ai_addr, rp->ai_addrlen) == 0 && listen(fd, 1000) == 0) {
+      if (!acceptor) {
+        acceptor = std::make_shared<AcceptHandler>(sv, sessions, config);
+      }
       new ListenEventHandler(sessions, fd, acceptor);
 
       if (config->verbose) {
@@ -1882,6 +1873,9 @@ int HttpServer::run() {
   Sessions sessions(this, loop, config_, ssl_ctx);
   if (start_listen(this, loop, &sessions, config_) != 0) {
     std::cerr << "Could not listen" << std::endl;
+    if (ssl_ctx) {
+      SSL_CTX_free(ssl_ctx);
+    }
     return -1;
   }
 

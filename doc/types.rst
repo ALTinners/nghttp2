@@ -437,26 +437,30 @@ Types (structs, unions and typedefs)
     :type:`nghttp2_data_source_read_callback`.
     
     The application first must send frame header *framehd* of length 9
-    bytes.  If ``frame->padlen > 0``, send 1 byte of value
-    ``frame->padlen - 1``.  Then send exactly *length* bytes of
-    application data.  Finally, if ``frame->padlen > 0``, send
-    ``frame->padlen - 1`` bytes of zero (they are padding).
+    bytes.  If ``frame->data.padlen > 0``, send 1 byte of value
+    ``frame->data.padlen - 1``.  Then send exactly *length* bytes of
+    application data.  Finally, if ``frame->data.padlen > 1``, send
+    ``frame->data.padlen - 1`` bytes of zero as padding.
     
     The application has to send complete DATA frame in this callback.
     If all data were written successfully, return 0.
     
-    If it cannot send it all, just return
+    If it cannot send any data at all, just return
     :macro:`NGHTTP2_ERR_WOULDBLOCK`; the library will call this callback
     with the same parameters later (It is recommended to send complete
     DATA frame at once in this function to deal with error; if partial
     frame data has already sent, it is impossible to send another data
-    in that state, and all we can do is tear down connection).  If
-    application decided to reset this stream, return
-    :macro:`NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE`, then the library
-    will send RST_STREAM with INTERNAL_ERROR as error code.  The
-    application can also return :macro:`NGHTTP2_ERR_CALLBACK_FAILURE`,
-    which will result in connection closure.  Returning any other value
-    is treated as :macro:`NGHTTP2_ERR_CALLBACK_FAILURE` is returned.
+    in that state, and all we can do is tear down connection).  When
+    data is fully processed, but application wants to make
+    `nghttp2_session_mem_send()` or `nghttp2_session_send()` return
+    immediately without processing next frames, return
+    :macro:`NGHTTP2_ERR_PAUSE`.  If application decided to reset this
+    stream, return :macro:`NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE`, then
+    the library will send RST_STREAM with INTERNAL_ERROR as error code.
+    The application can also return
+    :macro:`NGHTTP2_ERR_CALLBACK_FAILURE`, which will result in
+    connection closure.  Returning any other value is treated as
+    :macro:`NGHTTP2_ERR_CALLBACK_FAILURE` is returned.
 .. type:: typedef ssize_t (*nghttp2_recv_callback)(nghttp2_session *session, uint8_t *buf, size_t length, int flags, void *user_data)
 
     

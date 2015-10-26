@@ -647,6 +647,85 @@ int on_frame_not_send_callback(nghttp2_session *session,
 }
 } // namespace
 
+void Http2Upstream::set_pending_data_downstream(Downstream *downstream,
+                                                size_t n, size_t padlen) {
+  pending_data_downstream_ = downstream;
+  data_pendinglen_ = n;
+  padding_pendinglen_ = padlen;
+}
+
+namespace {
+constexpr auto PADDING = std::array<uint8_t, 256>{};
+} // namespace
+
+namespace {
+int send_data_callback(nghttp2_session *session, nghttp2_frame *frame,
+                       const uint8_t *framehd, size_t length,
+                       nghttp2_data_source *source, void *user_data) {
+  auto downstream = static_cast<Downstream *>(source->ptr);
+  auto upstream = static_cast<Http2Upstream *>(downstream->get_upstream());
+  auto body = downstream->get_response_buf();
+
+  auto wb = upstream->get_response_buf();
+
+  size_t padlen;
+
+  if (frame->data.padlen == 0) {
+    if (wb->wleft() < 9) {
+      return NGHTTP2_ERR_WOULDBLOCK;
+    }
+
+    wb->write(framehd, 9);
+    padlen = 0;
+  } else {
+    if (wb->wleft() < 10) {
+      return NGHTTP2_ERR_WOULDBLOCK;
+    }
+
+    wb->write(framehd, 9);
+    padlen = frame->data.padlen - 1;
+    *wb->last++ = padlen;
+  }
+
+  size_t npadwrite = 0;
+  auto nwrite = std::min(length, wb->wleft());
+  body->remove(wb->last, nwrite);
+  wb->write(nwrite);
+  if (nwrite < length) {
+    // We must store unsent amount of data to somewhere.  We just tell
+    // libnghttp2 that we wrote everything, so downstream could be
+    // deleted.  We handle this situation in
+    // Http2Upstream::remove_downstream().
+    upstream->set_pending_data_downstream(downstream, length - nwrite, padlen);
+  } else if (padlen > 0) {
+    npadwrite = std::min(padlen, wb->wleft());
+    wb->write(PADDING.data(), npadwrite);
+
+    if (npadwrite < padlen) {
+      upstream->set_pending_data_downstream(nullptr, 0, padlen - npadwrite);
+    }
+  }
+
+  if (wb->rleft() == 0) {
+    downstream->disable_upstream_wtimer();
+  } else {
+    downstream->reset_upstream_wtimer();
+  }
+
+  if (nwrite > 0 && downstream->resume_read(SHRPX_NO_BUFFER, nwrite) != 0) {
+    return NGHTTP2_ERR_CALLBACK_FAILURE;
+  }
+
+  // We have to add length here, so that we can log this amount of
+  // data transferred.
+  if (length > 0) {
+    downstream->add_response_sent_bodylen(length);
+  }
+
+  return (nwrite < length || npadwrite < padlen) ? NGHTTP2_ERR_PAUSE : 0;
+}
+} // namespace
+
 namespace {
 uint32_t infer_upstream_rst_stream_error_code(uint32_t downstream_error_code) {
   // NGHTTP2_REFUSED_STREAM is important because it tells upstream
@@ -748,6 +827,9 @@ nghttp2_session_callbacks *create_http2_upstream_callbacks() {
   nghttp2_session_callbacks_set_on_begin_headers_callback(
       callbacks, on_begin_headers_callback);
 
+  nghttp2_session_callbacks_set_send_data_callback(callbacks,
+                                                   send_data_callback);
+
   if (get_config()->padding) {
     nghttp2_session_callbacks_set_select_padding_callback(
         callbacks, http::select_padding_callback);
@@ -764,8 +846,10 @@ Http2Upstream::Http2Upstream(ClientHandler *handler)
                     ? get_config()->downstream_connections_per_frontend
                     : 0,
           !get_config()->http2_proxy),
-      handler_(handler), session_(nullptr), data_pending_(nullptr),
-      data_pendinglen_(0), shutdown_handled_(false) {
+      pending_response_buf_(handler->get_worker()->get_mcpool()),
+      pending_data_downstream_(nullptr), handler_(handler), session_(nullptr),
+      data_pending_(nullptr), data_pendinglen_(0), padding_pendinglen_(0),
+      shutdown_handled_(false) {
 
   int rv;
 
@@ -852,9 +936,8 @@ int Http2Upstream::on_read() {
     rlimit->startw();
   }
 
-  auto wb = handler_->get_wb();
   if (nghttp2_session_want_read(session_) == 0 &&
-      nghttp2_session_want_write(session_) == 0 && wb->rleft() == 0) {
+      nghttp2_session_want_write(session_) == 0 && wb_.rleft() == 0) {
     if (LOG_ENABLED(INFO)) {
       ULOG(INFO, this) << "No more read/write for this HTTP2 session";
     }
@@ -867,19 +950,63 @@ int Http2Upstream::on_read() {
 
 // After this function call, downstream may be deleted.
 int Http2Upstream::on_write() {
-  auto wb = handler_->get_wb();
+  if (wb_.rleft() == 0) {
+    wb_.reset();
+  }
 
-  if (data_pending_) {
-    auto n = std::min(wb->wleft(), data_pendinglen_);
-    wb->write(data_pending_, n);
-    if (n < data_pendinglen_) {
+  if (data_pendinglen_ > 0) {
+    if (data_pending_) {
+      auto n = std::min(wb_.wleft(), data_pendinglen_);
+      wb_.write(data_pending_, n);
       data_pending_ += n;
       data_pendinglen_ -= n;
+
+      if (data_pendinglen_ > 0) {
+        return 0;
+      }
+
+      data_pending_ = nullptr;
+    } else {
+      auto nwrite = std::min(wb_.wleft(), data_pendinglen_);
+      DefaultMemchunks *body;
+      if (pending_data_downstream_) {
+        body = pending_data_downstream_->get_response_buf();
+      } else {
+        body = &pending_response_buf_;
+      }
+      body->remove(wb_.last, nwrite);
+      wb_.write(nwrite);
+      data_pendinglen_ -= nwrite;
+
+      if (pending_data_downstream_ && nwrite > 0) {
+        if (pending_data_downstream_->resume_read(SHRPX_NO_BUFFER, nwrite) !=
+            0) {
+          return -1;
+        }
+      }
+
+      if (data_pendinglen_ > 0) {
+        return 0;
+      }
+
+      if (pending_data_downstream_) {
+        pending_data_downstream_ = nullptr;
+      } else {
+        // Downstream was already deleted, and we don't need its
+        // response data.
+        body->reset();
+      }
+    }
+  }
+
+  if (padding_pendinglen_ > 0) {
+    auto nwrite = std::min(wb_.wleft(), padding_pendinglen_);
+    wb_.write(PADDING.data(), nwrite);
+    padding_pendinglen_ -= nwrite;
+
+    if (padding_pendinglen_ > 0) {
       return 0;
     }
-
-    data_pending_ = nullptr;
-    data_pendinglen_ = 0;
   }
 
   for (;;) {
@@ -894,7 +1021,7 @@ int Http2Upstream::on_write() {
     if (datalen == 0) {
       break;
     }
-    auto n = wb->write(data, datalen);
+    auto n = wb_.write(data, datalen);
     if (n < static_cast<decltype(n)>(datalen)) {
       data_pending_ = data + n;
       data_pendinglen_ = datalen - n;
@@ -903,7 +1030,7 @@ int Http2Upstream::on_write() {
   }
 
   if (nghttp2_session_want_read(session_) == 0 &&
-      nghttp2_session_want_write(session_) == 0 && wb->rleft() == 0) {
+      nghttp2_session_want_write(session_) == 0 && wb_.rleft() == 0) {
     if (LOG_ENABLED(INFO)) {
       ULOG(INFO, this) << "No more read/write for this HTTP2 session";
     }
@@ -1117,8 +1244,10 @@ ssize_t downstream_data_read_callback(nghttp2_session *session,
     }
   }
 
-  auto nread = body->remove(buf, length);
-  auto body_empty = body->rleft() == 0;
+  auto nread = std::min(body->rleft(), length);
+  auto body_empty = body->rleft() == nread;
+
+  *data_flags |= NGHTTP2_DATA_FLAG_NO_COPY;
 
   if (body_empty &&
       downstream->get_response_state() == Downstream::MSG_COMPLETE) {
@@ -1146,22 +1275,8 @@ ssize_t downstream_data_read_callback(nghttp2_session *session,
     }
   }
 
-  if (body_empty) {
-    downstream->disable_upstream_wtimer();
-  } else {
-    downstream->reset_upstream_wtimer();
-  }
-
-  if (nread > 0 && downstream->resume_read(SHRPX_NO_BUFFER, nread) != 0) {
-    return NGHTTP2_ERR_CALLBACK_FAILURE;
-  }
-
   if (nread == 0 && ((*data_flags) & NGHTTP2_DATA_FLAG_EOF) == 0) {
     return NGHTTP2_ERR_DEFERRED;
-  }
-
-  if (nread > 0) {
-    downstream->add_response_sent_bodylen(nread);
   }
 
   return nread;
@@ -1273,6 +1388,11 @@ void Http2Upstream::remove_downstream(Downstream *downstream) {
 
   nghttp2_session_set_stream_user_data(session_, downstream->get_stream_id(),
                                        nullptr);
+
+  if (downstream == pending_data_downstream_) {
+    pending_data_downstream_ = nullptr;
+    pending_response_buf_ = downstream->pop_response_buf();
+  }
 
   auto next_downstream = downstream_queue_.remove_and_get_blocked(downstream);
 
@@ -1754,5 +1874,22 @@ int Http2Upstream::initiate_push(Downstream *downstream, const char *uri,
 
   return 0;
 }
+
+int Http2Upstream::response_riovec(struct iovec *iov, int iovcnt) const {
+  if (iovcnt == 0 || wb_.rleft() == 0) {
+    return 0;
+  }
+
+  iov->iov_base = wb_.pos;
+  iov->iov_len = wb_.rleft();
+
+  return 1;
+}
+
+void Http2Upstream::response_drain(size_t n) { wb_.drain(n); }
+
+bool Http2Upstream::response_empty() const { return wb_.rleft() == 0; }
+
+Http2Upstream::WriteBuffer *Http2Upstream::get_response_buf() { return &wb_; }
 
 } // namespace shrpx

@@ -135,27 +135,30 @@ int ClientHandler::read_clear() {
 }
 
 int ClientHandler::write_clear() {
+  std::array<iovec, 2> iov;
+
   ev_timer_again(conn_.loop, &conn_.rt);
 
   for (;;) {
-    if (wb_.rleft() > 0) {
-      auto nwrite = conn_.write_clear(wb_.pos, wb_.rleft());
-      if (nwrite == 0) {
-        return 0;
-      }
-      if (nwrite < 0) {
-        return -1;
-      }
-      wb_.drain(nwrite);
-      continue;
-    }
-    wb_.reset();
     if (on_write() != 0) {
       return -1;
     }
-    if (wb_.rleft() == 0) {
+
+    auto iovcnt = upstream_->response_riovec(iov.data(), iov.size());
+    if (iovcnt == 0) {
       break;
     }
+
+    auto nwrite = conn_.writev_clear(iov.data(), iovcnt);
+    if (nwrite < 0) {
+      return -1;
+    }
+
+    if (nwrite == 0) {
+      return 0;
+    }
+
+    upstream_->response_drain(nwrite);
   }
 
   conn_.wlimit.stopw();
@@ -225,34 +228,33 @@ int ClientHandler::read_tls() {
 }
 
 int ClientHandler::write_tls() {
+  struct iovec iov;
+
   ev_timer_again(conn_.loop, &conn_.rt);
 
   ERR_clear_error();
 
   for (;;) {
-    if (wb_.rleft() > 0) {
-      auto nwrite = conn_.write_tls(wb_.pos, wb_.rleft());
-
-      if (nwrite == 0) {
-        return 0;
-      }
-
-      if (nwrite < 0) {
-        return -1;
-      }
-
-      wb_.drain(nwrite);
-
-      continue;
-    }
-    wb_.reset();
     if (on_write() != 0) {
       return -1;
     }
-    if (wb_.rleft() == 0) {
+
+    auto iovcnt = upstream_->response_riovec(&iov, 1);
+    if (iovcnt == 0) {
       conn_.start_tls_write_idle();
       break;
     }
+
+    auto nwrite = conn_.write_tls(iov.iov_base, iov.iov_len);
+    if (nwrite < 0) {
+      return -1;
+    }
+
+    if (nwrite == 0) {
+      return 0;
+    }
+
+    upstream_->response_drain(nwrite);
   }
 
   conn_.wlimit.stopw();
@@ -277,7 +279,7 @@ int ClientHandler::upstream_write() {
     return -1;
   }
 
-  if (get_should_close_after_write() && wb_.rleft() == 0) {
+  if (get_should_close_after_write() && upstream_->response_empty()) {
     return -1;
   }
 
@@ -365,7 +367,9 @@ ClientHandler::ClientHandler(Worker *worker, int fd, SSL *ssl,
             get_config()->upstream_write_timeout,
             get_config()->upstream_read_timeout, get_config()->write_rate,
             get_config()->write_burst, get_config()->read_rate,
-            get_config()->read_burst, writecb, readcb, timeoutcb, this),
+            get_config()->read_burst, writecb, readcb, timeoutcb, this,
+            get_config()->tls_dyn_rec_warmup_threshold,
+            get_config()->tls_dyn_rec_idle_timeout),
       pinned_http2sessions_(
           get_config()->downstream_proto == PROTO_HTTP2
               ? make_unique<std::vector<ssize_t>>(
@@ -635,18 +639,20 @@ ClientHandler::get_downstream_connection(Downstream *downstream) {
     //  have dealt with proxy case already, just use catch-all group.
     group = catch_all;
   } else {
+    auto &router = get_config()->router;
     if (!downstream->get_request_http2_authority().empty()) {
       group = match_downstream_addr_group(
-          downstream->get_request_http2_authority(),
+          router, downstream->get_request_http2_authority(),
           downstream->get_request_path(), groups, catch_all);
     } else {
       auto h = downstream->get_request_header(http2::HD_HOST);
       if (h) {
-        group = match_downstream_addr_group(
-            h->value, downstream->get_request_path(), groups, catch_all);
-      } else {
-        group = match_downstream_addr_group("", downstream->get_request_path(),
+        group = match_downstream_addr_group(router, h->value,
+                                            downstream->get_request_path(),
                                             groups, catch_all);
+      } else {
+        group = match_downstream_addr_group(
+            router, "", downstream->get_request_path(), groups, catch_all);
       }
     }
   }
@@ -707,6 +713,7 @@ void ClientHandler::direct_http2_upgrade() {
   upstream_ = make_unique<Http2Upstream>(this);
   alpn_ = NGHTTP2_CLEARTEXT_PROTO_VERSION_ID;
   on_read_ = &ClientHandler::upstream_read;
+  write_ = &ClientHandler::write_clear;
 }
 
 int ClientHandler::perform_http2_upgrade(HttpsUpstream *http) {
@@ -716,17 +723,19 @@ int ClientHandler::perform_http2_upgrade(HttpsUpstream *http) {
   }
   // http pointer is now owned by upstream.
   upstream_.release();
-  upstream_ = std::move(upstream);
   // TODO We might get other version id in HTTP2-settings, if we
   // support aliasing for h2, but we just use library default for now.
   alpn_ = NGHTTP2_CLEARTEXT_PROTO_VERSION_ID;
   on_read_ = &ClientHandler::upstream_http2_connhd_read;
+  write_ = &ClientHandler::write_clear;
 
   static char res[] = "HTTP/1.1 101 Switching Protocols\r\n"
                       "Connection: Upgrade\r\n"
                       "Upgrade: " NGHTTP2_CLEARTEXT_PROTO_VERSION_ID "\r\n"
                       "\r\n";
-  wb_.write(res, sizeof(res) - 1);
+  upstream->get_response_buf()->write(res, sizeof(res) - 1);
+  upstream_ = std::move(upstream);
+
   signal_write();
   return 0;
 }
@@ -828,8 +837,6 @@ void ClientHandler::write_accesslog(int major, int minor, unsigned int status,
                          get_config()->port, get_config()->pid,
                      });
 }
-
-ClientHandler::WriteBuf *ClientHandler::get_wb() { return &wb_; }
 
 ClientHandler::ReadBuf *ClientHandler::get_rb() { return &rb_; }
 

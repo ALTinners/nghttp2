@@ -75,9 +75,6 @@ int htp_msg_begin(http_parser *htp) {
   auto downstream =
       make_unique<Downstream>(upstream, handler->get_mcpool(), 0, 0);
 
-  // We happen to have the same value for method token.
-  downstream->set_request_method(htp->method);
-
   upstream->attach_downstream(std::move(downstream));
 
   return 0;
@@ -88,6 +85,10 @@ namespace {
 int htp_uricb(http_parser *htp, const char *data, size_t len) {
   auto upstream = static_cast<HttpsUpstream *>(htp->data);
   auto downstream = upstream->get_downstream();
+
+  // We happen to have the same value for method token.
+  downstream->set_request_method(htp->method);
+
   if (downstream->get_request_headers_sum() + len >
       get_config()->header_field_buffer) {
     if (LOG_ENABLED(INFO)) {
@@ -571,10 +572,6 @@ int HttpsUpstream::on_write() {
   if (!downstream) {
     return 0;
   }
-  auto wb = handler_->get_wb();
-  if (wb->wleft() == 0) {
-    return 0;
-  }
 
   auto dconn = downstream->get_downstream_connection();
   auto output = downstream->get_response_buf();
@@ -591,10 +588,7 @@ int HttpsUpstream::on_write() {
     }
   }
 
-  auto n = output->remove(wb->last, wb->wleft());
-  wb->write(n);
-
-  if (wb->rleft() > 0) {
+  if (output->rleft() > 0) {
     return 0;
   }
 
@@ -1165,6 +1159,36 @@ fail:
 int HttpsUpstream::initiate_push(Downstream *downstream, const char *uri,
                                  size_t len) {
   return 0;
+}
+
+int HttpsUpstream::response_riovec(struct iovec *iov, int iovcnt) const {
+  if (!downstream_) {
+    return 0;
+  }
+
+  auto buf = downstream_->get_response_buf();
+
+  return buf->riovec(iov, iovcnt);
+}
+
+void HttpsUpstream::response_drain(size_t n) {
+  if (!downstream_) {
+    return;
+  }
+
+  auto buf = downstream_->get_response_buf();
+
+  buf->drain(n);
+}
+
+bool HttpsUpstream::response_empty() const {
+  if (!downstream_) {
+    return true;
+  }
+
+  auto buf = downstream_->get_response_buf();
+
+  return buf->rleft() == 0;
 }
 
 } // namespace shrpx

@@ -35,6 +35,10 @@
 
 #include <ev.h>
 
+#ifdef HAVE_NEVERBLEED
+#include <neverbleed.h>
+#endif // HAVE_NEVERBLEED
+
 namespace shrpx {
 
 class ClientHandler;
@@ -57,11 +61,19 @@ struct TLSContextData {
 };
 
 // Create server side SSL_CTX
-SSL_CTX *create_ssl_context(const char *private_key_file,
-                            const char *cert_file);
+SSL_CTX *create_ssl_context(const char *private_key_file, const char *cert_file
+#ifdef HAVE_NEVERBLEED
+                            ,
+                            neverbleed_t *nb
+#endif // HAVE_NEVERBLEED
+                            );
 
 // Create client side SSL_CTX
-SSL_CTX *create_ssl_client_context();
+SSL_CTX *create_ssl_client_context(
+#ifdef HAVE_NEVERBLEED
+    neverbleed_t *nb
+#endif // HAVE_NEVERBLEED
+    );
 
 ClientHandler *accept_connection(Worker *worker, int fd, sockaddr *addr,
                                  int addrlen);
@@ -161,18 +173,30 @@ set_alpn_prefs(const std::vector<std::string> &protos);
 // object as |cert_tree| parameter, otherwise SNI does not work.  All
 // the created SSL_CTX is stored into |all_ssl_ctx|.
 SSL_CTX *setup_server_ssl_context(std::vector<SSL_CTX *> &all_ssl_ctx,
-                                  CertLookupTree *cert_tree);
+                                  CertLookupTree *cert_tree
+#ifdef HAVE_NEVERBLEED
+                                  ,
+                                  neverbleed_t *nb
+#endif // HAVE_NEVERBLEED
+                                  );
 
 // Setups client side SSL_CTX.  This function inspects get_config()
 // and if downstream_no_tls is true, returns nullptr.  Otherwise, only
 // construct SSL_CTX if either client_mode or http2_bridge is true.
-SSL_CTX *setup_client_ssl_context();
+SSL_CTX *setup_client_ssl_context(
+#ifdef HAVE_NEVERBLEED
+    neverbleed_t *nb
+#endif // HAVE_NEVERBLEED
+    );
 
 // Creates CertLookupTree.  If frontend is configured not to use TLS,
 // this function returns nullptr.
 CertLookupTree *create_cert_lookup_tree();
 
 SSL *create_ssl(SSL_CTX *ssl_ctx);
+
+// Returns true if SSL/TLS is enabled on downstream
+bool downstream_tls_enabled();
 
 } // namespace ssl
 

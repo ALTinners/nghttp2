@@ -71,11 +71,7 @@ template <typename T> struct Pool {
     return pool.get();
   }
   void recycle(T *m) {
-    if (freelist) {
-      m->next = freelist;
-    } else {
-      m->next = nullptr;
-    }
+    m->next = freelist;
     freelist = m;
   }
   void clear() {
@@ -94,7 +90,7 @@ template <typename Memchunk> struct Memchunks {
       : pool(pool), head(nullptr), tail(nullptr), len(0) {}
   Memchunks(const Memchunks &) = delete;
   Memchunks(Memchunks &&other)
-      : pool(other.pool), head(other.head), tail(other.head), len(other.len) {
+      : pool(other.pool), head(other.head), tail(other.tail), len(other.len) {
     // keep other.pool
     other.head = other.tail = nullptr;
     other.len = 0;
@@ -222,7 +218,7 @@ template <typename Memchunk> struct Memchunks {
     }
     return ndata - count;
   }
-  int riovec(struct iovec *iov, int iovcnt) {
+  int riovec(struct iovec *iov, int iovcnt) const {
     if (!head) {
       return 0;
     }

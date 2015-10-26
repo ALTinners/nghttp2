@@ -183,6 +183,15 @@ Enums
         (``-903``) 
         Invalid client magic (see :macro:`NGHTTP2_CLIENT_MAGIC`) was
         received and further processing is not possible.
+    .. macro:: NGHTTP2_ERR_FLOODED
+
+        (``-904``) 
+        Possible flooding by peer was detected in this HTTP/2 session.
+        Flooding is measured by how many PING and SETTINGS frames with
+        ACK flag set are queued for transmission.  These frames are
+        response for the peer initiated frames, and peer can cause memory
+        exhaustion on server side to send these frames forever and does
+        not read network.
 
 .. type:: nghttp2_nv_flag
 

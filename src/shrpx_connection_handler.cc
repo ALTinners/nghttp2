@@ -96,6 +96,12 @@ void ocsp_chld_cb(struct ev_loop *loop, ev_child *w, int revent) {
 }
 } // namespace
 
+namespace {
+void thread_join_async_cb(struct ev_loop *loop, ev_async *w, int revent) {
+  ev_break(loop);
+}
+} // namespace
+
 ConnectionHandler::ConnectionHandler(struct ev_loop *loop)
     : single_worker_(nullptr), loop_(loop),
       tls_ticket_key_memcached_get_retry_count_(0),
@@ -110,6 +116,8 @@ ConnectionHandler::ConnectionHandler(struct ev_loop *loop)
   ev_io_init(&ocsp_.rev, ocsp_read_cb, -1, EV_READ);
   ocsp_.rev.data = this;
 
+  ev_async_init(&thread_join_asyncev_, thread_join_async_cb);
+
   ev_child_init(&ocsp_.chldev, ocsp_chld_cb, 0, 0);
   ocsp_.chldev.data = this;
 
@@ -120,8 +128,11 @@ ConnectionHandler::ConnectionHandler(struct ev_loop *loop)
 }
 
 ConnectionHandler::~ConnectionHandler() {
-  ev_timer_stop(loop_, &disable_acceptor_timer_);
+  ev_child_stop(loop_, &ocsp_.chldev);
+  ev_async_stop(loop_, &thread_join_asyncev_);
+  ev_io_stop(loop_, &ocsp_.rev);
   ev_timer_stop(loop_, &ocsp_timer_);
+  ev_timer_stop(loop_, &disable_acceptor_timer_);
 
   for (auto ssl_ctx : all_ssl_ctx_) {
     auto tls_ctx_data =
@@ -159,8 +170,17 @@ void ConnectionHandler::worker_reopen_log_files() {
 
 int ConnectionHandler::create_single_worker() {
   auto cert_tree = ssl::create_cert_lookup_tree();
-  auto sv_ssl_ctx = ssl::setup_server_ssl_context(all_ssl_ctx_, cert_tree);
-  auto cl_ssl_ctx = ssl::setup_client_ssl_context();
+  auto sv_ssl_ctx = ssl::setup_server_ssl_context(all_ssl_ctx_, cert_tree
+#ifdef HAVE_NEVERBLEED
+                                                  ,
+                                                  nb_.get()
+#endif // HAVE_NEVERBLEED
+                                                  );
+  auto cl_ssl_ctx = ssl::setup_client_ssl_context(
+#ifdef HAVE_NEVERBLEED
+      nb_.get()
+#endif // HAVE_NEVERBLEED
+      );
 
   if (cl_ssl_ctx) {
     all_ssl_ctx_.push_back(cl_ssl_ctx);
@@ -182,8 +202,17 @@ int ConnectionHandler::create_worker_thread(size_t num) {
   assert(workers_.size() == 0);
 
   auto cert_tree = ssl::create_cert_lookup_tree();
-  auto sv_ssl_ctx = ssl::setup_server_ssl_context(all_ssl_ctx_, cert_tree);
-  auto cl_ssl_ctx = ssl::setup_client_ssl_context();
+  auto sv_ssl_ctx = ssl::setup_server_ssl_context(all_ssl_ctx_, cert_tree
+#ifdef HAVE_NEVERBLEED
+                                                  ,
+                                                  nb_.get()
+#endif // HAVE_NEVERBLEED
+                                                  );
+  auto cl_ssl_ctx = ssl::setup_client_ssl_context(
+#ifdef HAVE_NEVERBLEED
+      nb_.get()
+#endif // HAVE_NEVERBLEED
+      );
 
   if (cl_ssl_ctx) {
     all_ssl_ctx_.push_back(cl_ssl_ctx);
@@ -246,9 +275,19 @@ void ConnectionHandler::graceful_shutdown_worker() {
   }
 
   for (auto &worker : workers_) {
-
     worker->send(wev);
   }
+
+#ifndef NOTHREADS
+  ev_async_start(loop_, &thread_join_asyncev_);
+
+  thread_join_fut_ = std::async(std::launch::async, [this]() {
+    (void)reopen_log_files();
+    join_worker();
+    ev_async_send(get_loop(), &thread_join_asyncev_);
+    delete log_config();
+  });
+#endif // NOTHREADS
 }
 
 int ConnectionHandler::handle_connection(int fd, sockaddr *addr, int addrlen) {
@@ -560,11 +599,15 @@ void ConnectionHandler::handle_ocsp_complete() {
               << " finished successfully";
   }
 
+#ifndef OPENSSL_IS_BORINGSSL
   {
     std::lock_guard<std::mutex> g(tls_ctx_data->mu);
     tls_ctx_data->ocsp_data =
         std::make_shared<std::vector<uint8_t>>(std::move(ocsp_.resp));
   }
+#else  // OPENSSL_IS_BORINGSSL
+  SSL_CTX_set_ocsp_response(ssl_ctx, ocsp_.resp.data(), ocsp_.resp.size());
+#endif // OPENSSL_IS_BORINGSSL
 
   ++ocsp_.next;
   proceed_next_cert_ocsp();
@@ -702,5 +745,14 @@ ConnectionHandler::schedule_next_tls_ticket_key_memcached_get(ev_timer *w) {
   ev_timer_set(w, get_config()->tls_ticket_key_memcached_interval, 0.);
   ev_timer_start(loop_, w);
 }
+
+#ifdef HAVE_NEVERBLEED
+void ConnectionHandler::set_neverbleed(std::unique_ptr<neverbleed_t> nb) {
+  nb_ = std::move(nb);
+}
+
+neverbleed_t *ConnectionHandler::get_neverbleed() const { return nb_.get(); }
+
+#endif // HAVE_NEVERBLEED
 
 } // namespace shrpx

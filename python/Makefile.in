@@ -192,6 +192,7 @@ ECHO_N = @ECHO_N@
 ECHO_T = @ECHO_T@
 EGREP = @EGREP@
 EXEEXT = @EXEEXT@
+EXTRACFLAG = @EXTRACFLAG@
 FGREP = @FGREP@
 GREP = @GREP@
 HAVE_CXX11 = @HAVE_CXX11@
@@ -446,8 +447,8 @@ distclean-generic:
 maintainer-clean-generic:
 	@echo "This command is intended for maintainers to use"
 	@echo "it deletes files that may require special tools to rebuild."
-@ENABLE_PYTHON_BINDINGS_FALSE@clean-local:
 @ENABLE_PYTHON_BINDINGS_FALSE@uninstall-local:
+@ENABLE_PYTHON_BINDINGS_FALSE@clean-local:
 @ENABLE_PYTHON_BINDINGS_FALSE@install-exec-local:
 clean: clean-am
 
