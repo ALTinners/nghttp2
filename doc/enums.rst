@@ -208,6 +208,18 @@ Enums
         Indicates that this name/value pair must not be indexed ("Literal
         Header Field never Indexed" representation must be used in HPACK
         encoding).  Other implementation calls this bit as "sensitive".
+    .. macro:: NGHTTP2_NV_FLAG_NO_COPY_NAME
+
+        (``0x02``) 
+        This flag is set solely by application.  If this flag is set, the
+        library does not make a copy of header field name.  This could
+        improve performance.
+    .. macro:: NGHTTP2_NV_FLAG_NO_COPY_VALUE
+
+        (``0x04``) 
+        This flag is set solely by application.  If this flag is set, the
+        library does not make a copy of header field value.  This could
+        improve performance.
 
 .. type:: nghttp2_frame_type
 

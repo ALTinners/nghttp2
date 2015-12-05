@@ -25,7 +25,7 @@ dnl Do not change user variables!
 dnl http://www.gnu.org/software/automake/manual/html_node/Flag-Variables-Ordering.html
 
 AC_PREREQ(2.61)
-AC_INIT([nghttp2], [1.4.0], [t-tujikawa@users.sourceforge.net])
+AC_INIT([nghttp2], [1.5.0], [t-tujikawa@users.sourceforge.net])
 AC_CONFIG_AUX_DIR([.])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_HEADERS([config.h])
@@ -46,9 +46,9 @@ m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
 dnl See versioning rule:
 dnl  http://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
-AC_SUBST(LT_CURRENT, 16)
+AC_SUBST(LT_CURRENT, 17)
 AC_SUBST(LT_REVISION, 0)
-AC_SUBST(LT_AGE, 2)
+AC_SUBST(LT_AGE, 3)
 
 major=`echo $PACKAGE_VERSION |cut -d. -f1 | sed -e "s/[^0-9]//g"`
 minor=`echo $PACKAGE_VERSION |cut -d. -f2 | sed -e "s/[^0-9]//g"`
@@ -694,6 +694,9 @@ if test "x$threads" != "xyes" ||
     enable_threads=no
     AC_DEFINE([NOTHREADS], [1], [Define to 1 if you want to disable threads.])
 fi
+
+# propagate $enable_static to tests/Makefile.am
+AM_CONDITIONAL([ENABLE_STATIC], [test "x$enable_static" = "xyes"])
 
 AC_SUBST([TESTLDADD])
 AC_SUBST([APPLDFLAGS])

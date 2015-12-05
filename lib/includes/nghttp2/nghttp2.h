@@ -430,7 +430,19 @@ typedef enum {
    * Header Field never Indexed" representation must be used in HPACK
    * encoding).  Other implementation calls this bit as "sensitive".
    */
-  NGHTTP2_NV_FLAG_NO_INDEX = 0x01
+  NGHTTP2_NV_FLAG_NO_INDEX = 0x01,
+  /**
+   * This flag is set solely by application.  If this flag is set, the
+   * library does not make a copy of header field name.  This could
+   * improve performance.
+   */
+  NGHTTP2_NV_FLAG_NO_COPY_NAME = 0x02,
+  /**
+   * This flag is set solely by application.  If this flag is set, the
+   * library does not make a copy of header field value.  This could
+   * improve performance.
+   */
+  NGHTTP2_NV_FLAG_NO_COPY_VALUE = 0x04
 } nghttp2_nv_flag;
 
 /**
@@ -442,17 +454,27 @@ typedef struct {
   /**
    * The |name| byte string.  If this struct is presented from library
    * (e.g., :type:`nghttp2_on_frame_recv_callback`), |name| is
-   * guaranteed to be NULL-terminated.  When application is
-   * constructing this struct, |name| is not required to be
+   * guaranteed to be NULL-terminated.  For some callbacks
+   * (:type:`nghttp2_before_frame_send_callback`,
+   * :type:`nghttp2_on_frame_send_callback`, and
+   * :type:`nghttp2_on_frame_not_send_callback`), it may not be
+   * NULL-terminated if header field is passed from application with
+   * the flag :enum:`NGHTTP2_NV_FLAG_NO_COPY_NAME`).  When application
+   * is constructing this struct, |name| is not required to be
    * NULL-terminated.
    */
   uint8_t *name;
   /**
    * The |value| byte string.  If this struct is presented from
    * library (e.g., :type:`nghttp2_on_frame_recv_callback`), |value|
-   * is guaranteed to be NULL-terminated.  When application is
-   * constructing this struct, |value| is not required to be
-   * NULL-terminated.
+   * is guaranteed to be NULL-terminated.  For some callbacks
+   * (:type:`nghttp2_before_frame_send_callback`,
+   * :type:`nghttp2_on_frame_send_callback`, and
+   * :type:`nghttp2_on_frame_not_send_callback`), it may not be
+   * NULL-terminated if header field is passed from application with
+   * the flag :enum:`NGHTTP2_NV_FLAG_NO_COPY_VALUE`).  When
+   * application is constructing this struct, |value| is not required
+   * to be NULL-terminated.
    */
   uint8_t *value;
   /**
@@ -2317,8 +2339,8 @@ NGHTTP2_EXTERN int nghttp2_session_send(nghttp2_session *session);
  *   buffer up small chunks of data as necessary to avoid this
  *   situation.
  */
-NGHTTP2_EXTERN ssize_t nghttp2_session_mem_send(nghttp2_session *session,
-                                                const uint8_t **data_ptr);
+NGHTTP2_EXTERN ssize_t
+nghttp2_session_mem_send(nghttp2_session *session, const uint8_t **data_ptr);
 
 /**
  * @function
@@ -2516,7 +2538,7 @@ nghttp2_session_set_stream_user_data(nghttp2_session *session,
  * include the deferred DATA frames.
  */
 NGHTTP2_EXTERN size_t
-    nghttp2_session_get_outbound_queue_size(nghttp2_session *session);
+nghttp2_session_get_outbound_queue_size(nghttp2_session *session);
 
 /**
  * @function
@@ -2532,8 +2554,9 @@ NGHTTP2_EXTERN size_t
  *
  * This function returns -1 if it fails.
  */
-NGHTTP2_EXTERN int32_t nghttp2_session_get_stream_effective_recv_data_length(
-    nghttp2_session *session, int32_t stream_id);
+NGHTTP2_EXTERN int32_t
+nghttp2_session_get_stream_effective_recv_data_length(nghttp2_session *session,
+                                                      int32_t stream_id);
 
 /**
  * @function
@@ -2545,8 +2568,9 @@ NGHTTP2_EXTERN int32_t nghttp2_session_get_stream_effective_recv_data_length(
  *
  * This function returns -1 if it fails.
  */
-NGHTTP2_EXTERN int32_t nghttp2_session_get_stream_effective_local_window_size(
-    nghttp2_session *session, int32_t stream_id);
+NGHTTP2_EXTERN int32_t
+nghttp2_session_get_stream_effective_local_window_size(nghttp2_session *session,
+                                                       int32_t stream_id);
 
 /**
  * @function
@@ -2563,7 +2587,7 @@ NGHTTP2_EXTERN int32_t nghttp2_session_get_stream_effective_local_window_size(
  * This function returns -1 if it fails.
  */
 NGHTTP2_EXTERN int32_t
-    nghttp2_session_get_effective_recv_data_length(nghttp2_session *session);
+nghttp2_session_get_effective_recv_data_length(nghttp2_session *session);
 
 /**
  * @function
@@ -2576,7 +2600,7 @@ NGHTTP2_EXTERN int32_t
  * This function returns -1 if it fails.
  */
 NGHTTP2_EXTERN int32_t
-    nghttp2_session_get_effective_local_window_size(nghttp2_session *session);
+nghttp2_session_get_effective_local_window_size(nghttp2_session *session);
 
 /**
  * @function
@@ -2593,8 +2617,8 @@ NGHTTP2_EXTERN int32_t
  * This function returns -1 if it fails.
  */
 NGHTTP2_EXTERN int32_t
-    nghttp2_session_get_stream_remote_window_size(nghttp2_session *session,
-                                                  int32_t stream_id);
+nghttp2_session_get_stream_remote_window_size(nghttp2_session *session,
+                                              int32_t stream_id);
 
 /**
  * @function
@@ -2604,7 +2628,7 @@ NGHTTP2_EXTERN int32_t
  * This function always succeeds.
  */
 NGHTTP2_EXTERN int32_t
-    nghttp2_session_get_remote_window_size(nghttp2_session *session);
+nghttp2_session_get_remote_window_size(nghttp2_session *session);
 
 /**
  * @function
@@ -2730,8 +2754,8 @@ NGHTTP2_EXTERN int nghttp2_submit_shutdown_notice(nghttp2_session *session);
  * :enum:`nghttp2_settings_id`.
  */
 NGHTTP2_EXTERN uint32_t
-    nghttp2_session_get_remote_settings(nghttp2_session *session,
-                                        nghttp2_settings_id id);
+nghttp2_session_get_remote_settings(nghttp2_session *session,
+                                    nghttp2_settings_id id);
 
 /**
  * @function
@@ -2760,7 +2784,7 @@ NGHTTP2_EXTERN int nghttp2_session_set_next_stream_id(nghttp2_session *session,
  * function returns 1 << 31.
  */
 NGHTTP2_EXTERN uint32_t
-    nghttp2_session_get_next_stream_id(nghttp2_session *session);
+nghttp2_session_get_next_stream_id(nghttp2_session *session);
 
 /**
  * @function
@@ -2832,9 +2856,54 @@ NGHTTP2_EXTERN int nghttp2_session_consume_stream(nghttp2_session *session,
 /**
  * @function
  *
+ * Changes priority of existing stream denoted by |stream_id|.  The
+ * new priority specification is |pri_spec|.
+ *
+ * The priority is changed silently and instantly, and no PRIORITY
+ * frame will be sent to notify the peer of this change.  This
+ * function may be useful for server to change the priority of pushed
+ * stream.
+ *
+ * If |session| is initialized as server, and ``pri_spec->stream_id``
+ * points to the idle stream, the idle stream is created if it does
+ * not exist.  The created idle stream will depend on root stream
+ * (stream 0) with weight 16.
+ *
+ * If stream denoted by ``pri_spec->stream_id`` is not found, we use
+ * default priority instead of given |pri_spec|.  That is make stream
+ * depend on root stream with weight 16.
+ *
+ * This function returns 0 if it succeeds, or one of the following
+ * negative error codes:
+ *
+ * :enum:`NGHTTP2_ERR_NOMEM`
+ *     Out of memory.
+ * :enum:`NGHTTP2_ERR_INVALID_ARGUMENT`
+ *     Attempted to depend on itself; or no stream exist for the given
+ *     |stream_id|; or |stream_id| is 0
+ */
+NGHTTP2_EXTERN int
+nghttp2_session_change_stream_priority(nghttp2_session *session,
+                                       int32_t stream_id,
+                                       const nghttp2_priority_spec *pri_spec);
+
+/**
+ * @function
+ *
  * Performs post-process of HTTP Upgrade request.  This function can
  * be called from both client and server, but the behavior is very
  * different in each other.
+ *
+ * .. warning::
+ *
+ *   This function is deprecated in favor of
+ *   `nghttp2_session_upgrade2()`, because this function lacks the
+ *   parameter to tell the library the request method used in the
+ *   original HTTP request.  This information is required for client
+ *   to validate actual response body length against content-length
+ *   header field (see `nghttp2_option_set_no_http_messaging()`).  If
+ *   HEAD is used in request, the length of response body must be 0
+ *   regardless of value included in content-length header field.
  *
  * If called from client side, the |settings_payload| must be the
  * value sent in ``HTTP2-Settings`` header field and must be decoded
@@ -2873,6 +2942,51 @@ NGHTTP2_EXTERN int nghttp2_session_upgrade(nghttp2_session *session,
 /**
  * @function
  *
+ * Performs post-process of HTTP Upgrade request.  This function can
+ * be called from both client and server, but the behavior is very
+ * different in each other.
+ *
+ * If called from client side, the |settings_payload| must be the
+ * value sent in ``HTTP2-Settings`` header field and must be decoded
+ * by base64url decoder.  The |settings_payloadlen| is the length of
+ * |settings_payload|.  The |settings_payload| is unpacked and its
+ * setting values will be submitted using `nghttp2_submit_settings()`.
+ * This means that the client application code does not need to submit
+ * SETTINGS by itself.  The stream with stream ID=1 is opened and the
+ * |stream_user_data| is used for its stream_user_data.  The opened
+ * stream becomes half-closed (local) state.
+ *
+ * If called from server side, the |settings_payload| must be the
+ * value received in ``HTTP2-Settings`` header field and must be
+ * decoded by base64url decoder.  The |settings_payloadlen| is the
+ * length of |settings_payload|.  It is treated as if the SETTINGS
+ * frame with that payload is received.  Thus, callback functions for
+ * the reception of SETTINGS frame will be invoked.  The stream with
+ * stream ID=1 is opened.  The |stream_user_data| is ignored.  The
+ * opened stream becomes half-closed (remote).
+ *
+ * If the request method is HEAD, pass nonzero value to
+ * |head_request|.  Otherwise, pass 0.
+ *
+ * This function returns 0 if it succeeds, or one of the following
+ * negative error codes:
+ *
+ * :enum:`NGHTTP2_ERR_NOMEM`
+ *     Out of memory.
+ * :enum:`NGHTTP2_ERR_INVALID_ARGUMENT`
+ *     The |settings_payload| is badly formed.
+ * :enum:`NGHTTP2_ERR_PROTO`
+ *     The stream ID 1 is already used or closed; or is not available.
+ */
+NGHTTP2_EXTERN int nghttp2_session_upgrade2(nghttp2_session *session,
+                                            const uint8_t *settings_payload,
+                                            size_t settings_payloadlen,
+                                            int head_request,
+                                            void *stream_user_data);
+
+/**
+ * @function
+ *
  * Serializes the SETTINGS values |iv| in the |buf|.  The size of the
  * |buf| is specified by |buflen|.  The number of entries in the |iv|
  * array is given by |niv|.  The required space in |buf| for the |niv|
@@ -2892,8 +3006,8 @@ NGHTTP2_EXTERN int nghttp2_session_upgrade(nghttp2_session *session,
  *     The provided |buflen| size is too small to hold the output.
  */
 NGHTTP2_EXTERN ssize_t
-    nghttp2_pack_settings_payload(uint8_t *buf, size_t buflen,
-                                  const nghttp2_settings_entry *iv, size_t niv);
+nghttp2_pack_settings_payload(uint8_t *buf, size_t buflen,
+                              const nghttp2_settings_entry *iv, size_t niv);
 
 /**
  * @function
@@ -2960,7 +3074,15 @@ nghttp2_priority_spec_check_default(const nghttp2_priority_spec *pri_spec);
  *
  * This function creates copies of all name/value pairs in |nva|.  It
  * also lower-cases all names in |nva|.  The order of elements in
- * |nva| is preserved.
+ * |nva| is preserved.  For header fields with
+ * :enum:`NGHTTP2_NV_FLAG_NO_COPY_NAME` and
+ * :enum:`NGHTTP2_NV_FLAG_NO_COPY_VALUE` are set, header field name
+ * and value are not copied respectively.  With
+ * :enum:`NGHTTP2_NV_FLAG_NO_COPY_NAME`, application is responsible to
+ * pass header field name in lowercase.  The application should
+ * maintain the references to them until
+ * :type:`nghttp2_on_frame_send_callback` or
+ * :type:`nghttp2_on_frame_not_send_callback` is called.
  *
  * HTTP/2 specification has requirement about header fields in the
  * request HEADERS.  See the specification for more details.
@@ -2996,11 +3118,11 @@ nghttp2_priority_spec_check_default(const nghttp2_priority_spec *pri_spec);
  *
  */
 NGHTTP2_EXTERN int32_t
-    nghttp2_submit_request(nghttp2_session *session,
-                           const nghttp2_priority_spec *pri_spec,
-                           const nghttp2_nv *nva, size_t nvlen,
-                           const nghttp2_data_provider *data_prd,
-                           void *stream_user_data);
+nghttp2_submit_request(nghttp2_session *session,
+                       const nghttp2_priority_spec *pri_spec,
+                       const nghttp2_nv *nva, size_t nvlen,
+                       const nghttp2_data_provider *data_prd,
+                       void *stream_user_data);
 
 /**
  * @function
@@ -3016,7 +3138,15 @@ NGHTTP2_EXTERN int32_t
  *
  * This function creates copies of all name/value pairs in |nva|.  It
  * also lower-cases all names in |nva|.  The order of elements in
- * |nva| is preserved.
+ * |nva| is preserved.  For header fields with
+ * :enum:`NGHTTP2_NV_FLAG_NO_COPY_NAME` and
+ * :enum:`NGHTTP2_NV_FLAG_NO_COPY_VALUE` are set, header field name
+ * and value are not copied respectively.  With
+ * :enum:`NGHTTP2_NV_FLAG_NO_COPY_NAME`, application is responsible to
+ * pass header field name in lowercase.  The application should
+ * maintain the references to them until
+ * :type:`nghttp2_on_frame_send_callback` or
+ * :type:`nghttp2_on_frame_not_send_callback` is called.
  *
  * HTTP/2 specification has requirement about header fields in the
  * response HEADERS.  See the specification for more details.
@@ -3073,7 +3203,15 @@ nghttp2_submit_response(nghttp2_session *session, int32_t stream_id,
  *
  * This function creates copies of all name/value pairs in |nva|.  It
  * also lower-cases all names in |nva|.  The order of elements in
- * |nva| is preserved.
+ * |nva| is preserved.  For header fields with
+ * :enum:`NGHTTP2_NV_FLAG_NO_COPY_NAME` and
+ * :enum:`NGHTTP2_NV_FLAG_NO_COPY_VALUE` are set, header field name
+ * and value are not copied respectively.  With
+ * :enum:`NGHTTP2_NV_FLAG_NO_COPY_NAME`, application is responsible to
+ * pass header field name in lowercase.  The application should
+ * maintain the references to them until
+ * :type:`nghttp2_on_frame_send_callback` or
+ * :type:`nghttp2_on_frame_not_send_callback` is called.
  *
  * For server, trailer must be followed by response HEADERS or
  * response DATA.  The library does not check that response HEADERS
@@ -3149,7 +3287,15 @@ NGHTTP2_EXTERN int nghttp2_submit_trailer(nghttp2_session *session,
  *
  * This function creates copies of all name/value pairs in |nva|.  It
  * also lower-cases all names in |nva|.  The order of elements in
- * |nva| is preserved.
+ * |nva| is preserved.  For header fields with
+ * :enum:`NGHTTP2_NV_FLAG_NO_COPY_NAME` and
+ * :enum:`NGHTTP2_NV_FLAG_NO_COPY_VALUE` are set, header field name
+ * and value are not copied respectively.  With
+ * :enum:`NGHTTP2_NV_FLAG_NO_COPY_NAME`, application is responsible to
+ * pass header field name in lowercase.  The application should
+ * maintain the references to them until
+ * :type:`nghttp2_on_frame_send_callback` or
+ * :type:`nghttp2_on_frame_not_send_callback` is called.
  *
  * The |stream_user_data| is a pointer to an arbitrary data which is
  * associated to the stream this frame will open.  Therefore it is
@@ -3187,11 +3333,10 @@ NGHTTP2_EXTERN int nghttp2_submit_trailer(nghttp2_session *session,
  *
  */
 NGHTTP2_EXTERN int32_t
-    nghttp2_submit_headers(nghttp2_session *session, uint8_t flags,
-                           int32_t stream_id,
-                           const nghttp2_priority_spec *pri_spec,
-                           const nghttp2_nv *nva, size_t nvlen,
-                           void *stream_user_data);
+nghttp2_submit_headers(nghttp2_session *session, uint8_t flags,
+                       int32_t stream_id, const nghttp2_priority_spec *pri_spec,
+                       const nghttp2_nv *nva, size_t nvlen,
+                       void *stream_user_data);
 
 /**
  * @function
@@ -3347,7 +3492,15 @@ NGHTTP2_EXTERN int nghttp2_submit_settings(nghttp2_session *session,
  *
  * This function creates copies of all name/value pairs in |nva|.  It
  * also lower-cases all names in |nva|.  The order of elements in
- * |nva| is preserved.
+ * |nva| is preserved.  For header fields with
+ * :enum:`NGHTTP2_NV_FLAG_NO_COPY_NAME` and
+ * :enum:`NGHTTP2_NV_FLAG_NO_COPY_VALUE` are set, header field name
+ * and value are not copied respectively.  With
+ * :enum:`NGHTTP2_NV_FLAG_NO_COPY_NAME`, application is responsible to
+ * pass header field name in lowercase.  The application should
+ * maintain the references to them until
+ * :type:`nghttp2_on_frame_send_callback` or
+ * :type:`nghttp2_on_frame_not_send_callback` is called.
  *
  * The |promised_stream_user_data| is a pointer to an arbitrary data
  * which is associated to the promised stream this frame will open and
@@ -3386,9 +3539,9 @@ NGHTTP2_EXTERN int nghttp2_submit_settings(nghttp2_session *session,
  *
  */
 NGHTTP2_EXTERN int32_t
-    nghttp2_submit_push_promise(nghttp2_session *session, uint8_t flags,
-                                int32_t stream_id, const nghttp2_nv *nva,
-                                size_t nvlen, void *promised_stream_user_data);
+nghttp2_submit_push_promise(nghttp2_session *session, uint8_t flags,
+                            int32_t stream_id, const nghttp2_nv *nva,
+                            size_t nvlen, void *promised_stream_user_data);
 
 /**
  * @function
@@ -3477,7 +3630,33 @@ NGHTTP2_EXTERN int nghttp2_submit_goaway(nghttp2_session *session,
  * This function always succeeds.
  */
 NGHTTP2_EXTERN int32_t
-    nghttp2_session_get_last_proc_stream_id(nghttp2_session *session);
+nghttp2_session_get_last_proc_stream_id(nghttp2_session *session);
+
+/**
+ * @function
+ *
+ * Returns nonzero if new request can be sent from local endpoint.
+ *
+ * This function return 0 if request is not allowed for this session.
+ * There are several reasons why request is not allowed.  Some of the
+ * reasons are: session is server; stream ID has been spent; GOAWAY
+ * has been sent or received.
+ *
+ * The application can call `nghttp2_submit_request()` without
+ * consulting this function.  In that case, `nghttp2_submit_request()`
+ * may return error.  Or, request is failed to sent, and
+ * :type:`nghttp2_on_stream_close_callback` is called.
+ */
+NGHTTP2_EXTERN int
+nghttp2_session_check_request_allowed(nghttp2_session *session);
+
+/**
+ * @function
+ *
+ * Returns nonzero if |session| is initialized as server side session.
+ */
+NGHTTP2_EXTERN int
+nghttp2_session_check_server_session(nghttp2_session *session);
 
 /**
  * @function
@@ -3744,8 +3923,8 @@ nghttp2_hd_deflate_change_table_size(nghttp2_hd_deflater *deflater,
  *     The provided |buflen| size is too small to hold the output.
  */
 NGHTTP2_EXTERN ssize_t
-    nghttp2_hd_deflate_hd(nghttp2_hd_deflater *deflater, uint8_t *buf,
-                          size_t buflen, const nghttp2_nv *nva, size_t nvlen);
+nghttp2_hd_deflate_hd(nghttp2_hd_deflater *deflater, uint8_t *buf,
+                      size_t buflen, const nghttp2_nv *nva, size_t nvlen);
 
 /**
  * @function
@@ -4103,7 +4282,7 @@ typedef enum {
  * :enum:`NGHTTP2_STREAM_STATE_IDLE`.
  */
 NGHTTP2_EXTERN nghttp2_stream_proto_state
-    nghttp2_stream_get_state(nghttp2_stream *stream);
+nghttp2_stream_get_state(nghttp2_stream *stream);
 
 /**
  * @function
@@ -4166,7 +4345,7 @@ NGHTTP2_EXTERN int32_t nghttp2_stream_get_weight(nghttp2_stream *stream);
  * Returns the sum of the weight for |stream|'s children.
  */
 NGHTTP2_EXTERN int32_t
-    nghttp2_stream_get_sum_dependency_weight(nghttp2_stream *stream);
+nghttp2_stream_get_sum_dependency_weight(nghttp2_stream *stream);
 
 #ifdef __cplusplus
 }

@@ -1213,7 +1213,7 @@ Performance:
               Set   maximum  number   of  backend   concurrent  HTTP/1
               connections per origin host.   This option is meaningful
               when -s option  is used.  The origin  host is determined
-              by  authority  portion  of requset  URI  (or  :authority
+              by  authority  portion  of request  URI  (or  :authority
               header  field  for  HTTP/2).   To limit  the  number  of
               connections   per  frontend   for   default  mode,   use
               --backend-http1-connections-per-frontend.
@@ -1480,9 +1480,14 @@ HTTP/2 and SPDY:
               meant for debugging purpose  and not intended to enhance
               protocol security.
   --no-server-push
-              Disable  HTTP/2  server  push.    Server  push  is  only
-              supported  by default  mode and  HTTP/2 frontend.   SPDY
-              frontend does not support server push.
+              Disable HTTP/2 server push.  Server push is supported by
+              default mode and HTTP/2  frontend via Link header field.
+              It is  also supported if  both frontend and  backend are
+              HTTP/2 (which implies  --http2-bridge or --client mode).
+              In  this  case,  server  push from  backend  session  is
+              relayed  to frontend,  and server  push via  Link header
+              field is  also supported.   HTTP SPDY frontend  does not
+              support server push.
 
 Mode:
   (default mode)

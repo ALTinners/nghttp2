@@ -51,7 +51,15 @@ Http1Session::~Http1Session() {}
 
 namespace {
 // HTTP response message begin
-int htp_msg_begincb(http_parser *htp) { return 0; }
+int htp_msg_begincb(http_parser *htp) {
+  auto session = static_cast<Http1Session *>(htp->data);
+
+  if (session->stream_resp_counter_ >= session->stream_req_counter_) {
+    return -1;
+  }
+
+  return 0;
+}
 } // namespace
 
 namespace {
@@ -99,6 +107,7 @@ int htp_hdr_keycb(http_parser *htp, const char *data, size_t len) {
   auto client = session->get_client();
 
   client->worker->stats.bytes_head += len;
+  client->worker->stats.bytes_head_decomp += len;
   return 0;
 }
 } // namespace
@@ -109,6 +118,7 @@ int htp_hdr_valcb(http_parser *htp, const char *data, size_t len) {
   auto client = session->get_client();
 
   client->worker->stats.bytes_head += len;
+  client->worker->stats.bytes_head_decomp += len;
   return 0;
 }
 } // namespace
@@ -140,9 +150,9 @@ http_parser_settings htp_hooks = {
 
 void Http1Session::on_connect() { client_->signal_write(); }
 
-void Http1Session::submit_request(RequestStat *req_stat) {
+int Http1Session::submit_request(RequestStat *req_stat) {
   auto config = client_->worker->config;
-  auto req = config->h1reqs[client_->reqidx];
+  const auto &req = config->h1reqs[client_->reqidx];
   client_->reqidx++;
 
   if (client_->reqidx == config->h1reqs.size()) {
@@ -158,6 +168,8 @@ void Http1Session::submit_request(RequestStat *req_stat) {
 
   // increment for next request
   stream_req_counter_ += 2;
+
+  return 0;
 }
 
 int Http1Session::on_read(const uint8_t *data, size_t len) {

@@ -2632,7 +2632,7 @@ void test_nghttp2_session_on_push_promise_received(void) {
   item = nghttp2_session_get_next_ob_item(session);
   CU_ASSERT(NGHTTP2_RST_STREAM == item->frame.hd.type);
   CU_ASSERT(6 == item->frame.hd.stream_id);
-  CU_ASSERT(NGHTTP2_REFUSED_STREAM == item->frame.rst_stream.error_code);
+  CU_ASSERT(NGHTTP2_CANCEL == item->frame.rst_stream.error_code);
   CU_ASSERT(0 == nghttp2_session_send(session));
 
   /* Attempt to PUSH_PROMISE against non-existent stream */
@@ -2806,7 +2806,7 @@ void test_nghttp2_session_on_push_promise_received(void) {
   item = nghttp2_session_get_next_ob_item(session);
 
   CU_ASSERT(NGHTTP2_RST_STREAM == item->frame.hd.type);
-  CU_ASSERT(NGHTTP2_REFUSED_STREAM == item->frame.rst_stream.error_code);
+  CU_ASSERT(NGHTTP2_CANCEL == item->frame.rst_stream.error_code);
 
   nghttp2_frame_push_promise_free(&frame.push_promise, mem);
   nghttp2_session_del(session);
@@ -3331,7 +3331,7 @@ void test_nghttp2_session_is_my_stream_id(void) {
   nghttp2_session_del(session);
 }
 
-void test_nghttp2_session_upgrade(void) {
+void test_nghttp2_session_upgrade2(void) {
   nghttp2_session *session;
   nghttp2_session_callbacks callbacks;
   uint8_t settings_payload[128];
@@ -3351,8 +3351,8 @@ void test_nghttp2_session_upgrade(void) {
 
   /* Check client side */
   nghttp2_session_client_new(&session, &callbacks, NULL);
-  CU_ASSERT(0 == nghttp2_session_upgrade(session, settings_payload,
-                                         settings_payloadlen, &callbacks));
+  CU_ASSERT(0 == nghttp2_session_upgrade2(session, settings_payload,
+                                          settings_payloadlen, 0, &callbacks));
   stream = nghttp2_session_get_stream(session, 1);
   CU_ASSERT(stream != NULL);
   CU_ASSERT(&callbacks == stream->stream_user_data);
@@ -3367,16 +3367,16 @@ void test_nghttp2_session_upgrade(void) {
             item->frame.settings.iv[1].settings_id);
   CU_ASSERT(4095 == item->frame.settings.iv[1].value);
 
-  /* Call nghttp2_session_upgrade() again is error */
+  /* Call nghttp2_session_upgrade2() again is error */
   CU_ASSERT(NGHTTP2_ERR_PROTO ==
-            nghttp2_session_upgrade(session, settings_payload,
-                                    settings_payloadlen, &callbacks));
+            nghttp2_session_upgrade2(session, settings_payload,
+                                     settings_payloadlen, 0, &callbacks));
   nghttp2_session_del(session);
 
   /* Check server side */
   nghttp2_session_server_new(&session, &callbacks, NULL);
-  CU_ASSERT(0 == nghttp2_session_upgrade(session, settings_payload,
-                                         settings_payloadlen, &callbacks));
+  CU_ASSERT(0 == nghttp2_session_upgrade2(session, settings_payload,
+                                          settings_payloadlen, 0, &callbacks));
   stream = nghttp2_session_get_stream(session, 1);
   CU_ASSERT(stream != NULL);
   CU_ASSERT(NULL == stream->stream_user_data);
@@ -3384,10 +3384,10 @@ void test_nghttp2_session_upgrade(void) {
   CU_ASSERT(NULL == nghttp2_session_get_next_ob_item(session));
   CU_ASSERT(1 == session->remote_settings.max_concurrent_streams);
   CU_ASSERT(4095 == session->remote_settings.initial_window_size);
-  /* Call nghttp2_session_upgrade() again is error */
+  /* Call nghttp2_session_upgrade2() again is error */
   CU_ASSERT(NGHTTP2_ERR_PROTO ==
-            nghttp2_session_upgrade(session, settings_payload,
-                                    settings_payloadlen, &callbacks));
+            nghttp2_session_upgrade2(session, settings_payload,
+                                     settings_payloadlen, 0, &callbacks));
   nghttp2_session_del(session);
 
   /* Empty SETTINGS is OK */
@@ -3395,8 +3395,8 @@ void test_nghttp2_session_upgrade(void) {
       settings_payload, sizeof(settings_payload), NULL, 0);
 
   nghttp2_session_client_new(&session, &callbacks, NULL);
-  CU_ASSERT(0 == nghttp2_session_upgrade(session, settings_payload,
-                                         settings_payloadlen, NULL));
+  CU_ASSERT(0 == nghttp2_session_upgrade2(session, settings_payload,
+                                          settings_payloadlen, 0, NULL));
   nghttp2_session_del(session);
 }
 
@@ -3446,6 +3446,15 @@ void test_nghttp2_session_reprioritize_stream(void) {
 
   CU_ASSERT(128 == stream->weight);
   CU_ASSERT(dep_stream == stream->dep_prev);
+
+  /* Change weight again to test short-path case */
+  pri_spec.weight = 100;
+
+  nghttp2_session_reprioritize_stream(session, stream, &pri_spec);
+
+  CU_ASSERT(100 == stream->weight);
+  CU_ASSERT(dep_stream == stream->dep_prev);
+  CU_ASSERT(100 == dep_stream->sum_dep_weight);
 
   /* Test circular dependency; stream 1 is first removed and becomes
      root.  Then stream 3 depends on it. */
@@ -3876,6 +3885,33 @@ void test_nghttp2_submit_response_without_data(void) {
   nghttp2_bufs_free(&bufs);
   nghttp2_frame_headers_free(&frame.headers, mem);
   nghttp2_hd_inflate_free(&inflater);
+  nghttp2_session_del(session);
+}
+
+void test_nghttp2_submit_response_push_response(void) {
+  nghttp2_session *session;
+  nghttp2_session_callbacks callbacks;
+  my_user_data ud;
+
+  memset(&callbacks, 0, sizeof(nghttp2_session_callbacks));
+  callbacks.send_callback = null_send_callback;
+  callbacks.on_frame_not_send_callback = on_frame_not_send_callback;
+
+  nghttp2_session_server_new(&session, &callbacks, &ud);
+
+  nghttp2_session_open_stream(session, 2, NGHTTP2_FLAG_NONE, &pri_spec_default,
+                              NGHTTP2_STREAM_RESERVED, NULL);
+
+  session->goaway_flags |= NGHTTP2_GOAWAY_RECV;
+
+  CU_ASSERT(0 ==
+            nghttp2_submit_response(session, 2, resnv, ARRLEN(resnv), NULL));
+
+  ud.frame_not_send_cb_called = 0;
+
+  CU_ASSERT(0 == nghttp2_session_send(session));
+  CU_ASSERT(1 == ud.frame_not_send_cb_called);
+
   nghttp2_session_del(session);
 }
 
@@ -7403,6 +7439,34 @@ void test_nghttp2_session_stream_get_something(void) {
   nghttp2_session_del(session);
 }
 
+void test_nghttp2_session_find_stream(void) {
+  nghttp2_session *session;
+  nghttp2_session_callbacks callbacks;
+  nghttp2_stream *stream;
+
+  memset(&callbacks, 0, sizeof(callbacks));
+
+  nghttp2_session_server_new(&session, &callbacks, NULL);
+
+  open_stream(session, 1);
+
+  stream = nghttp2_session_find_stream(session, 1);
+
+  CU_ASSERT(NULL != stream);
+  CU_ASSERT(1 == stream->stream_id);
+
+  stream = nghttp2_session_find_stream(session, 0);
+
+  CU_ASSERT(&session->root == stream);
+  CU_ASSERT(0 == stream->stream_id);
+
+  stream = nghttp2_session_find_stream(session, 2);
+
+  CU_ASSERT(NULL == stream);
+
+  nghttp2_session_del(session);
+}
+
 void test_nghttp2_session_keep_closed_stream(void) {
   nghttp2_session *session;
   nghttp2_session_callbacks callbacks;
@@ -7593,13 +7657,12 @@ void test_nghttp2_session_large_dep_tree(void) {
   nghttp2_session_server_new(&session, &callbacks, NULL);
 
   stream_id = 1;
-  for (i = 0; i < 250; ++i) {
+  for (i = 0; i < 250; ++i, stream_id += 2) {
     dep_stream = open_stream_with_dep(session, stream_id, dep_stream);
-    stream_id += 2;
   }
 
   stream_id = 1;
-  for (i = 0; i < 250; ++i) {
+  for (i = 0; i < 250; ++i, stream_id += 2) {
     stream = nghttp2_session_get_stream(session, stream_id);
     CU_ASSERT(nghttp2_stream_dep_find_ancestor(stream, &session->root));
     CU_ASSERT(nghttp2_stream_in_dep_tree(stream));
@@ -8283,6 +8346,45 @@ void test_nghttp2_session_flooding(void) {
   nghttp2_bufs_free(&bufs);
 }
 
+void test_nghttp2_session_change_stream_priority(void) {
+  nghttp2_session *session;
+  nghttp2_session_callbacks callbacks;
+  nghttp2_stream *stream1, *stream2, *stream3;
+  nghttp2_priority_spec pri_spec;
+  int rv;
+
+  memset(&callbacks, 0, sizeof(callbacks));
+
+  nghttp2_session_server_new(&session, &callbacks, NULL);
+
+  stream1 = open_stream(session, 1);
+  stream3 = open_stream_with_dep_weight(session, 3, 199, stream1);
+  stream2 = open_stream_with_dep_weight(session, 2, 101, stream3);
+
+  nghttp2_priority_spec_init(&pri_spec, 1, 256, 0);
+
+  rv = nghttp2_session_change_stream_priority(session, 2, &pri_spec);
+
+  CU_ASSERT(0 == rv);
+
+  CU_ASSERT(stream1 == stream2->dep_prev);
+  CU_ASSERT(256 == stream2->weight);
+
+  /* Cannot change stream which does not exist */
+  rv = nghttp2_session_change_stream_priority(session, 5, &pri_spec);
+  CU_ASSERT(NGHTTP2_ERR_INVALID_ARGUMENT == rv);
+
+  /* It is an error to depend on itself */
+  rv = nghttp2_session_change_stream_priority(session, 1, &pri_spec);
+  CU_ASSERT(NGHTTP2_ERR_INVALID_ARGUMENT == rv);
+
+  /* It is an error to change priority of root stream (0) */
+  rv = nghttp2_session_change_stream_priority(session, 0, &pri_spec);
+  CU_ASSERT(NGHTTP2_ERR_INVALID_ARGUMENT == rv);
+
+  nghttp2_session_del(session);
+}
+
 static void check_nghttp2_http_recv_headers_fail(
     nghttp2_session *session, nghttp2_hd_deflater *deflater, int32_t stream_id,
     int stream_state, const nghttp2_nv *nva, size_t nvlen) {
@@ -8401,9 +8503,9 @@ void test_nghttp2_http_mandatory_headers(void) {
       MAKE_NV(":authority", "localhost"), MAKE_NV(":path", "/"),
       MAKE_NV("content-length", "-1")};
   const nghttp2_nv dupcl_reqnv[] = {
-      MAKE_NV(":scheme", "https"),        MAKE_NV(":method", "POST"),
+      MAKE_NV(":scheme", "https"), MAKE_NV(":method", "POST"),
       MAKE_NV(":authority", "localhost"), MAKE_NV(":path", "/"),
-      MAKE_NV("content-length", "0"),     MAKE_NV("content-length", "0")};
+      MAKE_NV("content-length", "0"), MAKE_NV("content-length", "0")};
   const nghttp2_nv badhd_reqnv[] = {
       MAKE_NV(":scheme", "https"), MAKE_NV(":method", "GET"),
       MAKE_NV(":authority", "localhost"), MAKE_NV(":path", "/"),
@@ -8996,8 +9098,8 @@ void test_nghttp2_http_ignore_regular_header(void) {
   my_user_data ud;
   const nghttp2_nv bad_reqnv[] = {
       MAKE_NV(":authority", "localhost"), MAKE_NV(":scheme", "https"),
-      MAKE_NV(":path", "/"),              MAKE_NV(":method", "GET"),
-      MAKE_NV("foo", "\x0zzz"),           MAKE_NV("bar", "buzz"),
+      MAKE_NV(":path", "/"), MAKE_NV(":method", "GET"),
+      MAKE_NV("foo", "\x0zzz"), MAKE_NV("bar", "buzz"),
   };
   const nghttp2_nv bad_ansnv[] = {
       MAKE_NV(":authority", "localhost"), MAKE_NV(":scheme", "https"),
@@ -9241,6 +9343,48 @@ void test_nghttp2_http_push_promise(void) {
   CU_ASSERT(4 == item->frame.hd.stream_id);
 
   nghttp2_bufs_reset(&bufs);
+
+  nghttp2_hd_deflate_free(&deflater);
+  nghttp2_session_del(session);
+  nghttp2_bufs_free(&bufs);
+}
+
+void test_nghttp2_http_head_method_upgrade_workaround(void) {
+  nghttp2_session *session;
+  nghttp2_session_callbacks callbacks;
+  const nghttp2_nv cl_resnv[] = {MAKE_NV(":status", "200"),
+                                 MAKE_NV("content-length", "1000000007")};
+  nghttp2_bufs bufs;
+  nghttp2_hd_deflater deflater;
+  nghttp2_mem *mem;
+  ssize_t rv;
+  nghttp2_stream *stream;
+
+  mem = nghttp2_mem_default();
+  frame_pack_bufs_init(&bufs);
+
+  memset(&callbacks, 0, sizeof(nghttp2_session_callbacks));
+  callbacks.send_callback = null_send_callback;
+
+  nghttp2_session_client_new(&session, &callbacks, NULL);
+
+  nghttp2_hd_deflate_init(&deflater, mem);
+
+  nghttp2_session_upgrade(session, NULL, 0, NULL);
+
+  rv = pack_headers(&bufs, &deflater, 1, NGHTTP2_FLAG_END_HEADERS, cl_resnv,
+                    ARRLEN(cl_resnv), mem);
+
+  CU_ASSERT(0 == rv);
+
+  rv = nghttp2_session_mem_recv(session, bufs.head->buf.pos,
+                                nghttp2_buf_len(&bufs.head->buf));
+
+  CU_ASSERT((ssize_t)nghttp2_buf_len(&bufs.head->buf) == rv);
+
+  stream = nghttp2_session_get_stream(session, 1);
+
+  CU_ASSERT(-1 == stream->content_length);
 
   nghttp2_hd_deflate_free(&deflater);
   nghttp2_session_del(session);

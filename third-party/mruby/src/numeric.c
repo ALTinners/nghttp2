@@ -856,7 +856,7 @@ fix_shift_get_width(mrb_state *mrb, mrb_int *width)
 /* 15.2.8.3.12 */
 /*
  * call-seq:
- *   fix << count  ->  integer
+ *   fix << count  ->  integer or float
  *
  * Shifts _fix_ left _count_ positions (right if _count_ is negative).
  */
@@ -881,7 +881,7 @@ fix_lshift(mrb_state *mrb, mrb_value x)
 /* 15.2.8.3.13 */
 /*
  * call-seq:
- *   fix >> count  ->  integer
+ *   fix >> count  ->  integer or float
  *
  * Shifts _fix_ right _count_ positions (left if _count_ is negative).
  */
@@ -1161,7 +1161,7 @@ mrb_init_numeric(mrb_state *mrb)
   mrb_define_method(mrb, integer, "to_int", int_to_i, MRB_ARGS_NONE());
 
   /* Fixnum Class */
-  fixnum = mrb->fixnum_class = mrb_define_class(mrb, "Fixnum", integer);
+  mrb->fixnum_class = fixnum = mrb_define_class(mrb, "Fixnum", integer);
   mrb_define_method(mrb, fixnum,  "+",        fix_plus,          MRB_ARGS_REQ(1)); /* 15.2.8.3.1  */
   mrb_define_method(mrb, fixnum,  "-",        fix_minus,         MRB_ARGS_REQ(1)); /* 15.2.8.3.2  */
   mrb_define_method(mrb, fixnum,  "*",        fix_mul,           MRB_ARGS_REQ(1)); /* 15.2.8.3.3  */
@@ -1181,7 +1181,7 @@ mrb_init_numeric(mrb_state *mrb)
   mrb_define_method(mrb, fixnum,  "divmod",   fix_divmod,        MRB_ARGS_REQ(1)); /* 15.2.8.3.30 (x) */
 
   /* Float Class */
-  fl = mrb->float_class = mrb_define_class(mrb, "Float", numeric);                 /* 15.2.9 */
+  mrb->float_class = fl = mrb_define_class(mrb, "Float", numeric);                 /* 15.2.9 */
   mrb_undef_class_method(mrb,  fl, "new");
   mrb_define_method(mrb, fl,      "+",         flo_plus,         MRB_ARGS_REQ(1)); /* 15.2.9.3.1  */
   mrb_define_method(mrb, fl,      "-",         flo_minus,        MRB_ARGS_REQ(1)); /* 15.2.9.3.2  */

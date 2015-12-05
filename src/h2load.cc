@@ -95,8 +95,8 @@ RequestStat::RequestStat() : data_offset(0), completed(false) {}
 Stats::Stats(size_t req_todo)
     : req_todo(0), req_started(0), req_done(0), req_success(0),
       req_status_success(0), req_failed(0), req_error(0), req_timedout(0),
-      bytes_total(0), bytes_head(0), bytes_body(0), status(),
-      req_stats(req_todo) {}
+      bytes_total(0), bytes_head(0), bytes_head_decomp(0), bytes_body(0),
+      status(), req_stats(req_todo) {}
 
 Stream::Stream() : status_success(-1) {}
 
@@ -198,7 +198,11 @@ namespace {
 void client_request_timeout_cb(struct ev_loop *loop, ev_timer *w, int revents) {
   auto client = static_cast<Client *>(w->data);
 
-  client->submit_request();
+  if (client->submit_request() != 0) {
+    ev_timer_stop(client->worker->loop, w);
+    client->process_request_failure();
+    return;
+  }
   client->signal_write();
 
   if (check_stop_client_request_timeout(client, w)) {
@@ -209,7 +213,11 @@ void client_request_timeout_cb(struct ev_loop *loop, ev_timer *w, int revents) {
       config.timings[client->reqidx] - config.timings[client->reqidx - 1];
 
   while (duration < 1e-9) {
-    client->submit_request();
+    if (client->submit_request() != 0) {
+      ev_timer_stop(client->worker->loop, w);
+      client->process_request_failure();
+      return;
+    }
     client->signal_write();
     if (check_stop_client_request_timeout(client, w)) {
       return;
@@ -352,12 +360,23 @@ void Client::fail() {
 
   if (new_connection_requested) {
     new_connection_requested = false;
+    if (req_started < req_todo) {
+      // At the moment, we don't have a facility to re-start request
+      // already in in-flight.  Make them fail.
+      auto req_abandoned = req_started - req_done;
 
-    // Keep using current address
-    if (connect() == 0) {
-      return;
+      worker->stats.req_failed += req_abandoned;
+      worker->stats.req_error += req_abandoned;
+      worker->stats.req_done += req_abandoned;
+
+      req_done = req_started;
+
+      // Keep using current address
+      if (connect() == 0) {
+        return;
+      }
+      std::cerr << "client could not connect to host" << std::endl;
     }
-    std::cerr << "client could not connect to host" << std::endl;
   }
 
   process_abandoned_streams();
@@ -369,6 +388,7 @@ void Client::disconnect() {
   ev_timer_stop(worker->loop, &request_timeout_watcher);
   streams.clear();
   session.reset();
+  wb.reset();
   state = CLIENT_IDLE;
   ev_io_stop(worker->loop, &wev);
   ev_io_stop(worker->loop, &rev);
@@ -388,9 +408,13 @@ void Client::disconnect() {
   }
 }
 
-void Client::submit_request() {
+int Client::submit_request() {
   auto req_stat = &worker->stats.req_stats[worker->stats.req_started++];
-  session->submit_request(req_stat);
+
+  if (session->submit_request(req_stat) != 0) {
+    return -1;
+  }
+
   ++req_started;
 
   // if an active timeout is set and this is the last request to be submitted
@@ -398,6 +422,8 @@ void Client::submit_request() {
   if (worker->config->conn_active_timeout > 0. && req_started >= req_todo) {
     ev_timer_start(worker->loop, &conn_active_watcher);
   }
+
+  return 0;
 }
 
 void Client::process_timedout_streams() {
@@ -421,6 +447,21 @@ void Client::process_abandoned_streams() {
   worker->stats.req_done += req_abandoned;
 
   req_done = req_todo;
+}
+
+void Client::process_request_failure() {
+  auto req_abandoned = req_todo - req_started;
+
+  worker->stats.req_failed += req_abandoned;
+  worker->stats.req_error += req_abandoned;
+  worker->stats.req_done += req_abandoned;
+
+  req_done += req_abandoned;
+
+  if (req_done == req_todo) {
+    terminate_session();
+    return;
+  }
 }
 
 void Client::report_progress() {
@@ -488,7 +529,11 @@ void Client::report_app_info() {
   }
 }
 
-void Client::terminate_session() { session->terminate(); }
+void Client::terminate_session() {
+  session->terminate();
+  // http1 session needs writecb to tear down session.
+  signal_write();
+}
 
 void Client::on_request(int32_t stream_id) { streams[stream_id] = Stream(); }
 
@@ -560,10 +605,15 @@ void Client::on_stream_close(int32_t stream_id, bool success,
   }
   ++worker->stats.req_done;
   ++req_done;
-  if (success && streams[stream_id].status_success == 1) {
-    ++worker->stats.req_status_success;
+  if (success) {
+    if (streams[stream_id].status_success == 1) {
+      ++worker->stats.req_status_success;
+    } else {
+      ++worker->stats.req_failed;
+    }
   } else {
     ++worker->stats.req_failed;
+    ++worker->stats.req_error;
   }
   report_progress();
   streams.erase(stream_id);
@@ -574,7 +624,9 @@ void Client::on_stream_close(int32_t stream_id, bool success,
 
   if (!config.timing_script && !final) {
     if (req_started < req_todo) {
-      submit_request();
+      if (submit_request() != 0) {
+        process_request_failure();
+      }
       return;
     }
   }
@@ -586,51 +638,36 @@ int Client::connection_made() {
 
     const unsigned char *next_proto = nullptr;
     unsigned int next_proto_len;
+
     SSL_get0_next_proto_negotiated(ssl, &next_proto, &next_proto_len);
-    for (int i = 0; i < 2; ++i) {
-      if (next_proto) {
-        if (util::check_h2_is_selected(next_proto, next_proto_len)) {
-          session = make_unique<Http2Session>(this);
-          break;
-        } else if (util::streq_l(NGHTTP2_H1_1, next_proto, next_proto_len)) {
-          session = make_unique<Http1Session>(this);
-          break;
-        }
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L
+    if (next_proto == nullptr) {
+      SSL_get0_alpn_selected(ssl, &next_proto, &next_proto_len);
+    }
+#endif // OPENSSL_VERSION_NUMBER >= 0x10002000L
+
+    if (next_proto) {
+      if (util::check_h2_is_selected(next_proto, next_proto_len)) {
+        session = make_unique<Http2Session>(this);
+      } else if (util::streq_l(NGHTTP2_H1_1, next_proto, next_proto_len)) {
+        session = make_unique<Http1Session>(this);
+      }
 #ifdef HAVE_SPDYLAY
-        else {
-          auto spdy_version =
-              spdylay_npn_get_version(next_proto, next_proto_len);
-          if (spdy_version) {
-            session = make_unique<SpdySession>(this, spdy_version);
-            break;
-          }
+      else {
+        auto spdy_version = spdylay_npn_get_version(next_proto, next_proto_len);
+        if (spdy_version) {
+          session = make_unique<SpdySession>(this, spdy_version);
         }
+      }
 #endif // HAVE_SPDYLAY
 
-        next_proto = nullptr;
-        break;
-      }
+      // Just assign next_proto to selected_proto anyway to show the
+      // negotiation result.
+      selected_proto.assign(next_proto, next_proto + next_proto_len);
+    } else {
+      std::cout << "No protocol negotiated. Fallback behaviour may be activated"
+                << std::endl;
 
-#if OPENSSL_VERSION_NUMBER >= 0x10002000L
-      SSL_get0_alpn_selected(ssl, &next_proto, &next_proto_len);
-      auto proto = std::string(reinterpret_cast<const char *>(next_proto),
-                               next_proto_len);
-
-      if (proto.empty()) {
-        std::cout
-            << "No protocol negotiated. Fallback behaviour may be activated"
-            << std::endl;
-        break;
-      } else {
-        selected_proto = proto;
-        report_app_info();
-      }
-#else  // OPENSSL_VERSION_NUMBER < 0x10002000L
-      break;
-#endif // OPENSSL_VERSION_NUMBER < 0x10002000L
-    }
-
-    if (!next_proto) {
       for (const auto &proto : config.npn_list) {
         if (std::equal(NGHTTP2_H1_1_ALPN,
                        NGHTTP2_H1_1_ALPN + str_size(NGHTTP2_H1_1_ALPN),
@@ -639,48 +676,56 @@ int Client::connection_made() {
               << "Server does not support NPN/ALPN. Falling back to HTTP/1.1."
               << std::endl;
           session = make_unique<Http1Session>(this);
+          selected_proto = NGHTTP2_H1_1;
           break;
         }
       }
+    }
 
-      if (!session) {
-        std::cout
-            << "No supported protocol was negotiated. Supported protocols were:"
-            << std::endl;
-        for (const auto &proto : config.npn_list) {
-          std::cout << proto.substr(1) << std::endl;
-        }
-        disconnect();
-        return -1;
+    if (!selected_proto.empty()) {
+      report_app_info();
+    }
+
+    if (!session) {
+      std::cout
+          << "No supported protocol was negotiated. Supported protocols were:"
+          << std::endl;
+      for (const auto &proto : config.npn_list) {
+        std::cout << proto.substr(1) << std::endl;
       }
+      disconnect();
+      return -1;
     }
   } else {
     switch (config.no_tls_proto) {
     case Config::PROTO_HTTP2:
       session = make_unique<Http2Session>(this);
       selected_proto = NGHTTP2_CLEARTEXT_PROTO_VERSION_ID;
-      report_app_info();
       break;
     case Config::PROTO_HTTP1_1:
       session = make_unique<Http1Session>(this);
       selected_proto = NGHTTP2_H1_1;
-      report_app_info();
       break;
 #ifdef HAVE_SPDYLAY
     case Config::PROTO_SPDY2:
       session = make_unique<SpdySession>(this, SPDYLAY_PROTO_SPDY2);
+      selected_proto = "spdy/2";
       break;
     case Config::PROTO_SPDY3:
       session = make_unique<SpdySession>(this, SPDYLAY_PROTO_SPDY3);
+      selected_proto = "spdy/3";
       break;
     case Config::PROTO_SPDY3_1:
       session = make_unique<SpdySession>(this, SPDYLAY_PROTO_SPDY3_1);
+      selected_proto = "spdy/3.1";
       break;
 #endif // HAVE_SPDYLAY
     default:
       // unreachable
       assert(0);
     }
+
+    report_app_info();
   }
 
   state = CLIENT_CONNECTED;
@@ -694,19 +739,34 @@ int Client::connection_made() {
         std::min(req_todo - req_started, (size_t)config.max_concurrent_streams);
 
     for (; nreq > 0; --nreq) {
-      submit_request();
+      if (submit_request() != 0) {
+        process_request_failure();
+        break;
+      }
     }
   } else {
 
     ev_tstamp duration = config.timings[reqidx];
 
     while (duration < 1e-9) {
-      submit_request();
+      if (submit_request() != 0) {
+        process_request_failure();
+        break;
+      }
       duration = config.timings[reqidx];
+      if (reqidx == 0) {
+        // if reqidx wraps around back to 0, we uses up all lines and
+        // should break
+        break;
+      }
     }
 
-    request_timeout_watcher.repeat = duration;
-    ev_timer_again(worker->loop, &request_timeout_watcher);
+    if (duration >= 1e-9) {
+      // double check since we may have break due to reqidx wraps
+      // around back to 0
+      request_timeout_watcher.repeat = duration;
+      ev_timer_again(worker->loop, &request_timeout_watcher);
+    }
   }
   signal_write();
 
@@ -1132,12 +1192,11 @@ int client_select_next_proto_cb(SSL *ssl, unsigned char **out,
   if (util::select_protocol(const_cast<const unsigned char **>(out), outlen, in,
                             inlen, config.npn_list)) {
     return SSL_TLSEXT_ERR_OK;
-  } else if (inlen == 0) {
-    std::cout
-        << "Server does not support NPN. Fallback behaviour may be activated."
-        << std::endl;
   }
-  return SSL_TLSEXT_ERR_OK;
+
+  // OpenSSL will terminate handshake with fatal alert if we return
+  // NOACK.  So there is no way to fallback.
+  return SSL_TLSEXT_ERR_NOACK;
 }
 } // namespace
 
@@ -1431,6 +1490,9 @@ Options:
               only  and any  white spaces  are  treated as  a part  of
               protocol string.
               Default: )" << DEFAULT_NPN_LIST << R"(
+  --h1        Short        hand         for        --npn-list=http/1.1
+              --no-tls-proto=http/1.1,    which   effectively    force
+              http/1.1 for both http and https URI.
   -v, --verbose
               Output debug information.
   --version   Display version information and exit.
@@ -1478,6 +1540,7 @@ int main(int argc, char **argv) {
         {"base-uri", required_argument, nullptr, 'B'},
         {"npn-list", required_argument, &flag, 4},
         {"rate-period", required_argument, &flag, 5},
+        {"h1", no_argument, &flag, 6},
         {nullptr, 0, nullptr, 0}};
     int option_index = 0;
     auto c = getopt_long(argc, argv, "hvW:c:d:m:n:p:t:w:H:i:r:T:N:B:",
@@ -1643,6 +1706,11 @@ int main(int argc, char **argv) {
           std::cerr << "--rate-period: value error " << optarg << std::endl;
           exit(EXIT_FAILURE);
         }
+        break;
+      case 6:
+        // --h1
+        config.npn_list = util::parse_config_str_list("http/1.1");
+        config.no_tls_proto = Config::PROTO_HTTP1_1;
         break;
       }
       break;
@@ -1855,8 +1923,8 @@ int main(int argc, char **argv) {
   shared_nva.emplace_back("user-agent", user_agent);
 
   // list overridalbe headers
-  auto override_hdrs =
-      make_array<std::string>(":authority", ":host", ":method", ":scheme");
+  auto override_hdrs = make_array<std::string>(":authority", ":host", ":method",
+                                               ":scheme", "user-agent");
 
   for (auto &kv : config.custom_headers) {
     if (std::find(std::begin(override_hdrs), std::end(override_hdrs),
@@ -1874,20 +1942,44 @@ int main(int argc, char **argv) {
     }
   }
 
+  auto method_it =
+      std::find_if(std::begin(shared_nva), std::end(shared_nva),
+                   [](const Header &nv) { return nv.name == ":method"; });
+  assert(method_it != std::end(shared_nva));
+
+  config.h1reqs.reserve(reqlines.size());
+  config.nva.reserve(reqlines.size());
+  config.nv.reserve(reqlines.size());
+
   for (auto &req : reqlines) {
     // For HTTP/1.1
-    std::string h1req;
-    h1req = config.data_fd == -1 ? "GET" : "POST";
-    h1req += " " + req;
+    auto h1req = (*method_it).value;
+    h1req += " ";
+    h1req += req;
     h1req += " HTTP/1.1\r\n";
-    h1req += "Host: " + config.host + "\r\n";
-    h1req += "User-Agent: " + user_agent + "\r\n";
-    h1req += "Accept: */*\r\n";
+    for (auto &nv : shared_nva) {
+      if (nv.name == ":authority") {
+        h1req += "Host: ";
+        h1req += nv.value;
+        h1req += "\r\n";
+        continue;
+      }
+      if (nv.name[0] == ':') {
+        continue;
+      }
+      h1req += nv.name;
+      h1req += ": ";
+      h1req += nv.value;
+      h1req += "\r\n";
+    }
     h1req += "\r\n";
-    config.h1reqs.push_back(h1req);
+
+    config.h1reqs.push_back(std::move(h1req));
 
     // For nghttp2
     std::vector<nghttp2_nv> nva;
+    // 1 for :path
+    nva.reserve(1 + shared_nva.size());
 
     nva.push_back(http2::make_nv_ls(":path", req));
 
@@ -1899,6 +1991,8 @@ int main(int argc, char **argv) {
 
     // For spdylay
     std::vector<const char *> cva;
+    // 2 for :path and :version, 1 for terminal nullptr
+    cva.reserve(2 * (2 + shared_nva.size()) + 1);
 
     cva.push_back(":path");
     cva.push_back(req.c_str());
@@ -2034,6 +2128,7 @@ int main(int argc, char **argv) {
     stats.req_error += s.req_error;
     stats.bytes_total += s.bytes_total;
     stats.bytes_head += s.bytes_head;
+    stats.bytes_head_decomp += s.bytes_head_decomp;
     stats.bytes_body += s.bytes_body;
 
     for (size_t i = 0; i < stats.status.size(); ++i) {
@@ -2063,7 +2158,13 @@ int main(int argc, char **argv) {
     bps = stats.bytes_total / secd.count();
   }
 
-  std::cout << R"(
+  double header_space_savings = 0.;
+  if (stats.bytes_head_decomp > 0) {
+    header_space_savings =
+        1. - static_cast<double>(stats.bytes_head) / stats.bytes_head_decomp;
+  }
+
+  std::cout << std::fixed << std::setprecision(2) << R"(
 finished in )" << util::format_duration(duration) << ", " << rps << " req/s, "
             << util::utos_with_funit(bps) << R"(B/s
 requests: )" << stats.req_todo << " total, " << stats.req_started
@@ -2074,7 +2175,8 @@ requests: )" << stats.req_todo << " total, " << stats.req_started
 status codes: )" << stats.status[2] << " 2xx, " << stats.status[3] << " 3xx, "
             << stats.status[4] << " 4xx, " << stats.status[5] << R"( 5xx
 traffic: )" << stats.bytes_total << " bytes total, " << stats.bytes_head
-            << " bytes headers, " << stats.bytes_body << R"( bytes data
+            << " bytes headers (space savings " << header_space_savings * 100
+            << "%), " << stats.bytes_body << R"( bytes data
                      min         max         mean         sd        +/- sd
 time for request: )" << std::setw(10) << util::format_duration(ts.request.min)
             << "  " << std::setw(10) << util::format_duration(ts.request.max)

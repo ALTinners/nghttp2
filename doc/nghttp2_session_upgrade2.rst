@@ -1,29 +1,18 @@
 
-nghttp2_session_upgrade
-=======================
+nghttp2_session_upgrade2
+========================
 
 Synopsis
 --------
 
 *#include <nghttp2/nghttp2.h>*
 
-.. function:: int nghttp2_session_upgrade(nghttp2_session *session, const uint8_t *settings_payload, size_t settings_payloadlen, void *stream_user_data)
+.. function:: int nghttp2_session_upgrade2(nghttp2_session *session, const uint8_t *settings_payload, size_t settings_payloadlen, int head_request, void *stream_user_data)
 
     
     Performs post-process of HTTP Upgrade request.  This function can
     be called from both client and server, but the behavior is very
     different in each other.
-    
-    .. warning::
-    
-      This function is deprecated in favor of
-      `nghttp2_session_upgrade2()`, because this function lacks the
-      parameter to tell the library the request method used in the
-      original HTTP request.  This information is required for client
-      to validate actual response body length against content-length
-      header field (see `nghttp2_option_set_no_http_messaging()`).  If
-      HEAD is used in request, the length of response body must be 0
-      regardless of value included in content-length header field.
     
     If called from client side, the *settings_payload* must be the
     value sent in ``HTTP2-Settings`` header field and must be decoded
@@ -43,6 +32,9 @@ Synopsis
     the reception of SETTINGS frame will be invoked.  The stream with
     stream ID=1 is opened.  The *stream_user_data* is ignored.  The
     opened stream becomes half-closed (remote).
+    
+    If the request method is HEAD, pass nonzero value to
+    *head_request*.  Otherwise, pass 0.
     
     This function returns 0 if it succeeds, or one of the following
     negative error codes:
