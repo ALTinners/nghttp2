@@ -116,19 +116,21 @@ typedef enum {
   NGHTTP2_HTTP_FLAG_METH_CONNECT = 1 << 7,
   NGHTTP2_HTTP_FLAG_METH_HEAD = 1 << 8,
   NGHTTP2_HTTP_FLAG_METH_OPTIONS = 1 << 9,
+  NGHTTP2_HTTP_FLAG_METH_UPGRADE_WORKAROUND = 1 << 10,
   NGHTTP2_HTTP_FLAG_METH_ALL = NGHTTP2_HTTP_FLAG_METH_CONNECT |
                                NGHTTP2_HTTP_FLAG_METH_HEAD |
-                               NGHTTP2_HTTP_FLAG_METH_OPTIONS,
+                               NGHTTP2_HTTP_FLAG_METH_OPTIONS |
+                               NGHTTP2_HTTP_FLAG_METH_UPGRADE_WORKAROUND,
   /* :path category */
   /* path starts with "/" */
-  NGHTTP2_HTTP_FLAG_PATH_REGULAR = 1 << 10,
+  NGHTTP2_HTTP_FLAG_PATH_REGULAR = 1 << 11,
   /* path "*" */
-  NGHTTP2_HTTP_FLAG_PATH_ASTERISK = 1 << 11,
+  NGHTTP2_HTTP_FLAG_PATH_ASTERISK = 1 << 12,
   /* scheme */
   /* "http" or "https" scheme */
-  NGHTTP2_HTTP_FLAG_SCHEME_HTTP = 1 << 12,
+  NGHTTP2_HTTP_FLAG_SCHEME_HTTP = 1 << 13,
   /* set if final response is expected */
-  NGHTTP2_HTTP_FLAG_EXPECT_FINAL_RESPONSE = 1 << 13
+  NGHTTP2_HTTP_FLAG_EXPECT_FINAL_RESPONSE = 1 << 14
 } nghttp2_http_flag;
 
 struct nghttp2_stream {
@@ -204,6 +206,11 @@ struct nghttp2_stream {
   uint64_t descendant_last_cycle;
   /* Next scheduled time to sent item */
   uint64_t cycle;
+  /* Next seq used for direct descendant streams */
+  uint64_t descendant_next_seq;
+  /* Secondary key for prioritization to break a tie for cycle.  This
+     value is monotonically increased for single parent stream. */
+  uint64_t seq;
   /* Last written length of frame payload */
   size_t last_writelen;
   /* This flag is used to reduce excessive queuing of WINDOW_UPDATE to

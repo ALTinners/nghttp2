@@ -105,6 +105,9 @@ APIDOCS= \
 	nghttp2_session_mem_recv.rst \
 	nghttp2_session_mem_send.rst \
 	nghttp2_session_recv.rst \
+	nghttp2_session_change_stream_priority.rst \
+	nghttp2_session_check_request_allowed.rst \
+	nghttp2_session_check_server_session.rst \
 	nghttp2_session_resume_data.rst \
 	nghttp2_session_send.rst \
 	nghttp2_session_server_new.rst \
@@ -115,6 +118,7 @@ APIDOCS= \
 	nghttp2_session_terminate_session.rst \
 	nghttp2_session_terminate_session2.rst \
 	nghttp2_session_upgrade.rst \
+	nghttp2_session_upgrade2.rst \
 	nghttp2_session_want_read.rst \
 	nghttp2_session_want_write.rst \
 	nghttp2_stream_get_first_child.rst \

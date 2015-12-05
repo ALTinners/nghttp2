@@ -51,6 +51,7 @@ int on_header_callback(nghttp2_session *session, const nghttp2_frame *frame,
     return 0;
   }
   client->on_header(frame->hd.stream_id, name, namelen, value, valuelen);
+  client->worker->stats.bytes_head_decomp += namelen + valuelen;
   return 0;
 }
 } // namespace
@@ -63,7 +64,9 @@ int on_frame_recv_callback(nghttp2_session *session, const nghttp2_frame *frame,
       frame->headers.cat != NGHTTP2_HCAT_RESPONSE) {
     return 0;
   }
-  client->worker->stats.bytes_head += frame->hd.length;
+  client->worker->stats.bytes_head +=
+      frame->hd.length - frame->headers.padlen -
+      ((frame->hd.flags & NGHTTP2_FLAG_PRIORITY) ? 5 : 0);
   if (frame->hd.flags & NGHTTP2_FLAG_END_STREAM) {
     client->record_ttfb();
   }
@@ -209,7 +212,11 @@ void Http2Session::on_connect() {
   client_->signal_write();
 }
 
-void Http2Session::submit_request(RequestStat *req_stat) {
+int Http2Session::submit_request(RequestStat *req_stat) {
+  if (nghttp2_session_check_request_allowed(session_) == 0) {
+    return -1;
+  }
+
   auto config = client_->worker->config;
   auto &nva = config->nva[client_->reqidx++];
 
@@ -222,7 +229,11 @@ void Http2Session::submit_request(RequestStat *req_stat) {
   auto stream_id =
       nghttp2_submit_request(session_, nullptr, nva.data(), nva.size(),
                              config->data_fd == -1 ? nullptr : &prd, req_stat);
-  assert(stream_id > 0);
+  if (stream_id < 0) {
+    return -1;
+  }
+
+  return 0;
 }
 
 int Http2Session::on_read(const uint8_t *data, size_t len) {

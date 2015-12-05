@@ -40,16 +40,26 @@ Types (structs, unions and typedefs)
 
         The *name* byte string.  If this struct is presented from library
         (e.g., :type:`nghttp2_on_frame_recv_callback`), *name* is
-        guaranteed to be NULL-terminated.  When application is
-        constructing this struct, *name* is not required to be
+        guaranteed to be NULL-terminated.  For some callbacks
+        (:type:`nghttp2_before_frame_send_callback`,
+        :type:`nghttp2_on_frame_send_callback`, and
+        :type:`nghttp2_on_frame_not_send_callback`), it may not be
+        NULL-terminated if header field is passed from application with
+        the flag :macro:`NGHTTP2_NV_FLAG_NO_COPY_NAME`).  When application
+        is constructing this struct, *name* is not required to be
         NULL-terminated.
     .. member::   uint8_t *value
 
         The *value* byte string.  If this struct is presented from
         library (e.g., :type:`nghttp2_on_frame_recv_callback`), *value*
-        is guaranteed to be NULL-terminated.  When application is
-        constructing this struct, *value* is not required to be
-        NULL-terminated.
+        is guaranteed to be NULL-terminated.  For some callbacks
+        (:type:`nghttp2_before_frame_send_callback`,
+        :type:`nghttp2_on_frame_send_callback`, and
+        :type:`nghttp2_on_frame_not_send_callback`), it may not be
+        NULL-terminated if header field is passed from application with
+        the flag :macro:`NGHTTP2_NV_FLAG_NO_COPY_VALUE`).  When
+        application is constructing this struct, *value* is not required
+        to be NULL-terminated.
     .. member::   size_t namelen
 
         The length of the *name*, excluding terminating NULL.

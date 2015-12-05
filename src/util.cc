@@ -52,6 +52,7 @@
 #include <cstdio>
 #include <cstring>
 #include <iostream>
+#include <fstream>
 
 #include <nghttp2/nghttp2.h>
 
@@ -432,15 +433,15 @@ std::string format_hex(const unsigned char *s, size_t len) {
 void to_token68(std::string &base64str) {
   std::transform(std::begin(base64str), std::end(base64str),
                  std::begin(base64str), [](char c) {
-    switch (c) {
-    case '+':
-      return '-';
-    case '/':
-      return '_';
-    default:
-      return c;
-    }
-  });
+                   switch (c) {
+                   case '+':
+                     return '-';
+                   case '/':
+                     return '_';
+                   default:
+                     return c;
+                   }
+                 });
   base64str.erase(std::find(std::begin(base64str), std::end(base64str), '='),
                   std::end(base64str));
 }
@@ -448,15 +449,15 @@ void to_token68(std::string &base64str) {
 void to_base64(std::string &token68str) {
   std::transform(std::begin(token68str), std::end(token68str),
                  std::begin(token68str), [](char c) {
-    switch (c) {
-    case '-':
-      return '+';
-    case '_':
-      return '/';
-    default:
-      return c;
-    }
-  });
+                   switch (c) {
+                   case '-':
+                     return '+';
+                   case '_':
+                     return '/';
+                   default:
+                     return c;
+                   }
+                 });
   if (token68str.size() & 0x3) {
     token68str.append(4 - (token68str.size() & 0x3), '=');
   }
@@ -1215,6 +1216,41 @@ uint64_t get_uint64(const uint8_t *data) {
   n += data[6] << 8;
   n += data[7];
   return n;
+}
+
+int read_mime_types(std::map<std::string, std::string> &res,
+                    const char *filename) {
+  std::ifstream infile(filename);
+  if (!infile) {
+    return -1;
+  }
+
+  auto delim_pred = [](char c) { return c == ' ' || c == '\t'; };
+
+  std::string line;
+  while (std::getline(infile, line)) {
+    if (line.empty() || line[0] == '#') {
+      continue;
+    }
+
+    auto type_end = std::find_if(std::begin(line), std::end(line), delim_pred);
+    if (type_end == std::begin(line)) {
+      continue;
+    }
+
+    auto ext_end = type_end;
+    for (;;) {
+      auto ext_start = std::find_if_not(ext_end, std::end(line), delim_pred);
+      if (ext_start == std::end(line)) {
+        break;
+      }
+      ext_end = std::find_if(ext_start, std::end(line), delim_pred);
+      res.emplace(std::string(ext_start, ext_end),
+                  std::string(std::begin(line), type_end));
+    }
+  }
+
+  return 0;
 }
 
 } // namespace util

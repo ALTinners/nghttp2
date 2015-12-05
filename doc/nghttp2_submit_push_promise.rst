@@ -26,7 +26,15 @@ Synopsis
     
     This function creates copies of all name/value pairs in *nva*.  It
     also lower-cases all names in *nva*.  The order of elements in
-    *nva* is preserved.
+    *nva* is preserved.  For header fields with
+    :macro:`NGHTTP2_NV_FLAG_NO_COPY_NAME` and
+    :macro:`NGHTTP2_NV_FLAG_NO_COPY_VALUE` are set, header field name
+    and value are not copied respectively.  With
+    :macro:`NGHTTP2_NV_FLAG_NO_COPY_NAME`, application is responsible to
+    pass header field name in lowercase.  The application should
+    maintain the references to them until
+    :type:`nghttp2_on_frame_send_callback` or
+    :type:`nghttp2_on_frame_not_send_callback` is called.
     
     The *promised_stream_user_data* is a pointer to an arbitrary data
     which is associated to the promised stream this frame will open and

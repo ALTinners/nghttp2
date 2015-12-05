@@ -51,6 +51,7 @@ namespace nghttp2 {
 
 struct Config {
   std::map<std::string, std::vector<std::string>> push;
+  std::map<std::string, std::string> mime_types;
   Headers trailer;
   std::string htdocs;
   std::string host;
@@ -58,6 +59,7 @@ struct Config {
   std::string cert_file;
   std::string dh_param_file;
   std::string address;
+  std::string mime_types_file;
   ev_tstamp stream_read_timeout;
   ev_tstamp stream_write_timeout;
   void *data_ptr;
@@ -81,15 +83,22 @@ struct Config {
 class Http2Handler;
 
 struct FileEntry {
-  FileEntry(std::string path, int64_t length, int64_t mtime, int fd)
-      : path(std::move(path)), length(length), mtime(mtime), dlprev(nullptr),
-        dlnext(nullptr), fd(fd), usecount(1) {}
+  FileEntry(std::string path, int64_t length, int64_t mtime, int fd,
+            const std::string *content_type, ev_tstamp last_valid,
+            bool stale = false)
+      : path(std::move(path)), length(length), mtime(mtime),
+        last_valid(last_valid), content_type(content_type), dlnext(nullptr),
+        dlprev(nullptr), fd(fd), usecount(1), stale(stale) {}
   std::string path;
+  std::multimap<std::string, std::unique_ptr<FileEntry>>::iterator it;
   int64_t length;
   int64_t mtime;
-  FileEntry *dlprev, *dlnext;
+  ev_tstamp last_valid;
+  const std::string *content_type;
+  FileEntry *dlnext, *dlprev;
   int fd;
   int usecount;
+  bool stale;
 };
 
 struct Stream {
@@ -123,6 +132,7 @@ public:
 
   int submit_file_response(const std::string &status, Stream *stream,
                            time_t last_modified, off_t file_length,
+                           const std::string *content_type,
                            nghttp2_data_provider *data_prd);
 
   int submit_response(const std::string &status, int32_t stream_id,

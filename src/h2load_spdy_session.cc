@@ -65,11 +65,18 @@ void on_ctrl_recv_callback(spdylay_session *session, spdylay_frame_type type,
   for (auto p = frame->syn_reply.nv; *p; p += 2) {
     auto name = *p;
     auto value = *(p + 1);
+    auto namelen = strlen(name);
+    auto valuelen = strlen(value);
     client->on_header(frame->syn_reply.stream_id,
-                      reinterpret_cast<const uint8_t *>(name), strlen(name),
-                      reinterpret_cast<const uint8_t *>(value), strlen(value));
+                      reinterpret_cast<const uint8_t *>(name), namelen,
+                      reinterpret_cast<const uint8_t *>(value), valuelen);
+    client->worker->stats.bytes_head_decomp += namelen + valuelen;
   }
-  client->worker->stats.bytes_head += frame->syn_reply.hd.length;
+
+  // Strictly speaking, we have to subtract 2 (unused field) if SPDY
+  // version is 2.  But it is already deprecated, and we don't do
+  // extra work for it.
+  client->worker->stats.bytes_head += frame->syn_reply.hd.length - 4;
 
   if (frame->syn_stream.hd.flags & SPDYLAY_CTRL_FLAG_FIN) {
     client->record_ttfb();
@@ -178,7 +185,8 @@ void SpdySession::on_connect() {
   client_->signal_write();
 }
 
-void SpdySession::submit_request(RequestStat *req_stat) {
+int SpdySession::submit_request(RequestStat *req_stat) {
+  int rv;
   auto config = client_->worker->config;
   auto &nv = config->nv[client_->reqidx++];
 
@@ -188,8 +196,14 @@ void SpdySession::submit_request(RequestStat *req_stat) {
 
   spdylay_data_provider prd{{0}, file_read_callback};
 
-  spdylay_submit_request(session_, 0, nv.data(),
-                         config->data_fd == -1 ? nullptr : &prd, req_stat);
+  rv = spdylay_submit_request(session_, 0, nv.data(),
+                              config->data_fd == -1 ? nullptr : &prd, req_stat);
+
+  if (rv != 0) {
+    return -1;
+  }
+
+  return 0;
 }
 
 int SpdySession::on_read(const uint8_t *data, size_t len) {

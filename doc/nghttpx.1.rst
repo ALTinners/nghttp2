@@ -236,7 +236,7 @@ Performance
     Set   maximum  number   of  backend   concurrent  HTTP/1
     connections per origin host.   This option is meaningful
     when :option:`-s` option  is used.  The origin  host is determined
-    by  authority  portion  of requset  URI  (or  :authority
+    by  authority  portion  of request  URI  (or  :authority
     header  field  for  HTTP/2).   To limit  the  number  of
     connections   per  frontend   for   default  mode,   use
     :option:`--backend-http1-connections-per-frontend`\.
@@ -613,9 +613,14 @@ HTTP/2 and SPDY
 
 .. option:: --no-server-push
 
-    Disable  HTTP/2  server  push.    Server  push  is  only
-    supported  by default  mode and  HTTP/2 frontend.   SPDY
-    frontend does not support server push.
+    Disable HTTP/2 server push.  Server push is supported by
+    default mode and HTTP/2  frontend via Link header field.
+    It is  also supported if  both frontend and  backend are
+    HTTP/2 (which implies  :option:`--http2-bridge` or :option:`\--client` mode).
+    In  this  case,  server  push from  backend  session  is
+    relayed  to frontend,  and server  push via  Link header
+    field is  also supported.   HTTP SPDY frontend  does not
+    support server push.
 
 
 Mode
@@ -954,8 +959,8 @@ SIGUSR2
 SERVER PUSH
 -----------
 
-nghttpx supports HTTP/2 server push in default mode.  nghttpx looks
-for Link header field (`RFC 5988
+nghttpx supports HTTP/2 server push in default mode with Link header
+field.  nghttpx looks for Link header field (`RFC 5988
 <http://tools.ietf.org/html/rfc5988>`_) in response headers from
 backend server and extracts URI-reference with parameter
 ``rel=preload`` (see `preload
@@ -974,6 +979,14 @@ Currently, the following restriction is applied for server push:
    associated stream's status code must be 200.
 
 This limitation may be loosened in the future release.
+
+nghttpx also supports server push if both frontend and backend are
+HTTP/2 (which implies :option:`--http2-bridge` or :option:`--client`).
+In this case, in addition to server push via Link header field, server
+push from backend is relayed to frontend HTTP/2 session.
+
+HTTP/2 server push will be disabled if :option:`--http2-proxy` or
+:option:`--client-proxy` is used.
 
 UNIX DOMAIN SOCKET
 ------------------
@@ -1248,7 +1261,7 @@ respectively.
         Return custom response *body* to a client.  When this method
         is called in request phase hook, the request is not forwarded
         to the backend, and response phase hook for this request will
-        not be invoked.  When this method is called in resonse phase
+        not be invoked.  When this method is called in response phase
         hook, response from backend server is canceled and discarded.
         The status code and response header fields should be set
         before using this method.  To set status code, use :rb:meth To
@@ -1266,7 +1279,7 @@ respectively.
 MRUBY EXAMPLES
 ~~~~~~~~~~~~~~
 
-Modify requet path:
+Modify request path:
 
 .. code-block:: ruby
 

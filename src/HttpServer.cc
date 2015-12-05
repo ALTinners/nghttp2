@@ -100,11 +100,12 @@ template <typename Array> void append_nv(Stream *stream, const Array &nva) {
 } // namespace
 
 Config::Config()
-    : stream_read_timeout(1_min), stream_write_timeout(1_min),
-      data_ptr(nullptr), padding(0), num_worker(1), max_concurrent_streams(100),
-      header_table_size(-1), port(0), verbose(false), daemon(false),
-      verify_client(false), no_tls(false), error_gzip(false),
-      early_response(false), hexdump(false), echo_upload(false) {}
+    : mime_types_file("/etc/mime.types"), stream_read_timeout(1_min),
+      stream_write_timeout(1_min), data_ptr(nullptr), padding(0), num_worker(1),
+      max_concurrent_streams(100), header_table_size(-1), port(0),
+      verbose(false), daemon(false), verify_client(false), no_tls(false),
+      error_gzip(false), early_response(false), hexdump(false),
+      echo_upload(false) {}
 
 Config::~Config() {}
 
@@ -174,6 +175,51 @@ namespace {
 void fill_callback(nghttp2_session_callbacks *callbacks, const Config *config);
 } // namespace
 
+namespace {
+constexpr ev_tstamp RELEASE_FD_TIMEOUT = 2.;
+} // namespace
+
+namespace {
+void release_fd_cb(struct ev_loop *loop, ev_timer *w, int revents);
+} // namespace
+
+namespace {
+constexpr ev_tstamp FILE_ENTRY_MAX_AGE = 10.;
+} // namespace
+
+namespace {
+constexpr size_t FILE_ENTRY_EVICT_THRES = 2048;
+} // namespace
+
+namespace {
+bool need_validation_file_entry(const FileEntry *ent, ev_tstamp now) {
+  return ent->last_valid + FILE_ENTRY_MAX_AGE < now;
+}
+} // namespace
+
+namespace {
+bool validate_file_entry(FileEntry *ent, ev_tstamp now) {
+  struct stat stbuf;
+  int rv;
+
+  rv = fstat(ent->fd, &stbuf);
+  if (rv != 0) {
+    ent->stale = true;
+    return false;
+  }
+
+  if (stbuf.st_nlink == 0 || ent->mtime != stbuf.st_mtime) {
+    ent->stale = true;
+    return false;
+  }
+
+  ent->mtime = stbuf.st_mtime;
+  ent->last_valid = now;
+
+  return true;
+}
+} // namespace
+
 class Sessions {
 public:
   Sessions(HttpServer *sv, struct ev_loop *loop, const Config *config,
@@ -184,15 +230,24 @@ public:
     nghttp2_session_callbacks_new(&callbacks_);
 
     fill_callback(callbacks_, config_);
+
+    ev_timer_init(&release_fd_timer_, release_fd_cb, 0., RELEASE_FD_TIMEOUT);
+    release_fd_timer_.data = this;
   }
   ~Sessions() {
+    ev_timer_stop(loop_, &release_fd_timer_);
     for (auto handler : handlers_) {
       delete handler;
     }
     nghttp2_session_callbacks_del(callbacks_);
   }
   void add_handler(Http2Handler *handler) { handlers_.insert(handler); }
-  void remove_handler(Http2Handler *handler) { handlers_.erase(handler); }
+  void remove_handler(Http2Handler *handler) {
+    handlers_.erase(handler);
+    if (handlers_.empty() && !fd_cache_.empty()) {
+      ev_timer_again(loop_, &release_fd_timer_);
+    }
+  }
   SSL_CTX *get_ssl_ctx() const { return ssl_ctx_; }
   SSL *ssl_session_new(int fd) {
     SSL *ssl = SSL_new(ssl_ctx_);
@@ -251,49 +306,121 @@ public:
     return cached_date_;
   }
   FileEntry *get_cached_fd(const std::string &path) {
-    auto i = fd_cache_.find(path);
-    if (i == std::end(fd_cache_)) {
+    auto range = fd_cache_.equal_range(path);
+    if (range.first == range.second) {
       return nullptr;
     }
-    auto &ent = (*i).second;
-    ++ent.usecount;
-    return &ent;
+
+    auto now = ev_now(loop_);
+
+    for (auto it = range.first; it != range.second;) {
+      auto &ent = (*it).second;
+      if (ent->stale) {
+        ++it;
+        continue;
+      }
+      if (need_validation_file_entry(ent.get(), now) &&
+          !validate_file_entry(ent.get(), now)) {
+        if (ent->usecount == 0) {
+          fd_cache_lru_.remove(ent.get());
+          close(ent->fd);
+          it = fd_cache_.erase(it);
+          continue;
+        }
+        ++it;
+        continue;
+      }
+
+      fd_cache_lru_.remove(ent.get());
+      fd_cache_lru_.append(ent.get());
+
+      ++ent->usecount;
+      return ent.get();
+    }
+    return nullptr;
   }
   FileEntry *cache_fd(const std::string &path, const FileEntry &ent) {
 #ifdef HAVE_STD_MAP_EMPLACE
-    auto rv = fd_cache_.emplace(path, ent);
+    auto rv = fd_cache_.emplace(path, make_unique<FileEntry>(ent));
 #else  // !HAVE_STD_MAP_EMPLACE
     // for gcc-4.7
-    auto rv = fd_cache_.insert(std::make_pair(path, ent));
+    auto rv =
+        fd_cache_.insert(std::make_pair(path, make_unique<FileEntry>(ent)));
 #endif // !HAVE_STD_MAP_EMPLACE
-    return &(*rv.first).second;
+    auto &res = (*rv).second;
+    res->it = rv;
+    fd_cache_lru_.append(res.get());
+
+    while (fd_cache_.size() > FILE_ENTRY_EVICT_THRES) {
+      auto ent = fd_cache_lru_.head;
+      if (ent->usecount) {
+        break;
+      }
+      fd_cache_lru_.remove(ent);
+      close(ent->fd);
+      fd_cache_.erase(ent->it);
+    }
+
+    return res.get();
   }
-  void release_fd(const std::string &path) {
-    auto i = fd_cache_.find(path);
-    if (i == std::end(fd_cache_)) {
+  void release_fd(FileEntry *target) {
+    --target->usecount;
+
+    if (target->usecount == 0 && target->stale) {
+      fd_cache_lru_.remove(target);
+      close(target->fd);
+      fd_cache_.erase(target->it);
       return;
     }
-    auto &ent = (*i).second;
-    if (--ent.usecount == 0) {
-      close(ent.fd);
-      fd_cache_.erase(i);
+
+    // We use timer to close file descriptor and delete the entry from
+    // cache.  The timer will be started when there is no handler.
+  }
+  void release_unused_fd() {
+    for (auto i = std::begin(fd_cache_); i != std::end(fd_cache_);) {
+      auto &ent = (*i).second;
+      if (ent->usecount != 0) {
+        ++i;
+        continue;
+      }
+
+      fd_cache_lru_.remove(ent.get());
+      close(ent->fd);
+      i = fd_cache_.erase(i);
     }
   }
   const HttpServer *get_server() const { return sv_; }
+  bool handlers_empty() const { return handlers_.empty(); }
 
 private:
   std::set<Http2Handler *> handlers_;
   // cache for file descriptors to read file.
-  std::map<std::string, FileEntry> fd_cache_;
+  std::multimap<std::string, std::unique_ptr<FileEntry>> fd_cache_;
+  DList<FileEntry> fd_cache_lru_;
   HttpServer *sv_;
   struct ev_loop *loop_;
   const Config *config_;
   SSL_CTX *ssl_ctx_;
   nghttp2_session_callbacks *callbacks_;
+  ev_timer release_fd_timer_;
   int64_t next_session_id_;
   ev_tstamp tstamp_cached_;
   std::string cached_date_;
 };
+
+namespace {
+void release_fd_cb(struct ev_loop *loop, ev_timer *w, int revents) {
+  auto sessions = static_cast<Sessions *>(w->data);
+
+  ev_timer_stop(loop, w);
+
+  if (!sessions->handlers_empty()) {
+    return;
+  }
+
+  sessions->release_unused_fd();
+}
+} // namespace
 
 Stream::Stream(Http2Handler *handler, int32_t stream_id)
     : handler(handler), file_ent(nullptr), body_length(0), body_offset(0),
@@ -312,7 +439,7 @@ Stream::Stream(Http2Handler *handler, int32_t stream_id)
 Stream::~Stream() {
   if (file_ent != nullptr) {
     auto sessions = handler->get_sessions();
-    sessions->release_fd(file_ent->path);
+    sessions->release_fd(file_ent);
   }
 
   auto loop = handler->get_loop();
@@ -739,6 +866,7 @@ int Http2Handler::verify_npn_result() {
 int Http2Handler::submit_file_response(const std::string &status,
                                        Stream *stream, time_t last_modified,
                                        off_t file_length,
+                                       const std::string *content_type,
                                        nghttp2_data_provider *data_prd) {
   std::string content_length = util::utos(file_length);
   std::string last_modified_str;
@@ -747,11 +875,15 @@ int Http2Handler::submit_file_response(const std::string &status,
                         http2::make_nv_ls("content-length", content_length),
                         http2::make_nv_ll("cache-control", "max-age=3600"),
                         http2::make_nv_ls("date", sessions_->get_cached_date()),
-                        http2::make_nv_ll("", ""), http2::make_nv_ll("", ""));
+                        http2::make_nv_ll("", ""), http2::make_nv_ll("", ""),
+                        http2::make_nv_ll("", ""));
   size_t nvlen = 5;
   if (last_modified != 0) {
     last_modified_str = util::http_date(last_modified);
     nva[nvlen++] = http2::make_nv_ls("last-modified", last_modified_str);
+  }
+  if (content_type) {
+    nva[nvlen++] = http2::make_nv_ls("content-type", *content_type);
   }
   auto &trailer = get_config()->trailer;
   std::string trailer_names;
@@ -973,8 +1105,9 @@ bool prepare_upload_temp_store(Stream *stream, Http2Handler *hd) {
   unlink(tempfn);
   // Ordinary request never start with "echo:".  The length is 0 for
   // now.  We will update it when we get whole request body.
-  stream->file_ent = sessions->cache_fd(std::string("echo:") + tempfn,
-                                        FileEntry(tempfn, 0, 0, fd));
+  auto path = std::string("echo:") + tempfn;
+  stream->file_ent =
+      sessions->cache_fd(path, FileEntry(path, 0, 0, fd, nullptr, 0, true));
   stream->echo_upload = true;
   return true;
 }
@@ -1010,8 +1143,13 @@ namespace {
 void prepare_response(Stream *stream, Http2Handler *hd,
                       bool allow_push = true) {
   int rv;
-  auto reqpath =
-      http2::get_header(stream->hdidx, http2::HD__PATH, stream->headers)->value;
+  auto pathhdr =
+      http2::get_header(stream->hdidx, http2::HD__PATH, stream->headers);
+  if (!pathhdr) {
+    prepare_status_response(stream, hd, 405);
+    return;
+  }
+  auto reqpath = pathhdr->value;
   auto ims =
       get_header(stream->hdidx, http2::HD_IF_MODIFIED_SINCE, stream->headers);
 
@@ -1039,7 +1177,7 @@ void prepare_response(Stream *stream, Http2Handler *hd,
   url = util::percentDecode(std::begin(url), std::end(url));
   if (!util::check_path(url)) {
     if (stream->file_ent) {
-      sessions->release_fd(stream->file_ent->path);
+      sessions->release_fd(stream->file_ent);
       stream->file_ent = nullptr;
     }
     prepare_status_response(stream, hd, 404);
@@ -1100,8 +1238,29 @@ void prepare_response(Stream *stream, Http2Handler *hd,
       return;
     }
 
+    const std::string *content_type = nullptr;
+
+    if (path[path.size() - 1] == '/') {
+      static const std::string TEXT_HTML = "text/html";
+      content_type = &TEXT_HTML;
+    } else {
+      auto ext = path.c_str() + path.size() - 1;
+      for (; path.c_str() < ext && *ext != '.' && *ext != '/'; --ext)
+        ;
+      if (*ext == '.') {
+        ++ext;
+
+        const auto &mime_types = hd->get_config()->mime_types;
+        auto content_type_itr = mime_types.find(ext);
+        if (content_type_itr != std::end(mime_types)) {
+          content_type = &(*content_type_itr).second;
+        }
+      }
+    }
+
     file_ent = sessions->cache_fd(
-        path, FileEntry(path, buf.st_size, buf.st_mtime, file));
+        path, FileEntry(path, buf.st_size, buf.st_mtime, file, content_type,
+                        ev_now(sessions->get_loop())));
   }
 
   stream->file_ent = file_ent;
@@ -1116,7 +1275,7 @@ void prepare_response(Stream *stream, Http2Handler *hd,
                                    stream->headers)->value;
   if (method == "HEAD") {
     hd->submit_file_response("200", stream, file_ent->mtime, file_ent->length,
-                             nullptr);
+                             file_ent->content_type, nullptr);
     return;
   }
 
@@ -1128,7 +1287,7 @@ void prepare_response(Stream *stream, Http2Handler *hd,
   data_prd.read_callback = file_read_callback;
 
   hd->submit_file_response("200", stream, file_ent->mtime, file_ent->length,
-                           &data_prd);
+                           file_ent->content_type, &data_prd);
 }
 } // namespace
 
@@ -1625,7 +1784,7 @@ FileEntry make_status_body(int status, uint16_t port) {
     assert(0);
   }
 
-  return FileEntry(util::utos(status), nwrite, 0, fd);
+  return FileEntry(util::utos(status), nwrite, 0, fd, nullptr, 0);
 }
 } // namespace
 
@@ -1635,6 +1794,7 @@ enum {
   IDX_301,
   IDX_400,
   IDX_404,
+  IDX_405,
 };
 
 HttpServer::HttpServer(const Config *config) : config_(config) {
@@ -1643,6 +1803,7 @@ HttpServer::HttpServer(const Config *config) : config_(config) {
       {"301", make_status_body(301, config_->port)},
       {"400", make_status_body(400, config_->port)},
       {"404", make_status_body(404, config_->port)},
+      {"405", make_status_body(405, config_->port)},
   };
 }
 
@@ -1895,6 +2056,8 @@ const StatusPage *HttpServer::get_status_page(int status) const {
     return &status_pages_[IDX_400];
   case 404:
     return &status_pages_[IDX_404];
+  case 405:
+    return &status_pages_[IDX_405];
   default:
     assert(0);
   }

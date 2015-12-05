@@ -166,8 +166,12 @@ struct Stats {
   // The number of bytes received on the "wire". If SSL/TLS is used,
   // this is the number of decrypted bytes the application received.
   int64_t bytes_total;
-  // The number of bytes received in HEADERS frame payload.
+  // The number of bytes received for header fields.  This is
+  // compressed version.
   int64_t bytes_head;
+  // The number of bytes received for header fields after they are
+  // decompressed.
+  int64_t bytes_head_decomp;
   // The number of bytes received in DATA frame.
   int64_t bytes_body;
   // The number of each HTTP status category, status[i] is status code
@@ -260,7 +264,8 @@ struct Client {
   void fail();
   void timeout();
   void restart_timeout();
-  void submit_request();
+  int submit_request();
+  void process_request_failure();
   void process_timedout_streams();
   void process_abandoned_streams();
   void report_progress();
@@ -290,6 +295,9 @@ struct Client {
   void on_header(int32_t stream_id, const uint8_t *name, size_t namelen,
                  const uint8_t *value, size_t valuelen);
   void on_status_code(int32_t stream_id, uint16_t status);
+  // |success| == true means that the request/response was exchanged
+  // |successfully, but it does not mean response carried successful
+  // |HTTP status code.
   void on_stream_close(int32_t stream_id, bool success, RequestStat *req_stat,
                        bool final = false);
 

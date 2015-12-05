@@ -188,6 +188,12 @@ OPTIONS
 
     Default: ``h2,h2-16,h2-14,spdy/3.1,spdy/3,spdy/2,http/1.1``
 
+.. option:: --h1
+
+    Short        hand         for        :option:`--npn-list`\=http/1.1
+    :option:`--no-tls-proto`\=http/1.1,    which   effectively    force
+    http/1.1 for both http and https URI.
+
 .. option:: -v, --verbose
 
     Output debug information.
@@ -239,13 +245,17 @@ status codes
 traffic
   total
     The number of bytes received from the server "on the wire".  If
-    requests were made via TLS, this value is the number of decrpyted
+    requests were made via TLS, this value is the number of decrypted
     bytes.
   headers
-    The number of response header bytes from the server without
-    decompression.  For HTTP/2, this is the sum of the payload of
-    HEADERS frame.  For SPDY, this is the sum of the payload of
-    SYN_REPLY frame.
+    The  number  of response  header  bytes  from the  server  without
+    decompression.  The  ``space savings`` shows efficiency  of header
+    compression.  Let ``decompressed(headers)`` to the number of bytes
+    used for header fields after decompression.  The ``space savings``
+    is calculated  by (1 - ``headers``  / ``decompressed(headers)``) *
+    100.  For HTTP/1.1, this is usually  0.00%, since it does not have
+    header compression.  For HTTP/2 and SPDY, it shows some insightful
+    numbers.
   data
     The number of response body bytes received from the server.
 

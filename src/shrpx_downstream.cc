@@ -150,6 +150,9 @@ Downstream::Downstream(Upstream *upstream, MemchunkPool *mcpool,
 
   http2::init_hdidx(request_hdidx_);
   http2::init_hdidx(response_hdidx_);
+
+  request_headers_.reserve(16);
+  response_headers_.reserve(32);
 }
 
 Downstream::~Downstream() {
@@ -277,8 +280,33 @@ void Downstream::assemble_request_cookie() {
   }
 }
 
-Headers Downstream::crumble_request_cookie() {
-  Headers cookie_hdrs;
+size_t Downstream::count_crumble_request_cookie() {
+  size_t n = 0;
+  for (auto &kv : request_headers_) {
+    if (kv.name.size() != 6 || kv.name[5] != 'e' ||
+        !util::streq_l("cooki", kv.name.c_str(), 5)) {
+      continue;
+    }
+    size_t last = kv.value.size();
+
+    for (size_t j = 0; j < last;) {
+      j = kv.value.find_first_not_of("\t ;", j);
+      if (j == std::string::npos) {
+        break;
+      }
+
+      j = kv.value.find(';', j);
+      if (j == std::string::npos) {
+        j = last;
+      }
+
+      ++n;
+    }
+  }
+  return n;
+}
+
+void Downstream::crumble_request_cookie(std::vector<nghttp2_nv> &nva) {
   for (auto &kv : request_headers_) {
     if (kv.name.size() != 6 || kv.name[5] != 'e' ||
         !util::streq_l("cooki", kv.name.c_str(), 5)) {
@@ -298,11 +326,13 @@ Headers Downstream::crumble_request_cookie() {
         j = last;
       }
 
-      cookie_hdrs.push_back(
-          Header("cookie", kv.value.substr(first, j - first), kv.no_index));
+      nva.push_back({(uint8_t *)"cookie", (uint8_t *)kv.value.c_str() + first,
+                     str_size("cookie"), j - first,
+                     (uint8_t)(NGHTTP2_NV_FLAG_NO_COPY_NAME |
+                               NGHTTP2_NV_FLAG_NO_COPY_VALUE |
+                               (kv.no_index ? NGHTTP2_NV_FLAG_NO_INDEX : 0))});
     }
   }
-  return cookie_hdrs;
 }
 
 const std::string &Downstream::get_assembled_request_cookie() const {
@@ -315,6 +345,18 @@ void add_header(bool &key_prev, size_t &sum, Headers &headers, std::string name,
   key_prev = true;
   sum += name.size() + value.size();
   headers.emplace_back(std::move(name), std::move(value));
+}
+} // namespace
+
+namespace {
+void add_header(size_t &sum, Headers &headers, const uint8_t *name,
+                size_t namelen, const uint8_t *value, size_t valuelen,
+                bool no_index, int16_t token) {
+  sum += namelen + valuelen;
+  headers.emplace_back(
+      std::string(reinterpret_cast<const char *>(name), namelen),
+      std::string(reinterpret_cast<const char *>(value), valuelen), no_index,
+      token);
 }
 } // namespace
 
@@ -418,9 +460,8 @@ void Downstream::add_request_header(const uint8_t *name, size_t namelen,
                                     const uint8_t *value, size_t valuelen,
                                     bool no_index, int16_t token) {
   http2::index_header(request_hdidx_, token, request_headers_.size());
-  request_headers_sum_ += namelen + valuelen;
-  http2::add_header(request_headers_, name, namelen, value, valuelen, no_index,
-                    token);
+  add_header(request_headers_sum_, request_headers_, name, namelen, value,
+             valuelen, no_index, token);
 }
 
 bool Downstream::get_request_header_key_prev() const {
@@ -452,9 +493,8 @@ void Downstream::add_request_trailer(const uint8_t *name, size_t namelen,
                                      bool no_index, int16_t token) {
   // we never index trailer part.  Header size limit should be applied
   // to all request header fields combined.
-  request_headers_sum_ += namelen + valuelen;
-  http2::add_header(request_trailers_, name, namelen, value, valuelen, no_index,
-                    -1);
+  add_header(request_headers_sum_, request_trailers_, name, namelen, value,
+             valuelen, no_index, -1);
 }
 
 const Headers &Downstream::get_request_trailers() const {
@@ -722,9 +762,8 @@ void Downstream::add_response_header(const uint8_t *name, size_t namelen,
                                      const uint8_t *value, size_t valuelen,
                                      bool no_index, int16_t token) {
   http2::index_header(response_hdidx_, token, response_headers_.size());
-  response_headers_sum_ += namelen + valuelen;
-  http2::add_header(response_headers_, name, namelen, value, valuelen, no_index,
-                    token);
+  add_header(response_headers_sum_, response_headers_, name, namelen, value,
+             valuelen, no_index, token);
 }
 
 bool Downstream::get_response_header_key_prev() const {
@@ -758,9 +797,8 @@ const Headers &Downstream::get_response_trailers() const {
 void Downstream::add_response_trailer(const uint8_t *name, size_t namelen,
                                       const uint8_t *value, size_t valuelen,
                                       bool no_index, int16_t token) {
-  response_headers_sum_ += namelen + valuelen;
-  http2::add_header(response_trailers_, name, namelen, value, valuelen,
-                    no_index, -1);
+  add_header(response_headers_sum_, response_trailers_, name, namelen, value,
+             valuelen, no_index, -1);
 }
 
 unsigned int Downstream::get_response_http_status() const {
