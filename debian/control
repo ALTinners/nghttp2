@@ -15,8 +15,8 @@ Build-Depends: debhelper (>= 9),
                libssl-dev (>= 1.0.1),
                libxml2-dev (>= 2.7.7),
                pkg-config,
-               python-sphinx,
                zlib1g-dev (>= 1.2.3)
+Build-Depends-Indep: python-sphinx
 Standards-Version: 3.9.6
 Homepage: http://tatsuhiro-t.github.io/nghttp2/
 Vcs-Git: git://anonscm.debian.org/collab-maint/nghttp2.git

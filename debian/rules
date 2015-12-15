@@ -10,16 +10,23 @@ override_dh_auto_configure:
 override_dh_installdocs:
 	dh_installdocs -A README.rst AUTHORS
 
-override_dh_auto_build:
+override_dh_auto_build-arch:
 	dh_auto_build
+
+override_dh_auto_build-indep:
 	$(MAKE) html
+
+# don't run tests when building indep packages
+override_dh_auto_test-indep:
 
 override_dh_auto_clean:
 	dh_auto_clean
 	rm -rf doc/manual/html doc/manual/doctrees doc/apiref.rst
 
-override_dh_auto_install: custom_install_manual custom_install_init_scripts custom_install_systemd
+override_dh_auto_install-arch: custom_install_init_scripts custom_install_systemd
 	dh_auto_install
+
+override_dh_auto_install-indep: custom_install_manual
 
 override_dh_installinit:
 	dh_installinit -pnghttp2-proxy --onlyscripts --name=nghttpx
