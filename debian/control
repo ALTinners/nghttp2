@@ -3,9 +3,10 @@ Maintainer: Dave Beckett <dajobe@debian.org>
 Uploaders: Tomasz Buchert <tomasz@debian.org>
 Section: httpd
 Priority: optional
-Build-Depends: debhelper (>= 9),
+Build-Depends: debhelper (>= 9.20141010),
                dh-autoreconf,
                dh-systemd (>= 1.5),
+               dpkg-dev (>= 1.17.14),
                libcunit1-dev (>= 2.1) <!nocheck>,
                libev-dev (>= 1:4.15),
                libevent-dev (>= 2.0.8),
