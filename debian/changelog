@@ -1,12 +1,11 @@
 nghttp2 (1.5.0-2) unstable; urgency=medium
 
   * Update Build-Depends for cross compilation (Closes: #807849)
-    + Mark libcunit1-dev with <!nocheck> profile
-    + Drop unused libpython-dev
-    + Annotate python-sphinx with :native
-    Patch provided by Helmut Grohne
+    Patch provided by Helmut Grohne (with some minor changes)
+  * Split build into -arch and -indep packages
+  * Fix two Lintian warnings
 
- -- Tomasz Buchert <tomasz@debian.org>  Tue, 15 Dec 2015 00:32:36 +0100
+ -- Tomasz Buchert <tomasz@debian.org>  Tue, 15 Dec 2015 11:39:36 +0100
 
 nghttp2 (1.5.0-1) unstable; urgency=medium
 
