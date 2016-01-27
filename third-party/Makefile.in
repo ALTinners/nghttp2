@@ -326,6 +326,7 @@ STRIP = @STRIP@
 TESTLDADD = @TESTLDADD@
 VERSION = @VERSION@
 WARNCFLAGS = @WARNCFLAGS@
+WARNCXXFLAGS = @WARNCXXFLAGS@
 XML2_CONFIG = @XML2_CONFIG@
 XML_CPPFLAGS = @XML_CPPFLAGS@
 XML_LIBS = @XML_LIBS@
@@ -393,7 +394,7 @@ target_vendor = @target_vendor@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-AM_CPPFLAGS = -Wall @DEFS@
+AM_CPPFLAGS = @DEFS@
 @ENABLE_THIRD_PARTY_TRUE@noinst_LTLIBRARIES = libhttp-parser.la \
 @ENABLE_THIRD_PARTY_TRUE@	$(am__append_1)
 @ENABLE_THIRD_PARTY_TRUE@libhttp_parser_la_SOURCES = \

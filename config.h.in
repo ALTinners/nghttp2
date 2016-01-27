@@ -30,6 +30,10 @@
 /* define if the compiler supports basic C++11 syntax */
 #undef HAVE_CXX11
 
+/* Define to 1 if you have the declaration of `initgroups', and to 0 if you
+   don't. */
+#undef HAVE_DECL_INITGROUPS
+
 /* Define to 1 if you have the declaration of `strerror_r', and to 0 if you
    don't. */
 #undef HAVE_DECL_STRERROR_R
@@ -51,9 +55,6 @@
 
 /* Define to 1 if you have the `getpwnam' function. */
 #undef HAVE_GETPWNAM
-
-/* Define to 1 if you have the `initgroups' function. */
-#undef HAVE_INITGROUPS
 
 /* Define to 1 if you have the <inttypes.h> header file. */
 #undef HAVE_INTTYPES_H

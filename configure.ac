@@ -25,7 +25,7 @@ dnl Do not change user variables!
 dnl http://www.gnu.org/software/automake/manual/html_node/Flag-Variables-Ordering.html
 
 AC_PREREQ(2.61)
-AC_INIT([nghttp2], [1.6.0], [t-tujikawa@users.sourceforge.net])
+AC_INIT([nghttp2], [1.7.0], [t-tujikawa@users.sourceforge.net])
 AC_CONFIG_AUX_DIR([.])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_HEADERS([config.h])
@@ -47,7 +47,7 @@ m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 dnl See versioning rule:
 dnl  http://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
 AC_SUBST(LT_CURRENT, 18)
-AC_SUBST(LT_REVISION, 0)
+AC_SUBST(LT_REVISION, 1)
 AC_SUBST(LT_AGE, 4)
 
 major=`echo $PACKAGE_VERSION |cut -d. -f1 | sed -e "s/[^0-9]//g"`
@@ -255,6 +255,11 @@ if test "x${have_zlib}" = "xno"; then
   AC_MSG_NOTICE($ZLIB_PKG_ERRORS)
 fi
 
+# dl: openssl requires libdl when it is statically linked.
+LIBS_OLD=$LIBS
+AC_SEARCH_LIBS([dlopen], [dl], [APPLDFLAGS="-ldl $APPLDFLAGS"], [], [])
+LIBS=$LIBS_OLD
+
 # cunit
 PKG_CHECK_MODULES([CUNIT], [cunit >= 2.1], [have_cunit=yes], [have_cunit=no])
 # If pkg-config does not find cunit, check it using AC_CHECK_LIB.  We
@@ -347,7 +352,6 @@ if test "x${request_jemalloc}" != "xno"; then
   LIBS_OLD=$LIBS
   AC_SEARCH_LIBS([malloc_stats_print], [jemalloc], [have_jemalloc=yes], [],
                  [$PTHREAD_LDFLAGS])
-  LIBS=$LIBS_OLD
 
   if test "x${have_jemalloc}" = "xyes"; then
     jemalloc_libs=${ac_cv_search_malloc_stats_print}
@@ -355,12 +359,13 @@ if test "x${request_jemalloc}" != "xno"; then
     # On Darwin, malloc_stats_print is je_malloc_stats_print
     AC_SEARCH_LIBS([je_malloc_stats_print], [jemalloc], [have_jemalloc=yes], [],
                    [$PTHREAD_LDFLAGS])
-    LIBS=$LIBS_OLD
 
     if test "x${have_jemalloc}" = "xyes"; then
       jemalloc_libs=${ac_cv_search_je_malloc_stats_print}
     fi
   fi
+
+  LIBS=$LIBS_OLD
 
   if test "x${have_jemalloc}" = "xyes" &&
      test "x${jemalloc_libs}" != "xnone required"; then
@@ -604,7 +609,6 @@ AC_CHECK_FUNCS([ \
   dup2 \
   getcwd \
   getpwnam \
-  initgroups \
   localtime_r \
   memchr \
   memmove \
@@ -626,6 +630,10 @@ AC_CHECK_FUNCS([ \
 AC_CHECK_FUNC([timerfd_create],
               [have_timerfd_create=yes], [have_timerfd_create=no])
 
+# For cygwin: we can link initgroups, so AC_CHECK_FUNCS succeeds, but
+# cygwin disables initgroups due to feature test macro magic with our
+# configuration.
+AC_CHECK_DECLS([initgroups], [], [], [[#include <grp.h>]])
 
 # Checks for epoll availability, primarily for examples/tiny-nghttpd
 AX_HAVE_EPOLL([have_epoll=yes], [have_epoll=no])
@@ -635,9 +643,13 @@ AM_CONDITIONAL([ENABLE_TINY_NGHTTPD],
                  test "x${have_timerfd_create}" = "xyes"])
 
 ac_save_CFLAGS=$CFLAGS
+ac_save_CXXFLAGS=$CXXFLAGS
+
 CFLAGS=
+CXXFLAGS=
 
 if test "x$werror" != "xno"; then
+    # For C compiler
     AX_CHECK_COMPILE_FLAG([-Wall], [CFLAGS="$CFLAGS -Wall"])
     AX_CHECK_COMPILE_FLAG([-Wextra], [CFLAGS="$CFLAGS -Wextra"])
     AX_CHECK_COMPILE_FLAG([-Werror], [CFLAGS="$CFLAGS -Werror"])
@@ -683,12 +695,23 @@ if test "x$werror" != "xno"; then
     AX_CHECK_COMPILE_FLAG([-Wredundant-decls], [CFLAGS="$CFLAGS -Wredundant-decls"])
     # Only work with Clang for the moment
     AX_CHECK_COMPILE_FLAG([-Wheader-guard], [CFLAGS="$CFLAGS -Wheader-guard"])
+
+    # For C++ compiler
+    AC_LANG_PUSH(C++)
+    AX_CHECK_COMPILE_FLAG([-Wall], [CXXFLAGS="$CXXFLAGS -Wall"])
+    AX_CHECK_COMPILE_FLAG([-Werror], [CXXFLAGS="$CXXFLAGS -Werror"])
+    AX_CHECK_COMPILE_FLAG([-Wformat-security], [CXXFLAGS="$CXXFLAGS -Wformat-security"])
+    AC_LANG_POP()
 fi
 
 WARNCFLAGS=$CFLAGS
+WARNCXXFLAGS=$CXXFLAGS
+
 CFLAGS=$ac_save_CFLAGS
+CXXFLAGS=$ac_save_CXXFLAGS
 
 AC_SUBST([WARNCFLAGS])
+AC_SUBST([WARNCXXFLAGS])
 
 EXTRACFLAG=
 AX_CHECK_COMPILE_FLAG([-fvisibility=hidden], [EXTRACFLAG="-fvisibility=hidden"])
