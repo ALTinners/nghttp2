@@ -102,8 +102,12 @@ void thread_join_async_cb(struct ev_loop *loop, ev_async *w, int revent) {
 }
 } // namespace
 
+namespace {
+std::random_device rd;
+} // namespace
+
 ConnectionHandler::ConnectionHandler(struct ev_loop *loop)
-    : single_worker_(nullptr), loop_(loop),
+    : gen_(rd()), single_worker_(nullptr), loop_(loop),
       tls_ticket_key_memcached_get_retry_count_(0),
       tls_ticket_key_memcached_fail_count_(0), worker_round_robin_cnt_(0),
       graceful_shutdown_(false) {
@@ -296,13 +300,13 @@ int ConnectionHandler::handle_connection(int fd, sockaddr *addr, int addrlen) {
   }
 
   if (get_config()->num_worker == 1) {
-
+    auto &upstreamconf = get_config()->conn.upstream;
     if (single_worker_->get_worker_stat()->num_connections >=
-        get_config()->worker_frontend_connections) {
+        upstreamconf.worker_connections) {
 
       if (LOG_ENABLED(INFO)) {
         LLOG(INFO, this) << "Too many connections >="
-                         << get_config()->worker_frontend_connections;
+                         << upstreamconf.worker_connections;
       }
 
       close(fd);
@@ -381,7 +385,7 @@ void ConnectionHandler::disable_acceptor() {
   }
 }
 
-void ConnectionHandler::disable_acceptor_temporary(ev_tstamp t) {
+void ConnectionHandler::sleep_acceptor(ev_tstamp t) {
   if (t == 0. || ev_is_active(&disable_acceptor_timer_)) {
     return;
   }
@@ -446,7 +450,7 @@ int ConnectionHandler::start_ocsp_update(const char *cert_file) {
   assert(!ev_is_active(&ocsp_.chldev));
 
   char *const argv[] = {
-      const_cast<char *>(get_config()->fetch_ocsp_response_file.get()),
+      const_cast<char *>(get_config()->tls.ocsp.fetch_ocsp_response_file.get()),
       const_cast<char *>(cert_file), nullptr};
   char *const envp[] = {nullptr};
 
@@ -630,7 +634,7 @@ void ConnectionHandler::proceed_next_cert_ocsp() {
     if (ocsp_.next == all_ssl_ctx_.size()) {
       ocsp_.next = 0;
       // We have updated all ocsp response, and schedule next update.
-      ev_timer_set(&ocsp_timer_, get_config()->ocsp_update_interval, 0.);
+      ev_timer_set(&ocsp_timer_, get_config()->tls.ocsp.update_interval, 0.);
       ev_timer_start(loop_, &ocsp_timer_);
       return;
     }
@@ -667,13 +671,9 @@ ConnectionHandler::get_tls_ticket_key_memcached_dispatcher() const {
   return tls_ticket_key_memcached_dispatcher_.get();
 }
 
-namespace {
-std::random_device rd;
-} // namespace
-
 void ConnectionHandler::on_tls_ticket_key_network_error(ev_timer *w) {
   if (++tls_ticket_key_memcached_get_retry_count_ >=
-      get_config()->tls_ticket_key_memcached_max_retry) {
+      get_config()->tls.ticket.memcached.max_retry) {
     LOG(WARN) << "Memcached: tls ticket get retry all failed "
               << tls_ticket_key_memcached_get_retry_count_ << " times.";
 
@@ -683,7 +683,7 @@ void ConnectionHandler::on_tls_ticket_key_network_error(ev_timer *w) {
 
   auto dist = std::uniform_int_distribution<int>(
       1, std::min(60, 1 << tls_ticket_key_memcached_get_retry_count_));
-  auto t = dist(rd);
+  auto t = dist(gen_);
 
   LOG(WARN)
       << "Memcached: tls ticket get failed due to network error, retrying in "
@@ -697,7 +697,7 @@ void ConnectionHandler::on_tls_ticket_key_not_found(ev_timer *w) {
   tls_ticket_key_memcached_get_retry_count_ = 0;
 
   if (++tls_ticket_key_memcached_fail_count_ >=
-      get_config()->tls_ticket_key_memcached_max_fail) {
+      get_config()->tls.ticket.memcached.max_fail) {
     LOG(WARN) << "Memcached: could not get tls ticket; disable tls ticket";
 
     tls_ticket_key_memcached_fail_count_ = 0;
@@ -742,7 +742,7 @@ void ConnectionHandler::on_tls_ticket_key_get_success(
 
 void ConnectionHandler::schedule_next_tls_ticket_key_memcached_get(
     ev_timer *w) {
-  ev_timer_set(w, get_config()->tls_ticket_key_memcached_interval, 0.);
+  ev_timer_set(w, get_config()->tls.ticket.memcached.interval, 0.);
   ev_timer_start(loop_, w);
 }
 

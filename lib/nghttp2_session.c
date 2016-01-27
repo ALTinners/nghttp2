@@ -130,7 +130,7 @@ static int session_detect_idle_stream(nghttp2_session *session,
                                       int32_t stream_id) {
   /* Assume that stream object with stream_id does not exist */
   if (nghttp2_session_is_my_stream_id(session, stream_id)) {
-    if (session->next_stream_id <= (uint32_t)stream_id) {
+    if (session->last_sent_stream_id < stream_id) {
       return 1;
     }
     return 0;
@@ -630,7 +630,7 @@ int nghttp2_session_reprioritize_stream(
   if (pri_spec->stream_id != 0) {
     dep_stream = nghttp2_session_get_stream_raw(session, pri_spec->stream_id);
 
-    if (session->server && !dep_stream &&
+    if (!dep_stream &&
         session_detect_idle_stream(session, pri_spec->stream_id)) {
 
       nghttp2_priority_spec_default_init(&pri_spec_default);
@@ -899,7 +899,7 @@ nghttp2_stream *nghttp2_session_open_stream(nghttp2_session *session,
   if (pri_spec->stream_id != 0) {
     dep_stream = nghttp2_session_get_stream_raw(session, pri_spec->stream_id);
 
-    if (session->server && !dep_stream &&
+    if (!dep_stream &&
         session_detect_idle_stream(session, pri_spec->stream_id)) {
       /* Depends on idle stream, which does not exist in memory.
          Assign default priority for it. */
@@ -964,7 +964,6 @@ nghttp2_stream *nghttp2_session_open_stream(nghttp2_session *session,
   case NGHTTP2_STREAM_IDLE:
     /* Idle stream does not count toward the concurrent streams limit.
        This is used as anchor node in dependency tree. */
-    assert(session->server);
     nghttp2_session_keep_idle_stream(session, stream);
     break;
   default:
@@ -1375,7 +1374,9 @@ static int session_predicate_request_headers_send(nghttp2_session *session,
  * NGHTTP2_ERR_INVALID_STREAM_STATE
  *     The state of the stream is not valid.
  * NGHTTP2_ERR_SESSION_CLOSING
- *   This session is closing.
+ *     This session is closing.
+ * NGHTTP2_ERR_PROTO
+ *     Client side attempted to send response.
  */
 static int session_predicate_response_headers_send(nghttp2_session *session,
                                                    nghttp2_stream *stream) {
@@ -1385,6 +1386,9 @@ static int session_predicate_response_headers_send(nghttp2_session *session,
     return rv;
   }
   assert(stream);
+  if (!session->server) {
+    return NGHTTP2_ERR_PROTO;
+  }
   if (nghttp2_session_is_my_stream_id(session, stream->stream_id)) {
     return NGHTTP2_ERR_INVALID_STREAM_ID;
   }
@@ -1418,6 +1422,8 @@ static int session_predicate_response_headers_send(nghttp2_session *session,
  * NGHTTP2_ERR_START_STREAM_NOT_ALLOWED
  *   New stream cannot be created because GOAWAY is already sent or
  *   received.
+ * NGHTTP2_ERR_PROTO
+ *   Client side attempted to send push response.
  */
 static int
 session_predicate_push_response_headers_send(nghttp2_session *session,
@@ -1429,6 +1435,9 @@ session_predicate_push_response_headers_send(nghttp2_session *session,
     return rv;
   }
   assert(stream);
+  if (!session->server) {
+    return NGHTTP2_ERR_PROTO;
+  }
   if (stream->state != NGHTTP2_STREAM_RESERVED) {
     return NGHTTP2_ERR_PROTO;
   }
@@ -1824,7 +1833,7 @@ static int session_prep_frame(nghttp2_session *session,
         }
 
         if (rv != 0) {
-          // If stream was alreay closed, nghttp2_session_get_stream()
+          // If stream was already closed, nghttp2_session_get_stream()
           // returns NULL, but item is still attached to the stream.
           // Search stream including closed again.
           stream = nghttp2_session_get_stream_raw(session, frame->hd.stream_id);
@@ -1861,6 +1870,11 @@ static int session_prep_frame(nghttp2_session *session,
 
       DEBUGF(fprintf(stderr, "send: HEADERS finally serialized in %zd bytes\n",
                      nghttp2_bufs_len(&session->aob.framebufs)));
+
+      if (frame->headers.cat == NGHTTP2_HCAT_REQUEST) {
+        assert(session->last_sent_stream_id < frame->hd.stream_id);
+        session->last_sent_stream_id = frame->hd.stream_id;
+      }
 
       break;
     }
@@ -1931,6 +1945,10 @@ static int session_prep_frame(nghttp2_session *session,
         return rv;
       }
 
+      assert(session->last_sent_stream_id + 2 <=
+             frame->push_promise.promised_stream_id);
+      session->last_sent_stream_id = frame->push_promise.promised_stream_id;
+
       break;
     }
     case NGHTTP2_PING:
@@ -1976,7 +1994,7 @@ static int session_prep_frame(nghttp2_session *session,
 
     rv = nghttp2_session_predicate_data_send(session, stream);
     if (rv != 0) {
-      // If stream was alreay closed, nghttp2_session_get_stream()
+      // If stream was already closed, nghttp2_session_get_stream()
       // returns NULL, but item is still attached to the stream.
       // Search stream including closed again.
       stream = nghttp2_session_get_stream_raw(session, frame->hd.stream_id);
@@ -2357,14 +2375,22 @@ static int session_after_frame_sent1(nghttp2_session *session) {
       stream = nghttp2_session_get_stream_raw(session, frame->hd.stream_id);
 
       if (!stream) {
-        break;
-      }
+        if (!session_detect_idle_stream(session, frame->hd.stream_id)) {
+          break;
+        }
 
-      rv = nghttp2_session_reprioritize_stream(session, stream,
-                                               &frame->priority.pri_spec);
-
-      if (nghttp2_is_fatal(rv)) {
-        return rv;
+        stream = nghttp2_session_open_stream(
+            session, frame->hd.stream_id, NGHTTP2_FLAG_NONE,
+            &frame->priority.pri_spec, NGHTTP2_STREAM_IDLE, NULL);
+        if (!stream) {
+          return NGHTTP2_ERR_NOMEM;
+        }
+      } else {
+        rv = nghttp2_session_reprioritize_stream(session, stream,
+                                                 &frame->priority.pri_spec);
+        if (nghttp2_is_fatal(rv)) {
+          return rv;
+        }
       }
 
       rv = nghttp2_session_adjust_idle_stream(session);
@@ -3707,13 +3733,14 @@ int nghttp2_session_on_rst_stream_received(nghttp2_session *session,
     return session_handle_invalid_connection(session, frame, NGHTTP2_ERR_PROTO,
                                              "RST_STREAM: stream_id == 0");
   }
+
+  if (session_detect_idle_stream(session, frame->hd.stream_id)) {
+    return session_handle_invalid_connection(session, frame, NGHTTP2_ERR_PROTO,
+                                             "RST_STREAM: stream in idle");
+  }
+
   stream = nghttp2_session_get_stream(session, frame->hd.stream_id);
-  if (!stream) {
-    if (session_detect_idle_stream(session, frame->hd.stream_id)) {
-      return session_handle_invalid_connection(
-          session, frame, NGHTTP2_ERR_PROTO, "RST_STREAM: stream in idle");
-    }
-  } else {
+  if (stream) {
     /* We may use stream->shut_flags for strict error checking. */
     nghttp2_stream_shutdown(stream, NGHTTP2_SHUT_RD);
   }
@@ -3752,8 +3779,8 @@ static int update_remote_initial_window_size_func(nghttp2_map_entry *entry,
   rv = nghttp2_stream_update_remote_initial_window_size(
       stream, arg->new_window_size, arg->old_window_size);
   if (rv != 0) {
-    return nghttp2_session_terminate_session(arg->session,
-                                             NGHTTP2_FLOW_CONTROL_ERROR);
+    return nghttp2_session_add_rst_stream(arg->session, stream->stream_id,
+                                          NGHTTP2_FLOW_CONTROL_ERROR);
   }
 
   /* If window size gets positive, push deferred DATA frame to
@@ -3804,8 +3831,8 @@ static int update_local_initial_window_size_func(nghttp2_map_entry *entry,
   rv = nghttp2_stream_update_local_initial_window_size(
       stream, arg->new_window_size, arg->old_window_size);
   if (rv != 0) {
-    return nghttp2_session_terminate_session(arg->session,
-                                             NGHTTP2_FLOW_CONTROL_ERROR);
+    return nghttp2_session_add_rst_stream(arg->session, stream->stream_id,
+                                          NGHTTP2_FLOW_CONTROL_ERROR);
   }
   if (!(arg->session->opt_flags & NGHTTP2_OPTMASK_NO_AUTO_WINDOW_UPDATE) &&
       stream->window_update_queued == 0 &&
@@ -4151,21 +4178,20 @@ int nghttp2_session_on_push_promise_received(nghttp2_session *session,
         session, frame, NGHTTP2_ERR_PROTO,
         "PUSH_PROMISE: invalid promised_stream_id");
   }
+
+  if (session_detect_idle_stream(session, frame->hd.stream_id)) {
+    return session_inflate_handle_invalid_connection(
+        session, frame, NGHTTP2_ERR_PROTO, "PUSH_PROMISE: stream in idle");
+  }
+
   session->last_recv_stream_id = frame->push_promise.promised_stream_id;
   stream = nghttp2_session_get_stream(session, frame->hd.stream_id);
   if (!stream || stream->state == NGHTTP2_STREAM_CLOSING ||
       !session->pending_enable_push ||
       session->num_incoming_reserved_streams >=
           session->max_incoming_reserved_streams) {
-    if (!stream) {
-      if (session_detect_idle_stream(session, frame->hd.stream_id)) {
-        return session_inflate_handle_invalid_connection(
-            session, frame, NGHTTP2_ERR_PROTO, "PUSH_PROMISE: stream in idle");
-      }
-
-      /* Currently, client does not retain closed stream, so we don't
-         check NGHTTP2_SHUT_RD condition here. */
-    }
+    /* Currently, client does not retain closed stream, so we don't
+       check NGHTTP2_SHUT_RD condition here. */
 
     rv = nghttp2_session_add_rst_stream(
         session, frame->push_promise.promised_stream_id, NGHTTP2_CANCEL);
@@ -4317,12 +4343,14 @@ static int session_on_stream_window_update_received(nghttp2_session *session,
                                                     nghttp2_frame *frame) {
   int rv;
   nghttp2_stream *stream;
+
+  if (session_detect_idle_stream(session, frame->hd.stream_id)) {
+    return session_handle_invalid_connection(session, frame, NGHTTP2_ERR_PROTO,
+                                             "WINDOW_UPDATE to idle stream");
+  }
+
   stream = nghttp2_session_get_stream(session, frame->hd.stream_id);
   if (!stream) {
-    if (session_detect_idle_stream(session, frame->hd.stream_id)) {
-      return session_handle_invalid_connection(
-          session, frame, NGHTTP2_ERR_PROTO, "WINDOW_UPDATE to idle stream");
-    }
     return 0;
   }
   if (state_reserved_remote(session, stream)) {
@@ -4620,14 +4648,15 @@ static int session_on_data_received_fail_fast(nghttp2_session *session) {
     failure_reason = "DATA: stream_id == 0";
     goto fail;
   }
+
+  if (session_detect_idle_stream(session, stream_id)) {
+    failure_reason = "DATA: stream in idle";
+    error_code = NGHTTP2_PROTOCOL_ERROR;
+    goto fail;
+  }
+
   stream = nghttp2_session_get_stream(session, stream_id);
   if (!stream) {
-    if (session_detect_idle_stream(session, stream_id)) {
-      failure_reason = "DATA: stream in idle";
-      error_code = NGHTTP2_PROTOCOL_ERROR;
-      goto fail;
-    }
-
     stream = nghttp2_session_get_stream_raw(session, stream_id);
     if (stream && (stream->shut_flags & NGHTTP2_SHUT_RD)) {
       failure_reason = "DATA: stream closed";
@@ -6540,6 +6569,7 @@ static int nghttp2_session_upgrade_internal(nghttp2_session *session,
     session->last_proc_stream_id = 1;
   } else {
     nghttp2_stream_shutdown(stream, NGHTTP2_SHUT_WR);
+    session->last_sent_stream_id = 1;
     session->next_stream_id += 2;
   }
   return 0;

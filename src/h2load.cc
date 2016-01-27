@@ -44,6 +44,7 @@
 #include <chrono>
 #include <thread>
 #include <future>
+#include <random>
 
 #ifdef HAVE_SPDYLAY
 #include <spdylay/spdylay.h>
@@ -85,7 +86,11 @@ Config::Config()
       port(0), default_port(0), verbose(false), timing_script(false) {}
 
 Config::~Config() {
-  freeaddrinfo(addrs);
+  if (base_uri_unix) {
+    delete addrs;
+  } else {
+    freeaddrinfo(addrs);
+  }
 
   if (data_fd != -1) {
     close(data_fd);
@@ -96,15 +101,53 @@ bool Config::is_rate_mode() const { return (this->rate != 0); }
 bool Config::has_base_uri() const { return (!this->base_uri.empty()); }
 Config config;
 
-RequestStat::RequestStat() : data_offset(0), completed(false) {}
+namespace {
+constexpr size_t MAX_SAMPLES = 1000000;
+} // namespace
 
 Stats::Stats(size_t req_todo, size_t nclients)
-    : req_todo(0), req_started(0), req_done(0), req_success(0),
+    : req_todo(req_todo), req_started(0), req_done(0), req_success(0),
       req_status_success(0), req_failed(0), req_error(0), req_timedout(0),
       bytes_total(0), bytes_head(0), bytes_head_decomp(0), bytes_body(0),
-      status(), req_stats(req_todo), client_stats(nclients) {}
+      status() {}
 
-Stream::Stream() : status_success(-1) {}
+Stream::Stream() : req_stat{}, status_success(-1) {}
+
+namespace {
+std::random_device rd;
+} // namespace
+
+namespace {
+std::mt19937 gen(rd());
+} // namespace
+
+namespace {
+void sampling_init(Sampling &smp, size_t total, size_t max_samples) {
+  smp.n = 0;
+
+  if (total <= max_samples) {
+    smp.interval = 0.;
+    smp.point = 0.;
+    return;
+  }
+
+  smp.interval = static_cast<double>(total) / max_samples;
+
+  std::uniform_real_distribution<> dis(0., smp.interval);
+
+  smp.point = dis(gen);
+}
+} // namespace
+
+namespace {
+bool sampling_should_pick(Sampling &smp) {
+  return smp.interval == 0. || smp.n == ceil(smp.point);
+}
+} // namespace
+
+namespace {
+void sampling_advance_point(Sampling &smp) { smp.point += smp.interval; }
+} // namespace
 
 namespace {
 void writecb(struct ev_loop *loop, ev_io *w, int revents) {
@@ -118,12 +161,14 @@ void writecb(struct ev_loop *loop, ev_io *w, int revents) {
     rv = client->connect();
     if (rv != 0) {
       client->fail();
+      delete client;
       return;
     }
     return;
   }
   if (rv != 0) {
     client->fail();
+    delete client;
   }
 }
 } // namespace
@@ -134,6 +179,7 @@ void readcb(struct ev_loop *loop, ev_io *w, int revents) {
   client->restart_timeout();
   if (client->do_read() != 0) {
     client->fail();
+    delete client;
     return;
   }
   writecb(loop, &client->wev, revents);
@@ -155,14 +201,18 @@ void rate_period_timeout_w_cb(struct ev_loop *loop, ev_timer *w, int revents) {
       ++req_todo;
       --worker->nreqs_rem;
     }
-    worker->clients.push_back(
-        make_unique<Client>(worker->next_client_id++, worker, req_todo));
-    auto &client = worker->clients.back();
+    auto client =
+        make_unique<Client>(worker->next_client_id++, worker, req_todo);
+
+    ++worker->nconns_made;
+
     if (client->connect() != 0) {
       std::cerr << "client could not connect to host" << std::endl;
       client->fail();
+    } else {
+      client.release();
     }
-    ++worker->nconns_made;
+    worker->report_rate_progress();
   }
   if (worker->nconns_made >= worker->nclients) {
     ev_timer_stop(worker->loop, w);
@@ -240,7 +290,7 @@ void client_request_timeout_cb(struct ev_loop *loop, ev_timer *w, int revents) {
 } // namespace
 
 Client::Client(uint32_t id, Worker *worker, size_t req_todo)
-    : worker(worker), ssl(nullptr), next_addr(config.addrs),
+    : cstat{}, worker(worker), ssl(nullptr), next_addr(config.addrs),
       current_addr(nullptr), reqidx(0), state(CLIENT_IDLE), req_todo(req_todo),
       req_started(0), req_done(0), id(id), fd(-1),
       new_connection_requested(false) {
@@ -268,6 +318,12 @@ Client::~Client() {
   if (ssl) {
     SSL_free(ssl);
   }
+
+  if (sampling_should_pick(worker->client_smp)) {
+    sampling_advance_point(worker->client_smp);
+    worker->sample_client_stat(&cstat);
+  }
+  ++worker->client_smp.n;
 }
 
 int Client::do_read() { return readfn(*this); }
@@ -420,9 +476,8 @@ void Client::disconnect() {
 }
 
 int Client::submit_request() {
-  auto req_stat = &worker->stats.req_stats[worker->stats.req_started++];
-
-  if (session->submit_request(req_stat) != 0) {
+  ++worker->stats.req_started;
+  if (session->submit_request() != 0) {
     return -1;
   }
 
@@ -472,15 +527,6 @@ void Client::process_request_failure() {
   if (req_done == req_todo) {
     terminate_session();
     return;
-  }
-}
-
-void Client::report_progress() {
-  if (!worker->config->is_rate_mode() && worker->id == 0 &&
-      worker->stats.req_done % worker->progress_interval == 0) {
-    std::cout << "progress: "
-              << worker->stats.req_done * 100 / worker->stats.req_todo
-              << "% done" << std::endl;
   }
 }
 
@@ -607,28 +653,40 @@ void Client::on_status_code(int32_t stream_id, uint16_t status) {
   }
 }
 
-void Client::on_stream_close(int32_t stream_id, bool success,
-                             RequestStat *req_stat, bool final) {
+void Client::on_stream_close(int32_t stream_id, bool success, bool final) {
+  auto req_stat = get_req_stat(stream_id);
+  if (!req_stat) {
+    return;
+  }
+
   req_stat->stream_close_time = std::chrono::steady_clock::now();
   if (success) {
     req_stat->completed = true;
     ++worker->stats.req_success;
-    auto &cstat = worker->stats.client_stats[id];
     ++cstat.req_success;
-  }
-  ++worker->stats.req_done;
-  ++req_done;
-  if (success) {
+
     if (streams[stream_id].status_success == 1) {
       ++worker->stats.req_status_success;
     } else {
       ++worker->stats.req_failed;
     }
+
+    if (sampling_should_pick(worker->request_times_smp)) {
+      sampling_advance_point(worker->request_times_smp);
+      worker->sample_req_stat(req_stat);
+    }
+
+    // Count up in successful cases only
+    ++worker->request_times_smp.n;
   } else {
     ++worker->stats.req_failed;
     ++worker->stats.req_error;
   }
-  report_progress();
+
+  ++worker->stats.req_done;
+  ++req_done;
+
+  worker->report_progress();
   streams.erase(stream_id);
   if (req_done == req_todo) {
     terminate_session();
@@ -643,6 +701,15 @@ void Client::on_stream_close(int32_t stream_id, bool success,
       return;
     }
   }
+}
+
+RequestStat *Client::get_req_stat(int32_t stream_id) {
+  auto it = streams.find(stream_id);
+  if (it == std::end(streams)) {
+    return nullptr;
+  }
+
+  return &(*it).second.req_stat;
 }
 
 int Client::connection_made() {
@@ -750,7 +817,6 @@ int Client::connection_made() {
   if (!config.timing_script) {
     auto nreq =
         std::min(req_todo - req_started, (size_t)config.max_concurrent_streams);
-
     for (; nreq > 0; --nreq) {
       if (submit_request() != 0) {
         process_request_failure();
@@ -985,17 +1051,14 @@ void Client::record_request_time(RequestStat *req_stat) {
 }
 
 void Client::record_connect_start_time() {
-  auto &cstat = worker->stats.client_stats[id];
   cstat.connect_start_time = std::chrono::steady_clock::now();
 }
 
 void Client::record_connect_time() {
-  auto &cstat = worker->stats.client_stats[id];
   cstat.connect_time = std::chrono::steady_clock::now();
 }
 
 void Client::record_ttfb() {
-  auto &cstat = worker->stats.client_stats[id];
   if (recorded(cstat.ttfb)) {
     return;
   }
@@ -1004,16 +1067,12 @@ void Client::record_ttfb() {
 }
 
 void Client::clear_connect_times() {
-  auto &cstat = worker->stats.client_stats[id];
-
   cstat.connect_start_time = std::chrono::steady_clock::time_point();
   cstat.connect_time = std::chrono::steady_clock::time_point();
   cstat.ttfb = std::chrono::steady_clock::time_point();
 }
 
 void Client::record_client_start_time() {
-  auto &cstat = worker->stats.client_stats[id];
-
   // Record start time only once at the very first connection is going
   // to be made.
   if (recorded(cstat.client_start_time)) {
@@ -1024,8 +1083,6 @@ void Client::record_client_start_time() {
 }
 
 void Client::record_client_end_time() {
-  auto &cstat = worker->stats.client_stats[id];
-
   // Unlike client_start_time, we overwrite client_end_time.  This
   // handles multiple connect/disconnect for HTTP/1.1 benchmark.
   cstat.client_end_time = std::chrono::steady_clock::now();
@@ -1036,20 +1093,36 @@ void Client::signal_write() { ev_io_start(worker->loop, &wev); }
 void Client::try_new_connection() { new_connection_requested = true; }
 
 Worker::Worker(uint32_t id, SSL_CTX *ssl_ctx, size_t req_todo, size_t nclients,
-               size_t rate, Config *config)
+               size_t rate, size_t max_samples, Config *config)
     : stats(req_todo, nclients), loop(ev_loop_new(0)), ssl_ctx(ssl_ctx),
       config(config), id(id), tls_info_report_done(false),
       app_info_report_done(false), nconns_made(0), nclients(nclients),
       nreqs_per_client(req_todo / nclients), nreqs_rem(req_todo % nclients),
-      rate(rate), next_client_id(0) {
-  stats.req_todo = req_todo;
-  progress_interval = std::max(static_cast<size_t>(1), req_todo / 10);
+      rate(rate), max_samples(max_samples), next_client_id(0) {
+  if (!config->is_rate_mode()) {
+    progress_interval = std::max(static_cast<size_t>(1), req_todo / 10);
+  } else {
+    progress_interval = std::max(static_cast<size_t>(1), nclients / 10);
+  }
 
   // create timer that will go off every rate_period
   ev_timer_init(&timeout_watcher, rate_period_timeout_w_cb, 0.,
                 config->rate_period);
   timeout_watcher.data = this;
 
+  stats.req_stats.reserve(std::min(req_todo, max_samples));
+  stats.client_stats.reserve(std::min(nclients, max_samples));
+
+  sampling_init(request_times_smp, req_todo, max_samples);
+  sampling_init(client_smp, nclients, max_samples);
+}
+
+Worker::~Worker() {
+  ev_timer_stop(loop, &timeout_watcher);
+  ev_loop_destroy(loop);
+}
+
+void Worker::run() {
   if (!config->is_rate_mode()) {
     for (size_t i = 0; i < nclients; ++i) {
       auto req_todo = nreqs_per_client;
@@ -1057,26 +1130,12 @@ Worker::Worker(uint32_t id, SSL_CTX *ssl_ctx, size_t req_todo, size_t nclients,
         ++req_todo;
         --nreqs_rem;
       }
-      clients.push_back(make_unique<Client>(next_client_id++, this, req_todo));
-    }
-  }
-}
-
-Worker::~Worker() {
-  ev_timer_stop(loop, &timeout_watcher);
-
-  // first clear clients so that io watchers are stopped before
-  // destructing ev_loop.
-  clients.clear();
-  ev_loop_destroy(loop);
-}
-
-void Worker::run() {
-  if (!config->is_rate_mode()) {
-    for (auto &client : clients) {
+      auto client = make_unique<Client>(next_client_id++, this, req_todo);
       if (client->connect() != 0) {
         std::cerr << "client could not connect to host" << std::endl;
         client->fail();
+      } else {
+        client.release();
       }
     }
   } else {
@@ -1086,6 +1145,34 @@ void Worker::run() {
     rate_period_timeout_w_cb(loop, &timeout_watcher, 0);
   }
   ev_run(loop, 0);
+}
+
+void Worker::sample_req_stat(RequestStat *req_stat) {
+  stats.req_stats.push_back(*req_stat);
+  assert(stats.req_stats.size() <= max_samples);
+}
+
+void Worker::sample_client_stat(ClientStat *cstat) {
+  stats.client_stats.push_back(*cstat);
+  assert(stats.client_stats.size() <= max_samples);
+}
+
+void Worker::report_progress() {
+  if (id != 0 || config->is_rate_mode() || stats.req_done % progress_interval) {
+    return;
+  }
+
+  std::cout << "progress: " << stats.req_done * 100 / stats.req_todo << "% done"
+            << std::endl;
+}
+
+void Worker::report_rate_progress() {
+  if (id != 0 || nconns_made % progress_interval) {
+    return;
+  }
+
+  std::cout << "progress: " << nconns_made * 100 / nclients
+            << "% of clients started" << std::endl;
 }
 
 namespace {
@@ -1106,12 +1193,15 @@ double within_sd(const std::vector<double> &samples, double mean, double sd) {
 namespace {
 // Computes statistics using |samples|. The min, max, mean, sd, and
 // percentage of number of samples within mean +/- sd are computed.
-SDStat compute_time_stat(const std::vector<double> &samples) {
+// If |sampling| is true, this computes sample variance.  Otherwise,
+// population variance.
+SDStat compute_time_stat(const std::vector<double> &samples,
+                         bool sampling = false) {
   if (samples.empty()) {
     return {0.0, 0.0, 0.0, 0.0, 0.0};
   }
   // standard deviation calculated using Rapid calculation method:
-  // http://en.wikipedia.org/wiki/Standard_deviation#Rapid_calculation_methods
+  // https://en.wikipedia.org/wiki/Standard_deviation#Rapid_calculation_methods
   double a = 0, q = 0;
   size_t n = 0;
   double sum = 0;
@@ -1130,7 +1220,7 @@ SDStat compute_time_stat(const std::vector<double> &samples) {
 
   assert(n > 0);
   res.mean = sum / n;
-  res.sd = sqrt(q / n);
+  res.sd = sqrt(q / (sampling && n > 1 ? n - 1 : n));
   res.within_sd = within_sd(samples, res.mean, res.sd);
 
   return res;
@@ -1140,18 +1230,29 @@ SDStat compute_time_stat(const std::vector<double> &samples) {
 namespace {
 SDStats
 process_time_stats(const std::vector<std::unique_ptr<Worker>> &workers) {
+  auto request_times_sampling = false;
+  auto client_times_sampling = false;
   size_t nrequest_times = 0;
+  size_t nclient_times = 0;
   for (const auto &w : workers) {
     nrequest_times += w->stats.req_stats.size();
+    if (w->request_times_smp.interval != 0.) {
+      request_times_sampling = true;
+    }
+
+    nclient_times += w->stats.client_stats.size();
+    if (w->client_smp.interval != 0.) {
+      client_times_sampling = true;
+    }
   }
 
   std::vector<double> request_times;
   request_times.reserve(nrequest_times);
 
   std::vector<double> connect_times, ttfb_times, rps_values;
-  connect_times.reserve(config.nclients);
-  ttfb_times.reserve(config.nclients);
-  rps_values.reserve(config.nclients);
+  connect_times.reserve(nclient_times);
+  ttfb_times.reserve(nclient_times);
+  rps_values.reserve(nclient_times);
 
   for (const auto &w : workers) {
     for (const auto &req_stat : w->stats.req_stats) {
@@ -1195,13 +1296,27 @@ process_time_stats(const std::vector<std::unique_ptr<Worker>> &workers) {
     }
   }
 
-  return {compute_time_stat(request_times), compute_time_stat(connect_times),
-          compute_time_stat(ttfb_times), compute_time_stat(rps_values)};
+  return {compute_time_stat(request_times, request_times_sampling),
+          compute_time_stat(connect_times, client_times_sampling),
+          compute_time_stat(ttfb_times, client_times_sampling),
+          compute_time_stat(rps_values, client_times_sampling)};
 }
 } // namespace
 
 namespace {
 void resolve_host() {
+  if (config.base_uri_unix) {
+    auto res = make_unique<addrinfo>();
+    res->ai_family = config.unix_addr.sun_family;
+    res->ai_socktype = SOCK_STREAM;
+    res->ai_addrlen = sizeof(config.unix_addr);
+    res->ai_addr =
+        static_cast<struct sockaddr *>(static_cast<void *>(&config.unix_addr));
+
+    config.addrs = res.release();
+    return;
+  };
+
   int rv;
   addrinfo hints{}, *res;
 
@@ -1256,6 +1371,10 @@ int client_select_next_proto_cb(SSL *ssl, unsigned char **out,
   // NOACK.  So there is no way to fallback.
   return SSL_TLSEXT_ERR_NOACK;
 }
+} // namespace
+
+namespace {
+constexpr char UNIX_PATH_PREFIX[] = "unix:";
 } // namespace
 
 namespace {
@@ -1374,7 +1493,7 @@ void read_script_from_file(std::istream &infile,
 namespace {
 std::unique_ptr<Worker> create_worker(uint32_t id, SSL_CTX *ssl_ctx,
                                       size_t nreqs, size_t nclients,
-                                      size_t rate) {
+                                      size_t rate, size_t max_samples) {
   std::stringstream rate_report;
   if (config.is_rate_mode() && nclients > rate) {
     rate_report << "Up to " << rate << " client(s) will be created every "
@@ -1385,7 +1504,8 @@ std::unique_ptr<Worker> create_worker(uint32_t id, SSL_CTX *ssl_ctx,
             << " total client(s). " << rate_report.str() << nreqs
             << " total requests" << std::endl;
 
-  return make_unique<Worker>(id, ssl_ctx, nreqs, nclients, rate, &config);
+  return make_unique<Worker>(id, ssl_ctx, nreqs, nclients, rate, max_samples,
+                             &config);
 }
 } // namespace
 
@@ -1448,10 +1568,11 @@ Options:
               URIs, if present,  are ignored.  Those in  the first URI
               are used solely.  Definition of a base URI overrides all
               scheme, host or port values.
-  -m, --max-concurrent-streams=(auto|<N>)
-              Max concurrent streams to  issue per session.  If "auto"
-              is given, the number of given URIs is used.
-              Default: auto
+  -m, --max-concurrent-streams=<N>
+              Max  concurrent  streams  to issue  per  session.   When
+              http/1.1  is used,  this  specifies the  number of  HTTP
+              pipelining requests in-flight.
+              Default: 1
   -w, --window-bits=<N>
               Sets the stream level initial window size to (2**<N>)-1.
               For SPDY, 2**<N> is used instead.
@@ -1535,11 +1656,16 @@ Options:
               contained  in  other  URIs,  if  present,  are  ignored.
               Definition of a  base URI overrides all  scheme, host or
               port values.
-  -B, --base-uri=<URI>
+  -B, --base-uri=(<URI>|unix:<PATH>)
               Specify URI from which the scheme, host and port will be
               used  for  all requests.   The  base  URI overrides  all
               values  defined either  at  the command  line or  inside
-              input files.
+              input files.  If argument  starts with "unix:", then the
+              rest  of the  argument will  be treated  as UNIX  domain
+              socket path.   The connection is made  through that path
+              instead of TCP.   In this case, scheme  is inferred from
+              the first  URI appeared  in the  command line  or inside
+              input files as usual.
   --npn-list=<LIST>
               Comma delimited list of  ALPN protocol identifier sorted
               in the  order of preference.  That  means most desirable
@@ -1626,11 +1752,7 @@ int main(int argc, char **argv) {
 #endif // NOTHREADS
       break;
     case 'm':
-      if (util::strieq("auto", optarg)) {
-        config.max_concurrent_streams = -1;
-      } else {
-        config.max_concurrent_streams = strtoul(optarg, nullptr, 10);
-      }
+      config.max_concurrent_streams = strtoul(optarg, nullptr, 10);
       break;
     case 'w':
     case 'W': {
@@ -1722,13 +1844,40 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
       }
       break;
-    case 'B':
+    case 'B': {
+      config.base_uri = "";
+      config.base_uri_unix = false;
+
+      if (util::istarts_with_l(optarg, UNIX_PATH_PREFIX)) {
+        // UNIX domain socket path
+        sockaddr_un un;
+
+        auto path = optarg + str_size(UNIX_PATH_PREFIX);
+        auto pathlen = strlen(optarg) - str_size(UNIX_PATH_PREFIX);
+
+        if (pathlen == 0 || pathlen + 1 > sizeof(un.sun_path)) {
+          std::cerr << "--base-uri: invalid UNIX domain socket path: " << optarg
+                    << std::endl;
+          exit(EXIT_FAILURE);
+        }
+
+        config.base_uri_unix = true;
+
+        auto &unix_addr = config.unix_addr;
+        std::copy_n(path, pathlen + 1, unix_addr.sun_path);
+        unix_addr.sun_family = AF_UNIX;
+
+        break;
+      }
+
       if (!parse_base_uri(optarg)) {
-        std::cerr << "invalid base URI: " << optarg << std::endl;
+        std::cerr << "--base-uri: invalid base URI: " << optarg << std::endl;
         exit(EXIT_FAILURE);
       }
+
       config.base_uri = optarg;
       break;
+    }
     case 'v':
       config.verbose = true;
       break;
@@ -1853,11 +2002,6 @@ int main(int argc, char **argv) {
     exit(EXIT_FAILURE);
   }
 
-  if (config.max_concurrent_streams == -1) {
-    config.max_concurrent_streams = reqlines.size();
-  }
-
-  assert(config.max_concurrent_streams > 0);
   if (config.nreqs == 0) {
     std::cerr << "-n: the number of requests must be strictly greater than 0."
               << std::endl;
@@ -2099,6 +2243,9 @@ int main(int argc, char **argv) {
   size_t rate_per_thread = config.rate / config.nthreads;
   ssize_t rate_per_thread_rem = config.rate % config.nthreads;
 
+  size_t max_samples_per_thread =
+      std::max(static_cast<size_t>(256), MAX_SAMPLES / config.nthreads);
+
   std::mutex mu;
   std::condition_variable cv;
   auto ready = false;
@@ -2131,7 +2278,8 @@ int main(int argc, char **argv) {
       }
     }
 
-    workers.push_back(create_worker(i, ssl_ctx, nreqs, nclients, rate));
+    workers.push_back(create_worker(i, ssl_ctx, nreqs, nclients, rate,
+                                    max_samples_per_thread));
     auto &worker = workers.back();
     futures.push_back(
         std::async(std::launch::async, [&worker, &mu, &cv, &ready]() {
@@ -2161,7 +2309,8 @@ int main(int argc, char **argv) {
   auto nreqs =
       config.timing_script ? config.nreqs * config.nclients : config.nreqs;
 
-  workers.push_back(create_worker(0, ssl_ctx, nreqs, nclients, rate));
+  workers.push_back(
+      create_worker(0, ssl_ctx, nreqs, nclients, rate, MAX_SAMPLES));
 
   auto start = std::chrono::steady_clock::now();
 
@@ -2224,7 +2373,7 @@ int main(int argc, char **argv) {
 
   std::cout << std::fixed << std::setprecision(2) << R"(
 finished in )" << util::format_duration(duration) << ", " << rps << " req/s, "
-            << util::utos_with_funit(bps) << R"(B/s
+            << util::utos_funit(bps) << R"(B/s
 requests: )" << stats.req_todo << " total, " << stats.req_started
             << " started, " << stats.req_done << " done, "
             << stats.req_status_success << " succeeded, " << stats.req_failed
@@ -2232,9 +2381,12 @@ requests: )" << stats.req_todo << " total, " << stats.req_started
             << stats.req_timedout << R"( timeout
 status codes: )" << stats.status[2] << " 2xx, " << stats.status[3] << " 3xx, "
             << stats.status[4] << " 4xx, " << stats.status[5] << R"( 5xx
-traffic: )" << stats.bytes_total << " bytes total, " << stats.bytes_head
-            << " bytes headers (space savings " << header_space_savings * 100
-            << "%), " << stats.bytes_body << R"( bytes data
+traffic: )" << util::utos_funit(stats.bytes_total) << "B (" << stats.bytes_total
+            << ") total, " << util::utos_funit(stats.bytes_head) << "B ("
+            << stats.bytes_head << ") headers (space savings "
+            << header_space_savings * 100 << "%), "
+            << util::utos_funit(stats.bytes_body) << "B (" << stats.bytes_body
+            << R"() data
                      min         max         mean         sd        +/- sd
 time for request: )" << std::setw(10) << util::format_duration(ts.request.min)
             << "  " << std::setw(10) << util::format_duration(ts.request.max)

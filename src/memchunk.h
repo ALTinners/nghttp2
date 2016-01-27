@@ -89,14 +89,16 @@ template <typename Memchunk> struct Memchunks {
   Memchunks(Pool<Memchunk> *pool)
       : pool(pool), head(nullptr), tail(nullptr), len(0) {}
   Memchunks(const Memchunks &) = delete;
-  Memchunks(Memchunks &&other)
-      : pool(other.pool), head(other.head), tail(other.tail), len(other.len) {
+  Memchunks(Memchunks &&other) noexcept : pool(other.pool),
+                                          head(other.head),
+                                          tail(other.tail),
+                                          len(other.len) {
     // keep other.pool
     other.head = other.tail = nullptr;
     other.len = 0;
   }
   Memchunks &operator=(const Memchunks &) = delete;
-  Memchunks &operator=(Memchunks &&other) {
+  Memchunks &operator=(Memchunks &&other) noexcept {
     if (this == &other) {
       return *this;
     }
@@ -165,6 +167,7 @@ template <typename Memchunk> struct Memchunks {
     return append(s, N - 1);
   }
   size_t append(const std::string &s) { return append(s.c_str(), s.size()); }
+  size_t append(const StringRef &s) { return append(s.c_str(), s.size()); }
   size_t remove(void *dest, size_t count) {
     if (!tail || count == 0) {
       return 0;
@@ -252,14 +255,17 @@ template <typename Memchunk> struct PeekMemchunks {
       : memchunks(pool), cur(nullptr), cur_pos(nullptr), cur_last(nullptr),
         len(0), peeking(true) {}
   PeekMemchunks(const PeekMemchunks &) = delete;
-  PeekMemchunks(PeekMemchunks &&other)
-      : memchunks(std::move(other.memchunks)), cur(other.cur),
-        cur_pos(other.cur_pos), cur_last(other.cur_last), len(other.len),
+  PeekMemchunks(PeekMemchunks &&other) noexcept
+      : memchunks(std::move(other.memchunks)),
+        cur(other.cur),
+        cur_pos(other.cur_pos),
+        cur_last(other.cur_last),
+        len(other.len),
         peeking(other.peeking) {
     other.reset();
   }
   PeekMemchunks &operator=(const PeekMemchunks &) = delete;
-  PeekMemchunks &operator=(PeekMemchunks &&other) {
+  PeekMemchunks &operator=(PeekMemchunks &&other) noexcept {
     if (this == &other) {
       return *this;
     }

@@ -34,6 +34,7 @@
 
 #include <memory>
 #include <vector>
+#include <random>
 #ifndef NOTHREADS
 #include <future>
 #endif // NOTHREADS
@@ -97,7 +98,7 @@ public:
   AcceptHandler *get_acceptor6() const;
   void enable_acceptor();
   void disable_acceptor();
-  void disable_acceptor_temporary(ev_tstamp t);
+  void sleep_acceptor(ev_tstamp t);
   void accept_pending_connection();
   void graceful_shutdown_worker();
   void set_graceful_shutdown(bool f);
@@ -139,6 +140,7 @@ private:
   // Stores all SSL_CTX objects.
   std::vector<SSL_CTX *> all_ssl_ctx_;
   OCSPUpdateContext ocsp_;
+  std::mt19937 gen_;
   // ev_loop for each worker
   std::vector<struct ev_loop *> worker_loops_;
   // Worker instances when multi threaded mode (-nN, N >= 2) is used.

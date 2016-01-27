@@ -45,6 +45,7 @@
 #include <memory>
 #include <chrono>
 #include <map>
+#include <random>
 
 #include "http-parser/http_parser.h"
 
@@ -211,6 +212,11 @@ bool istarts_with(InputIt a, size_t an, const char *b) {
 
 bool istarts_with(const char *a, const char *b);
 
+template <size_t N>
+bool istarts_with_l(const std::string &a, const char(&b)[N]) {
+  return istarts_with(std::begin(a), std::end(a), b, b + N - 1);
+}
+
 template <typename InputIterator1, typename InputIterator2>
 bool ends_with(InputIterator1 first1, InputIterator1 last1,
                InputIterator2 first2, InputIterator2 last2) {
@@ -237,6 +243,10 @@ inline bool iends_with(const std::string &a, const std::string &b) {
   return iends_with(std::begin(a), std::end(a), std::begin(b), std::end(b));
 }
 
+template <size_t N> bool iends_with_l(const std::string &a, const char(&b)[N]) {
+  return iends_with(std::begin(a), std::end(a), b, b + N - 1);
+}
+
 int strcompare(const char *a, const uint8_t *b, size_t n);
 
 template <typename InputIt> bool strieq(const char *a, InputIt b, size_t bn) {
@@ -255,6 +265,15 @@ bool strieq(InputIt1 a, size_t alen, InputIt2 b, size_t blen) {
     return false;
   }
   return std::equal(a, a + alen, b, CaseCmp());
+}
+
+template <typename InputIt1, typename InputIt2>
+bool strieq(InputIt1 first1, InputIt1 last1, InputIt2 first2, InputIt2 last2) {
+  if (std::distance(first1, last1) != std::distance(first2, last2)) {
+    return false;
+  }
+
+  return std::equal(first1, last1, first2, CaseCmp());
 }
 
 inline bool strieq(const std::string &a, const std::string &b) {
@@ -342,7 +361,7 @@ template <typename T> std::string utos(T n) {
   return res;
 }
 
-template <typename T> std::string utos_with_unit(T n) {
+template <typename T> std::string utos_unit(T n) {
   char u = 0;
   if (n >= (1 << 30)) {
     u = 'G';
@@ -360,8 +379,8 @@ template <typename T> std::string utos_with_unit(T n) {
   return utos(n) + u;
 }
 
-// Like utos_with_unit(), but 2 digits fraction part is followed.
-template <typename T> std::string utos_with_funit(T n) {
+// Like utos_unit(), but 2 digits fraction part is followed.
+template <typename T> std::string utos_funit(T n) {
   char u = 0;
   int b = 0;
   if (n >= (1 << 30)) {
@@ -621,6 +640,18 @@ uint64_t get_uint64(const uint8_t *data);
 // or -1.
 int read_mime_types(std::map<std::string, std::string> &res,
                     const char *filename);
+
+template <typename Generator>
+std::string random_alpha_digit(Generator &gen, size_t len) {
+  std::string res;
+  res.reserve(len);
+  std::uniform_int_distribution<> dis(0, 26 * 2 + 10 - 1);
+  for (; len > 0; --len) {
+    res += "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"[dis(
+        gen)];
+  }
+  return res;
+}
 
 } // namespace util
 

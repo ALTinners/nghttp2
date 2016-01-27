@@ -129,13 +129,13 @@ Types (structs, unions and typedefs)
     :macro:`NGHTTP2_FLAG_END_STREAM` set, and
     :macro:`NGHTTP2_DATA_FLAG_EOF` flag is set to *\*data_flags*, DATA
     frame will have END_STREAM flag set.  Usually, this is expected
-    behaviour and all are fine.  One exception is send trailer header
-    fields.  You cannot send trailers after sending frame with
-    END_STREAM set.  To avoid this problem, one can set
+    behaviour and all are fine.  One exception is send trailer fields.
+    You cannot send trailer fields after sending frame with END_STREAM
+    set.  To avoid this problem, one can set
     :macro:`NGHTTP2_DATA_FLAG_NO_END_STREAM` along with
     :macro:`NGHTTP2_DATA_FLAG_EOF` to signal the library not to set
     END_STREAM in DATA frame.  Then application can use
-    `nghttp2_submit_trailer()` to send trailers.
+    `nghttp2_submit_trailer()` to send trailer fields.
     `nghttp2_submit_trailer()` can be called inside this callback.
     
     If the application wants to postpone DATA frames (e.g.,
@@ -669,7 +669,7 @@ Types (structs, unions and typedefs)
     NGHTTP2_HCAT_REQUEST``.  If *session* is configured as server side,
     ``frame->headers.cat`` is either ``NGHTTP2_HCAT_REQUEST``
     containing request headers or ``NGHTTP2_HCAT_HEADERS`` containing
-    trailer headers and never get PUSH_PROMISE in this callback.
+    trailer fields and never get PUSH_PROMISE in this callback.
     
     For the client applications, ``frame->hd.type`` is either
     ``NGHTTP2_HEADERS`` or ``NGHTTP2_PUSH_PROMISE``.  In case of
@@ -681,7 +681,7 @@ Types (structs, unions and typedefs)
     non-final response code and finally client gets exactly one HEADERS
     frame with ``frame->headers.cat == NGHTTP2_HCAT_HEADERS``
     containing final response headers (non-1xx status code).  The
-    trailer headers also has ``frame->headers.cat ==
+    trailer fields also has ``frame->headers.cat ==
     NGHTTP2_HCAT_HEADERS`` which does not contain any status code.
     
     Returning :macro:`NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE` will close

@@ -134,15 +134,29 @@ public:
 
   void setup_upstream_io_callback();
 
+  // Returns string suitable for use in "by" parameter of Forwarded
+  // header field.
+  const std::string &get_forwarded_by();
+  // Returns string suitable for use in "for" parameter of Forwarded
+  // header field.
+  const std::string &get_forwarded_for() const;
+
 private:
   Connection conn_;
   ev_timer reneg_shutdown_timer_;
   std::unique_ptr<Upstream> upstream_;
   std::unique_ptr<std::vector<ssize_t>> pinned_http2sessions_;
+  // IP address of client.  If UNIX domain socket is used, this is
+  // "localhost".
   std::string ipaddr_;
   std::string port_;
   // The ALPN identifier negotiated for this connection.
   std::string alpn_;
+  // Host and port of this socket (e.g., "[::1]:8443")
+  std::string local_hostport_;
+  // The obfuscated version of client address used in "for" parameter
+  // of Forwarded header field.
+  std::string forwarded_for_obfuscated_;
   std::function<int(ClientHandler &)> read_, write_;
   std::function<int(ClientHandler &)> on_read_, on_write_;
   Worker *worker_;
