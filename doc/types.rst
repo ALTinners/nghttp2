@@ -773,6 +773,14 @@ Types (structs, unions and typedefs)
     
     To set this callback to :type:`nghttp2_session_callbacks`, use
     `nghttp2_session_callbacks_set_on_header_callback()`.
+    
+    .. warning::
+    
+      Application should properly limit the total buffer size to store
+      incoming header fields.  Without it, peer may send large number
+      of header fields or large header fields to cause out of memory in
+      local endpoint.  Due to how HPACK works, peer can do this
+      effectively without using much memory on their own.
 .. type:: typedef ssize_t (*nghttp2_select_padding_callback)(nghttp2_session *session, const nghttp2_frame *frame, size_t max_payloadlen, void *user_data)
 
     

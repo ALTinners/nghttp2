@@ -319,9 +319,7 @@
    #define below would cause a syntax error. */
 #undef _UINT8_T
 
-/* Hint to the compiler that a function parameters is not use
-   AC_DEFINE([NGHTTP2_NORETURN], , [Hint to the compiler that a function never
-   return]) d */
+/* Hint to the compiler that a function parameter is not used */
 #undef _U_
 
 /* Define to `int' if <sys/types.h> doesn't define. */
