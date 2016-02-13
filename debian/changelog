@@ -1,3 +1,9 @@
+nghttp2 (1.7.1-1) unstable; urgency=high
+
+  * Imported upstream version 1.7.1 (fixes CVE-2016-1544)
+
+ -- Tomasz Buchert <tomasz@debian.org>  Sat, 13 Feb 2016 10:17:19 +0100
+
 nghttp2 (1.7.0-1) unstable; urgency=medium
 
   * Imported upstream version 1.7.0
