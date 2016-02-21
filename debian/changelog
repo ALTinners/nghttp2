@@ -1,3 +1,9 @@
+nghttp2 (1.7.1-2) unstable; urgency=medium
+
+  * Add missing script for OCSP stapling (Closes: #815226)
+
+ -- Tomasz Buchert <tomasz@debian.org>  Sun, 21 Feb 2016 21:22:54 +0100
+
 nghttp2 (1.7.1-1) unstable; urgency=high
 
   * Imported upstream version 1.7.1 (fixes CVE-2016-1544)
