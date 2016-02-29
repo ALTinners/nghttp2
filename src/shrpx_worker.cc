@@ -67,15 +67,20 @@ std::random_device rd;
 } // namespace
 
 Worker::Worker(struct ev_loop *loop, SSL_CTX *sv_ssl_ctx, SSL_CTX *cl_ssl_ctx,
+               SSL_CTX *tls_session_cache_memcached_ssl_ctx,
                ssl::CertLookupTree *cert_tree,
                const std::shared_ptr<TicketKeys> &ticket_keys)
     : randgen_(rd()),
       dconn_pool_(get_config()->conn.downstream.addr_groups.size()),
       worker_stat_(get_config()->conn.downstream.addr_groups.size()),
-      dgrps_(get_config()->conn.downstream.addr_groups.size()), loop_(loop),
-      sv_ssl_ctx_(sv_ssl_ctx), cl_ssl_ctx_(cl_ssl_ctx), cert_tree_(cert_tree),
+      dgrps_(get_config()->conn.downstream.addr_groups.size()),
+      loop_(loop),
+      sv_ssl_ctx_(sv_ssl_ctx),
+      cl_ssl_ctx_(cl_ssl_ctx),
+      cert_tree_(cert_tree),
       ticket_keys_(ticket_keys),
-      connect_blocker_(make_unique<ConnectBlocker>(loop_)),
+      downstream_addr_groups_(get_config()->conn.downstream.addr_groups),
+      connect_blocker_(make_unique<ConnectBlocker>(randgen_, loop_)),
       graceful_shutdown_(false) {
   ev_async_init(&w_, eventcb);
   w_.data = this;
@@ -86,9 +91,11 @@ Worker::Worker(struct ev_loop *loop, SSL_CTX *sv_ssl_ctx, SSL_CTX *cl_ssl_ctx,
 
   auto &session_cacheconf = get_config()->tls.session_cache;
 
-  if (session_cacheconf.memcached.host) {
+  if (!session_cacheconf.memcached.host.empty()) {
     session_cache_memcached_dispatcher_ = make_unique<MemcachedDispatcher>(
-        &session_cacheconf.memcached.addr, loop);
+        &session_cacheconf.memcached.addr, loop,
+        tls_session_cache_memcached_ssl_ctx,
+        StringRef{session_cacheconf.memcached.host}, &mcpool_);
   }
 
   auto &downstreamconf = get_config()->conn.downstream;
@@ -102,10 +109,16 @@ Worker::Worker(struct ev_loop *loop, SSL_CTX *sv_ssl_ctx, SSL_CTX *cl_ssl_ctx,
         m = downstreamconf.addr_groups[group].addrs.size();
       }
       for (size_t idx = 0; idx < m; ++idx) {
-        dgrp.http2sessions.push_back(make_unique<Http2Session>(
-            loop_, cl_ssl_ctx, connect_blocker_.get(), this, group, idx));
+        dgrp.http2sessions.push_back(
+            make_unique<Http2Session>(loop_, cl_ssl_ctx, this, group, idx));
       }
       ++group;
+    }
+  }
+
+  for (auto &group : downstream_addr_groups_) {
+    for (auto &addr : group.addrs) {
+      addr.connect_blocker = new ConnectBlocker(randgen_, loop_);
     }
   }
 }
@@ -113,6 +126,12 @@ Worker::Worker(struct ev_loop *loop, SSL_CTX *sv_ssl_ctx, SSL_CTX *cl_ssl_ctx,
 Worker::~Worker() {
   ev_async_stop(loop_, &w_);
   ev_timer_stop(loop_, &mcpool_clear_timer_);
+
+  for (auto &group : downstream_addr_groups_) {
+    for (auto &addr : group.addrs) {
+      delete addr.connect_blocker;
+    }
+  }
 }
 
 void Worker::schedule_clear_mcpool() {
@@ -176,8 +195,9 @@ void Worker::process_events() {
         break;
       }
 
-      auto client_handler = ssl::accept_connection(
-          this, wev.client_fd, &wev.client_addr.sa, wev.client_addrlen);
+      auto client_handler =
+          ssl::accept_connection(this, wev.client_fd, &wev.client_addr.sa,
+                                 wev.client_addrlen, wev.faddr);
       if (!client_handler) {
         if (LOG_ENABLED(INFO)) {
           WLOG(ERROR, this) << "ClientHandler creation failed";
@@ -251,10 +271,6 @@ Http2Session *Worker::next_http2_session(size_t group) {
   return res;
 }
 
-ConnectBlocker *Worker::get_connect_blocker() const {
-  return connect_blocker_.get();
-}
-
 struct ev_loop *Worker::get_loop() const {
   return loop_;
 }
@@ -282,8 +298,7 @@ std::mt19937 &Worker::get_randgen() { return randgen_; }
 
 #ifdef HAVE_MRUBY
 int Worker::create_mruby_context() {
-  auto mruby_file = get_config()->mruby_file.get();
-  mruby_ctx_ = mruby::create_mruby_context(mruby_file);
+  mruby_ctx_ = mruby::create_mruby_context(StringRef{get_config()->mruby_file});
   if (!mruby_ctx_) {
     return -1;
   }
@@ -295,5 +310,13 @@ mruby::MRubyContext *Worker::get_mruby_context() const {
   return mruby_ctx_.get();
 }
 #endif // HAVE_MRUBY
+
+std::vector<DownstreamAddrGroup> &Worker::get_downstream_addr_groups() {
+  return downstream_addr_groups_;
+}
+
+ConnectBlocker *Worker::get_connect_blocker() const {
+  return connect_blocker_.get();
+}
 
 } // namespace shrpx

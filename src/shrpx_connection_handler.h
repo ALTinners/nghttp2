@@ -58,6 +58,7 @@ class Worker;
 struct WorkerStat;
 struct TicketKeys;
 class MemcachedDispatcher;
+struct UpstreamAddr;
 
 struct OCSPUpdateContext {
   // ocsp response buffer
@@ -79,7 +80,8 @@ class ConnectionHandler {
 public:
   ConnectionHandler(struct ev_loop *loop);
   ~ConnectionHandler();
-  int handle_connection(int fd, sockaddr *addr, int addrlen);
+  int handle_connection(int fd, sockaddr *addr, int addrlen,
+                        const UpstreamAddr *faddr);
   // Creates Worker object for single threaded configuration.
   int create_single_worker();
   // Creates |num| Worker objects for multi threaded configuration.
@@ -92,10 +94,7 @@ public:
   const std::shared_ptr<TicketKeys> &get_ticket_keys() const;
   struct ev_loop *get_loop() const;
   Worker *get_single_worker() const;
-  void set_acceptor(std::unique_ptr<AcceptHandler> h);
-  AcceptHandler *get_acceptor() const;
-  void set_acceptor6(std::unique_ptr<AcceptHandler> h);
-  AcceptHandler *get_acceptor6() const;
+  void add_acceptor(std::unique_ptr<AcceptHandler> h);
   void enable_acceptor();
   void disable_acceptor();
   void sleep_acceptor(ev_tstamp t);
@@ -130,6 +129,7 @@ public:
   on_tls_ticket_key_get_success(const std::shared_ptr<TicketKeys> &ticket_keys,
                                 ev_timer *w);
   void schedule_next_tls_ticket_key_memcached_get(ev_timer *w);
+  SSL_CTX *create_tls_ticket_key_memcached_ssl_ctx();
 
 #ifdef HAVE_NEVERBLEED
   void set_neverbleed(std::unique_ptr<neverbleed_t> nb);
@@ -154,10 +154,7 @@ private:
   // Worker object.
   std::shared_ptr<TicketKeys> ticket_keys_;
   struct ev_loop *loop_;
-  // acceptor for IPv4 address or UNIX domain socket.
-  std::unique_ptr<AcceptHandler> acceptor_;
-  // acceptor for IPv6 address
-  std::unique_ptr<AcceptHandler> acceptor6_;
+  std::vector<std::unique_ptr<AcceptHandler>> acceptors_;
 #ifdef HAVE_NEVERBLEED
   std::unique_ptr<neverbleed_t> nb_;
 #endif // HAVE_NEVERBLEED

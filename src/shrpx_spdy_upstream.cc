@@ -50,18 +50,22 @@ using namespace nghttp2;
 namespace shrpx {
 
 namespace {
+constexpr size_t MAX_BUFFER_SIZE = 32_k;
+} // namespace
+
+namespace {
 ssize_t send_callback(spdylay_session *session, const uint8_t *data, size_t len,
                       int flags, void *user_data) {
   auto upstream = static_cast<SpdyUpstream *>(user_data);
   auto wb = upstream->get_response_buf();
 
-  if (wb->wleft() == 0) {
+  if (wb->rleft() >= MAX_BUFFER_SIZE) {
     return SPDYLAY_ERR_WOULDBLOCK;
   }
 
-  auto nread = wb->write(data, len);
+  wb->append(data, len);
 
-  return nread;
+  return len;
 }
 } // namespace
 
@@ -177,17 +181,20 @@ void on_ctrl_recv_callback(spdylay_session *session, spdylay_frame_type type,
 
     // spdy does not define usage of trailer fields, and we ignores
     // them.
-    if (header_buffer > httpconf.header_field_buffer ||
-        num_headers > httpconf.max_header_fields) {
+    if (header_buffer > httpconf.request_header_field_buffer ||
+        num_headers > httpconf.max_request_header_fields) {
       upstream->rst_stream(downstream, SPDYLAY_INTERNAL_ERROR);
       return;
     }
 
     for (size_t i = 0; nv[i]; i += 2) {
-      req.fs.add_header(nv[i], nv[i + 1]);
+      auto name = StringRef{nv[i]};
+      auto value = StringRef{nv[i + 1]};
+      auto token = http2::lookup_token(name.byte(), name.size());
+      req.fs.add_header_token(name, value, false, token);
     }
 
-    if (req.fs.index_headers() != 0) {
+    if (req.fs.parse_content_length() != 0) {
       if (upstream->error_reply(downstream, 400) != 0) {
         ULOG(FATAL, upstream) << "error_reply failed";
       }
@@ -492,14 +499,16 @@ uint32_t infer_upstream_rst_stream_status_code(uint32_t downstream_error_code) {
 } // namespace
 
 SpdyUpstream::SpdyUpstream(uint16_t version, ClientHandler *handler)
-    : downstream_queue_(
+    : wb_(handler->get_worker()->get_mcpool()),
+      downstream_queue_(
           get_config()->http2_proxy
               ? get_config()->conn.downstream.connections_per_host
               : get_config()->conn.downstream.proto == PROTO_HTTP
                     ? get_config()->conn.downstream.connections_per_frontend
                     : 0,
           !get_config()->http2_proxy),
-      handler_(handler), session_(nullptr) {
+      handler_(handler),
+      session_(nullptr) {
   spdylay_session_callbacks callbacks{};
   callbacks.send_callback = send_callback;
   callbacks.recv_callback = recv_callback;
@@ -586,8 +595,8 @@ int SpdyUpstream::on_read() {
 int SpdyUpstream::on_write() {
   int rv = 0;
 
-  if (wb_.rleft() == 0) {
-    wb_.reset();
+  if (wb_.rleft() >= MAX_BUFFER_SIZE) {
+    return 0;
   }
 
   rv = spdylay_session_send(session_);
@@ -844,9 +853,12 @@ int SpdyUpstream::send_reply(Downstream *downstream, const uint8_t *body,
 
   const auto &headers = resp.fs.headers();
 
+  auto &httpconf = get_config()->http;
+
   auto nva = std::vector<const char *>();
-  // 3 for :status, :version and server
-  nva.reserve(3 + headers.size());
+  // 6 for :status, :version and server.  1 for last terminal nullptr.
+  nva.reserve(6 + headers.size() * 2 +
+              httpconf.add_response_headers.size() * 2 + 1);
 
   nva.push_back(":status");
   nva.push_back(status_string.c_str());
@@ -871,6 +883,11 @@ int SpdyUpstream::send_reply(Downstream *downstream, const uint8_t *body,
   if (!resp.fs.header(http2::HD_SERVER)) {
     nva.push_back("server");
     nva.push_back(get_config()->http.server_name.c_str());
+  }
+
+  for (auto &p : httpconf.add_response_headers) {
+    nva.push_back(p.name.c_str());
+    nva.push_back(p.value.c_str());
   }
 
   nva.push_back(nullptr);
@@ -1058,8 +1075,8 @@ int SpdyUpstream::on_downstream_header_complete(Downstream *downstream) {
   }
 
   for (auto &p : httpconf.add_response_headers) {
-    nv[hdidx++] = p.first.c_str();
-    nv[hdidx++] = p.second.c_str();
+    nv[hdidx++] = p.name.c_str();
+    nv[hdidx++] = p.value.c_str();
   }
 
   nv[hdidx++] = 0;
@@ -1248,17 +1265,14 @@ int SpdyUpstream::response_riovec(struct iovec *iov, int iovcnt) const {
     return 0;
   }
 
-  iov->iov_base = wb_.pos;
-  iov->iov_len = wb_.rleft();
-
-  return 1;
+  return wb_.riovec(iov, iovcnt);
 }
 
 void SpdyUpstream::response_drain(size_t n) { wb_.drain(n); }
 
 bool SpdyUpstream::response_empty() const { return wb_.rleft() == 0; }
 
-SpdyUpstream::WriteBuffer *SpdyUpstream::get_response_buf() { return &wb_; }
+DefaultMemchunks *SpdyUpstream::get_response_buf() { return &wb_; }
 
 Downstream *
 SpdyUpstream::on_downstream_push_promise(Downstream *downstream,

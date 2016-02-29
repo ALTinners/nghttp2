@@ -25,7 +25,7 @@ dnl Do not change user variables!
 dnl http://www.gnu.org/software/automake/manual/html_node/Flag-Variables-Ordering.html
 
 AC_PREREQ(2.61)
-AC_INIT([nghttp2], [1.7.1], [t-tujikawa@users.sourceforge.net])
+AC_INIT([nghttp2], [1.8.0], [t-tujikawa@users.sourceforge.net])
 AC_CONFIG_AUX_DIR([.])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_HEADERS([config.h])
@@ -46,9 +46,9 @@ m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
 dnl See versioning rule:
 dnl  http://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
-AC_SUBST(LT_CURRENT, 18)
-AC_SUBST(LT_REVISION, 1)
-AC_SUBST(LT_AGE, 4)
+AC_SUBST(LT_CURRENT, 19)
+AC_SUBST(LT_REVISION, 0)
+AC_SUBST(LT_AGE, 5)
 
 major=`echo $PACKAGE_VERSION |cut -d. -f1 | sed -e "s/[^0-9]//g"`
 minor=`echo $PACKAGE_VERSION |cut -d. -f2 | sed -e "s/[^0-9]//g"`
@@ -76,7 +76,7 @@ AC_ARG_ENABLE([threads],
 
 AC_ARG_ENABLE([app],
     [AS_HELP_STRING([--enable-app],
-                    [Build applications (nghttp, nghttpd and nghttpx) [default=check]])],
+                    [Build applications (nghttp, nghttpd, nghttpx and h2load) [default=check]])],
     [request_app=$enableval], [request_app=check])
 
 AC_ARG_ENABLE([hpack-tools],
@@ -189,9 +189,19 @@ else
   AC_DEFINE([NGHTTP2_NORETURN], , [Hint to the compiler that a function never return])
 fi
 
+save_CXXFLAGS="$CXXFLAGS"
+CXXFLAGS=
+
 AX_CXX_COMPILE_STDCXX_11([noext], [optional])
 
+CXX1XCXXFLAGS="$CXXFLAGS"
+CXXFLAGS="$save_CXXFLAGS"
+AC_SUBST([CXX1XCXXFLAGS])
+
 AC_LANG_PUSH(C++)
+
+save_CXXFLAGS="$CXXFLAGS"
+CXXFLAGS="$CXXFLAGS $CXX1XCXXFLAGS"
 
 # Check that std::future is available.
 AC_MSG_CHECKING([whether std::future is available])
@@ -226,6 +236,8 @@ std::map<int, int>().emplace(1, 2);
     [have_std_map_emplace=no
      AC_MSG_RESULT([no])])
 
+CXXFLAGS=$save_CXXFLAGS
+
 AC_LANG_POP()
 
 # Checks for libraries.
@@ -256,9 +268,16 @@ if test "x${have_zlib}" = "xno"; then
 fi
 
 # dl: openssl requires libdl when it is statically linked.
-LIBS_OLD=$LIBS
-AC_SEARCH_LIBS([dlopen], [dl], [APPLDFLAGS="-ldl $APPLDFLAGS"], [], [])
-LIBS=$LIBS_OLD
+case "${host_os}" in
+  *bsd*)
+    # dlopen is in libc on *BSD
+    ;;
+  *)
+    save_LIBS=$LIBS
+    AC_SEARCH_LIBS([dlopen], [dl], [APPLDFLAGS="-ldl $APPLDFLAGS"], [], [])
+    LIBS=$save_LIBS
+    ;;
+esac
 
 # cunit
 PKG_CHECK_MODULES([CUNIT], [cunit >= 2.1], [have_cunit=yes], [have_cunit=no])
@@ -291,7 +310,7 @@ AM_CONDITIONAL([HAVE_CUNIT], [ test "x${have_cunit}" = "xyes" ])
 
 # libev (for src)
 # libev does not have pkg-config file.  Check it in an old way.
-LIBS_OLD=$LIBS
+save_LIBS=$LIBS
 # android requires -lm for floor
 AC_CHECK_LIB([ev], [ev_time], [have_libev=yes], [have_libev=no], [-lm])
 if test "x${have_libev}" = "xyes"; then
@@ -303,7 +322,7 @@ if test "x${have_libev}" = "xyes"; then
     AC_SUBST([LIBEV_CFLAGS])
   fi
 fi
-LIBS=$LIBS_OLD
+LIBS=$save_LIBS
 
 # openssl (for src)
 PKG_CHECK_MODULES([OPENSSL], [openssl >= 1.0.1],
@@ -333,7 +352,10 @@ fi
 # libxml2 (for src/nghttp)
 have_libxml2=no
 if test "x${request_libxml2}" != "xno"; then
-  AM_PATH_XML2(2.7.7, [have_libxml2=yes], [have_libxml2=no])
+  m4_ifdef([AM_PATH_XML2],
+    [AM_PATH_XML2(2.7.7, [have_libxml2=yes], [have_libxml2=no])],
+    [AC_MSG_WARN([configure was created without libxml2 detection macro; libxml2 detection is disabled])])
+
   if test "x${have_libxml2}" = "xyes"; then
     AC_DEFINE([HAVE_LIBXML2], [1], [Define to 1 if you have `libxml2` library.])
   fi
@@ -349,7 +371,7 @@ AM_CONDITIONAL([HAVE_LIBXML2], [ test "x${have_libxml2}" = "xyes" ])
 # jemalloc
 have_jemalloc=no
 if test "x${request_jemalloc}" != "xno"; then
-  LIBS_OLD=$LIBS
+  save_LIBS=$LIBS
   AC_SEARCH_LIBS([malloc_stats_print], [jemalloc], [have_jemalloc=yes], [],
                  [$PTHREAD_LDFLAGS])
 
@@ -365,7 +387,7 @@ if test "x${request_jemalloc}" != "xno"; then
     fi
   fi
 
-  LIBS=$LIBS_OLD
+  LIBS=$save_LIBS
 
   if test "x${have_jemalloc}" = "xyes" &&
      test "x${jemalloc_libs}" != "xnone required"; then
@@ -632,8 +654,13 @@ AC_CHECK_FUNC([timerfd_create],
 
 # For cygwin: we can link initgroups, so AC_CHECK_FUNCS succeeds, but
 # cygwin disables initgroups due to feature test macro magic with our
-# configuration.
-AC_CHECK_DECLS([initgroups], [], [], [[#include <grp.h>]])
+# configuration.  FreeBSD declares initgroups() in unistd.h.
+AC_CHECK_DECLS([initgroups], [], [], [[
+  #ifdef HAVE_UNISTD_H
+  # include <unistd.h>
+  #endif
+  #include <grp.h>
+]])
 
 # Checks for epoll availability, primarily for examples/tiny-nghttpd
 AX_HAVE_EPOLL([have_epoll=yes], [have_epoll=no])
@@ -642,8 +669,8 @@ AM_CONDITIONAL([ENABLE_TINY_NGHTTPD],
                [ test "x${have_epoll}" = "xyes" &&
                  test "x${have_timerfd_create}" = "xyes"])
 
-ac_save_CFLAGS=$CFLAGS
-ac_save_CXXFLAGS=$CXXFLAGS
+save_CFLAGS=$CFLAGS
+save_CXXFLAGS=$CXXFLAGS
 
 CFLAGS=
 CXXFLAGS=
@@ -707,8 +734,8 @@ fi
 WARNCFLAGS=$CFLAGS
 WARNCXXFLAGS=$CXXFLAGS
 
-CFLAGS=$ac_save_CFLAGS
-CXXFLAGS=$ac_save_CXXFLAGS
+CFLAGS=$save_CFLAGS
+CXXFLAGS=$save_CXXFLAGS
 
 AC_SUBST([WARNCFLAGS])
 AC_SUBST([WARNCXXFLAGS])
@@ -797,6 +824,7 @@ AC_MSG_NOTICE([summary of build options:
       C preprocessor: ${CPP}
       CPPFLAGS:       ${CPPFLAGS}
       WARNCFLAGS:     ${WARNCFLAGS}
+      CXX1XCXXFLAGS:  ${CXX1XCXXFLAGS}
       EXTRACFLAG:     ${EXTRACFLAG}
       LIBS:           ${LIBS}
     Library:

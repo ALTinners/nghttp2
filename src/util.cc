@@ -57,7 +57,6 @@
 #include <nghttp2/nghttp2.h>
 
 #include "timegm.h"
-#include "template.h"
 
 namespace nghttp2 {
 
@@ -66,15 +65,15 @@ namespace util {
 const char UPPER_XDIGITS[] = "0123456789ABCDEF";
 
 bool in_rfc3986_unreserved_chars(const char c) {
-  static constexpr const char unreserved[] = {'-', '.', '_', '~'};
+  static constexpr char unreserved[] = {'-', '.', '_', '~'};
   return is_alpha(c) || is_digit(c) ||
          std::find(std::begin(unreserved), std::end(unreserved), c) !=
              std::end(unreserved);
 }
 
 bool in_rfc3986_sub_delims(const char c) {
-  static constexpr const char sub_delims[] = {'!', '$', '&', '\'', '(', ')',
-                                              '*', '+', ',', ';',  '='};
+  static constexpr char sub_delims[] = {'!', '$', '&', '\'', '(', ')',
+                                        '*', '+', ',', ';',  '='};
   return std::find(std::begin(sub_delims), std::end(sub_delims), c) !=
          std::end(sub_delims);
 }
@@ -117,34 +116,37 @@ std::string percent_encode_path(const std::string &s) {
 }
 
 bool in_token(char c) {
-  static constexpr const char extra[] = {'!',  '#', '$', '%', '&',
-                                         '\'', '*', '+', '-', '.',
-                                         '^',  '_', '`', '|', '~'};
+  static constexpr char extra[] = {'!', '#', '$', '%', '&', '\'', '*', '+',
+                                   '-', '.', '^', '_', '`', '|',  '~'};
   return is_alpha(c) || is_digit(c) ||
          std::find(std::begin(extra), std::end(extra), c) != std::end(extra);
 }
 
 bool in_attr_char(char c) {
-  static constexpr const char bad[] = {'*', '\'', '%'};
+  static constexpr char bad[] = {'*', '\'', '%'};
   return util::in_token(c) &&
          std::find(std::begin(bad), std::end(bad), c) == std::end(bad);
 }
 
 std::string percent_encode_token(const std::string &target) {
-  auto len = target.size();
   std::string dest;
 
-  for (size_t i = 0; i < len; ++i) {
-    unsigned char c = target[i];
+  dest.resize(target.size() * 3);
+  auto p = std::begin(dest);
+
+  for (auto first = std::begin(target); first != std::end(target); ++first) {
+    uint8_t c = *first;
 
     if (c != '%' && in_token(c)) {
-      dest += c;
-    } else {
-      dest += '%';
-      dest += UPPER_XDIGITS[c >> 4];
-      dest += UPPER_XDIGITS[(c & 0x0f)];
+      *p++ = c;
+      continue;
     }
+
+    *p++ = '%';
+    *p++ = UPPER_XDIGITS[c >> 4];
+    *p++ = UPPER_XDIGITS[(c & 0x0f)];
   }
+  dest.resize(p - std::begin(dest));
   return dest;
 }
 
@@ -648,6 +650,43 @@ std::string numeric_name(const struct sockaddr *sa, socklen_t salen) {
   return host.data();
 }
 
+std::string to_numeric_addr(const Address *addr) {
+  auto family = addr->su.storage.ss_family;
+  if (family == AF_UNIX) {
+    return addr->su.un.sun_path;
+  }
+
+  std::array<char, NI_MAXHOST> host;
+  std::array<char, NI_MAXSERV> serv;
+  auto rv =
+      getnameinfo(&addr->su.sa, addr->len, host.data(), host.size(),
+                  serv.data(), serv.size(), NI_NUMERICHOST | NI_NUMERICSERV);
+  if (rv != 0) {
+    return "unknown";
+  }
+
+  auto hostlen = strlen(host.data());
+  auto servlen = strlen(serv.data());
+
+  std::string s;
+  char *p;
+  if (family == AF_INET6) {
+    s.resize(hostlen + servlen + 2 + 1);
+    p = &s[0];
+    *p++ = '[';
+    p = std::copy_n(host.data(), hostlen, p);
+    *p++ = ']';
+  } else {
+    s.resize(hostlen + servlen + 1);
+    p = &s[0];
+    p = std::copy_n(host.data(), hostlen, p);
+  }
+  *p++ = ':';
+  std::copy_n(serv.data(), servlen, p);
+
+  return s;
+}
+
 static int STDERR_COPY = -1;
 static int STDOUT_COPY = -1;
 
@@ -1111,24 +1150,52 @@ std::string dtos(double n) {
   return utos(static_cast<int64_t>(n)) + "." + (f.size() == 1 ? "0" : "") + f;
 }
 
-std::string make_hostport(const char *host, uint16_t port) {
-  auto ipv6 = ipv6_numeric_addr(host);
-  std::string hostport;
-
-  if (ipv6) {
-    hostport += '[';
-  }
-
-  hostport += host;
-
-  if (ipv6) {
-    hostport += ']';
-  }
-
+std::string make_http_hostport(const StringRef &host, uint16_t port) {
   if (port != 80 && port != 443) {
-    hostport += ':';
-    hostport += utos(port);
+    return make_hostport(host, port);
   }
+
+  auto ipv6 = ipv6_numeric_addr(host.c_str());
+
+  std::string hostport;
+  hostport.resize(host.size() + (ipv6 ? 2 : 0));
+
+  auto p = &hostport[0];
+
+  if (ipv6) {
+    *p++ = '[';
+  }
+
+  p = std::copy_n(host.c_str(), host.size(), p);
+
+  if (ipv6) {
+    *p++ = ']';
+  }
+
+  return hostport;
+}
+
+std::string make_hostport(const StringRef &host, uint16_t port) {
+  auto ipv6 = ipv6_numeric_addr(host.c_str());
+  auto serv = utos(port);
+
+  std::string hostport;
+  hostport.resize(host.size() + (ipv6 ? 2 : 0) + 1 + serv.size());
+
+  auto p = &hostport[0];
+
+  if (ipv6) {
+    *p++ = '[';
+  }
+
+  p = std::copy_n(host.c_str(), host.size(), p);
+
+  if (ipv6) {
+    *p++ = ']';
+  }
+
+  *p++ = ':';
+  std::copy_n(serv.c_str(), serv.size(), p);
 
   return hostport;
 }

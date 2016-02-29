@@ -239,6 +239,7 @@ CPPFLAGS = @CPPFLAGS@
 CUNIT_CFLAGS = @CUNIT_CFLAGS@
 CUNIT_LIBS = @CUNIT_LIBS@
 CXX = @CXX@
+CXX1XCXXFLAGS = @CXX1XCXXFLAGS@
 CXXCPP = @CXXCPP@
 CXXDEPMODE = @CXXDEPMODE@
 CXXFLAGS = @CXXFLAGS@
@@ -763,7 +764,9 @@ uninstall-am:
 @ENABLE_THIRD_PARTY_TRUE@@HAVE_MRUBY_TRUE@all-local: mruby
 
 @ENABLE_THIRD_PARTY_TRUE@@HAVE_MRUBY_TRUE@clean-local:
-@ENABLE_THIRD_PARTY_TRUE@@HAVE_MRUBY_TRUE@	-rm -rf "${abs_builddir}/mruby/build"
+@ENABLE_THIRD_PARTY_TRUE@@HAVE_MRUBY_TRUE@	MRUBY_CONFIG="${srcdir}/build_config.rb" \
+@ENABLE_THIRD_PARTY_TRUE@@HAVE_MRUBY_TRUE@	BUILD_DIR="${abs_builddir}/mruby/build" \
+@ENABLE_THIRD_PARTY_TRUE@@HAVE_MRUBY_TRUE@	"${srcdir}/mruby/minirake" -f "${srcdir}/mruby/Rakefile" clean
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

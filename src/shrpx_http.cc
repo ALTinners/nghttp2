@@ -46,8 +46,6 @@ std::string create_error_html(unsigned int status_code) {
   res += "</h1><footer>";
   const auto &server_name = get_config()->http.server_name;
   res.append(server_name.c_str(), server_name.size());
-  res += " at port ";
-  res += util::utos(get_config()->conn.listener.port);
   res += "</footer></body></html>";
   return res;
 }
@@ -63,16 +61,17 @@ std::string create_via_header_value(int major, int minor) {
   return hdrs;
 }
 
-std::string create_forwarded(int params, const std::string &node_by,
+std::string create_forwarded(int params, const StringRef &node_by,
                              const std::string &node_for,
                              const std::string &host,
                              const std::string &proto) {
   std::string res;
   if ((params & FORWARDED_BY) && !node_by.empty()) {
     // This must be quoted-string unless it is obfuscated version
-    // (which starts with "_"), since ':' is not allowed in token.
-    // ':' is used to separate host and port.
-    if (node_by[0] == '_') {
+    // (which starts with "_") or some special value (e.g.,
+    // "localhost" for UNIX domain socket), since ':' is not allowed
+    // in token.  ':' is used to separate host and port.
+    if (node_by[0] == '_' || node_by[0] == 'l') {
       res += "by=";
       res += node_by;
       res += ";";

@@ -35,9 +35,13 @@
 #include <functional>
 #include <typeinfo>
 #include <algorithm>
+#include <ostream>
 
 namespace nghttp2 {
 
+#if __cplusplus > 201103L
+using std::make_unique;
+#else  // __cplusplus <= 201103L
 template <typename T, typename... U>
 typename std::enable_if<!std::is_array<T>::value, std::unique_ptr<T>>::type
 make_unique(U &&... u) {
@@ -49,6 +53,7 @@ typename std::enable_if<std::is_array<T>::value, std::unique_ptr<T>>::type
 make_unique(size_t size) {
   return std::unique_ptr<T>(new typename std::remove_extent<T>::type[size]());
 }
+#endif // __cplusplus <= 201103L
 
 // std::forward is constexpr since C++14
 template <typename... T>
@@ -313,6 +318,11 @@ private:
   const char *base;
 };
 
+inline bool operator==(const ImmutableString &lhs, const ImmutableString &rhs) {
+  return lhs.size() == rhs.size() &&
+         std::equal(std::begin(lhs), std::end(lhs), std::begin(rhs));
+}
+
 inline bool operator==(const ImmutableString &lhs, const std::string &rhs) {
   return lhs.size() == rhs.size() &&
          std::equal(std::begin(lhs), std::end(lhs), std::begin(rhs));
@@ -331,6 +341,10 @@ inline bool operator==(const char *lhs, const ImmutableString &rhs) {
   return rhs == lhs;
 }
 
+inline bool operator!=(const ImmutableString &lhs, const ImmutableString &rhs) {
+  return !(lhs == rhs);
+}
+
 inline bool operator!=(const ImmutableString &lhs, const std::string &rhs) {
   return !(lhs == rhs);
 }
@@ -345,6 +359,15 @@ inline bool operator!=(const ImmutableString &lhs, const char *rhs) {
 
 inline bool operator!=(const char *lhs, const ImmutableString &rhs) {
   return !(rhs == lhs);
+}
+
+inline std::ostream &operator<<(std::ostream &o, const ImmutableString &s) {
+  return o.write(s.c_str(), s.size());
+}
+
+inline std::string &operator+=(std::string &lhs, const ImmutableString &rhs) {
+  lhs.append(rhs.c_str(), rhs.size());
+  return lhs;
 }
 
 // StringRef is a reference to a string owned by something else.  So
@@ -364,15 +387,30 @@ public:
   using const_pointer = const value_type *;
   using const_iterator = const_pointer;
 
-  StringRef() : base(""), len(0) {}
+  constexpr StringRef() : base(""), len(0) {}
   explicit StringRef(const std::string &s) : base(s.c_str()), len(s.size()) {}
   explicit StringRef(const ImmutableString &s)
       : base(s.c_str()), len(s.size()) {}
   StringRef(const char *s) : base(s), len(strlen(s)) {}
-  StringRef(const char *s, size_t n) : base(s), len(n) {}
-
-  template <size_t N> static StringRef from_lit(const char(&s)[N]) {
+  template <typename CharT>
+  constexpr StringRef(const CharT *s, size_t n)
+      : base(reinterpret_cast<const char *>(s)), len(n) {}
+  template <typename InputIt>
+  StringRef(InputIt first, InputIt last)
+      : base(&*first), len(std::distance(first, last)) {}
+  template <typename InputIt>
+  StringRef(InputIt *first, InputIt *last)
+      : base(first), len(std::distance(first, last)) {}
+  template <typename CharT, size_t N>
+  constexpr static StringRef from_lit(const CharT(&s)[N]) {
     return StringRef(s, N - 1);
+  }
+  static StringRef from_maybe_nullptr(const char *s) {
+    if (s == nullptr) {
+      return StringRef();
+    }
+
+    return StringRef(s);
   }
 
   const_iterator begin() const { return base; };
@@ -384,8 +422,12 @@ public:
   const char *c_str() const { return base; }
   size_type size() const { return len; }
   bool empty() const { return len == 0; }
+  const_reference operator[](size_type pos) const { return *(base + pos); }
 
   std::string str() const { return std::string(base, len); }
+  const uint8_t *byte() const {
+    return reinterpret_cast<const uint8_t *>(base);
+  }
 
 private:
   const char *base;
@@ -424,6 +466,15 @@ inline bool operator!=(const StringRef &lhs, const char *rhs) {
 
 inline bool operator!=(const char *lhs, const StringRef &rhs) {
   return !(rhs == lhs);
+}
+
+inline std::ostream &operator<<(std::ostream &o, const StringRef &s) {
+  return o.write(s.c_str(), s.size());
+}
+
+inline std::string &operator+=(std::string &lhs, const StringRef &rhs) {
+  lhs.append(rhs.c_str(), rhs.size());
+  return lhs;
 }
 
 inline int run_app(std::function<int(int, char **)> app, int argc,

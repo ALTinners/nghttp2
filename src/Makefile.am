@@ -27,7 +27,7 @@ check_PROGRAMS =
 TESTS =
 
 AM_CFLAGS = $(WARNCFLAGS)
-AM_CXXFLAGS = $(WARNCXXFLAGS)
+AM_CXXFLAGS = $(WARNCXXFLAGS) $(CXX1XCXXFLAGS)
 AM_CPPFLAGS = \
 	-DPKGDATADIR='"$(pkgdatadir)"' \
 	-I$(top_srcdir)/lib/includes \
@@ -62,7 +62,7 @@ HELPER_OBJECTS = util.cc \
 	http2.cc timegm.c app_helper.cc nghttp2_gzip.c
 HELPER_HFILES = util.h \
 	http2.h timegm.h app_helper.h nghttp2_config.h \
-	nghttp2_gzip.h
+	nghttp2_gzip.h network.h
 
 HTML_PARSER_OBJECTS =
 HTML_PARSER_HFILES = HtmlParser.h
@@ -176,7 +176,8 @@ nghttpx_unittest_SOURCES = shrpx-unittest.cc \
 	nghttp2_gzip.c nghttp2_gzip.h \
 	buffer_test.cc buffer_test.h \
 	memchunk_test.cc memchunk_test.h \
-	template_test.cc template_test.h
+	template_test.cc template_test.h \
+	base64_test.cc base64_test.h
 nghttpx_unittest_CPPFLAGS = ${AM_CPPFLAGS} \
 	-DNGHTTP2_TESTS_DIR=\"$(top_srcdir)/tests\"
 nghttpx_unittest_LDADD = libnghttpx.a ${LDADD} @CUNIT_LIBS@ @TESTLDADD@

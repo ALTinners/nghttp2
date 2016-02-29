@@ -51,6 +51,10 @@ using namespace nghttp2;
 namespace shrpx {
 
 namespace {
+constexpr size_t MAX_BUFFER_SIZE = 32_k;
+} // namespace
+
+namespace {
 int on_stream_close_callback(nghttp2_session *session, int32_t stream_id,
                              uint32_t error_code, void *user_data) {
   auto upstream = static_cast<Http2Upstream *>(user_data);
@@ -173,8 +177,8 @@ int on_header_callback(nghttp2_session *session, const nghttp2_frame *frame,
   auto &httpconf = get_config()->http;
 
   if (req.fs.buffer_size() + namelen + valuelen >
-          httpconf.header_field_buffer ||
-      req.fs.num_fields() >= httpconf.max_header_fields) {
+          httpconf.request_header_field_buffer ||
+      req.fs.num_fields() >= httpconf.max_request_header_fields) {
     if (downstream->get_response_state() == Downstream::MSG_COMPLETE) {
       return 0;
     }
@@ -197,17 +201,18 @@ int on_header_callback(nghttp2_session *session, const nghttp2_frame *frame,
     return 0;
   }
 
+  auto token = http2::lookup_token(name, namelen);
+  auto no_index = flags & NGHTTP2_NV_FLAG_NO_INDEX;
+
   if (frame->headers.cat == NGHTTP2_HCAT_HEADERS) {
     // just store header fields for trailer part
-    req.fs.add_trailer(name, namelen, value, valuelen,
-                       flags & NGHTTP2_NV_FLAG_NO_INDEX, -1);
+    req.fs.add_trailer_token(StringRef{name, namelen},
+                             StringRef{value, valuelen}, no_index, token);
     return 0;
   }
 
-  auto token = http2::lookup_token(name, namelen);
-
-  req.fs.add_header(name, namelen, value, valuelen,
-                    flags & NGHTTP2_NV_FLAG_NO_INDEX, token);
+  req.fs.add_header_token(StringRef{name, namelen}, StringRef{value, valuelen},
+                          no_index, token);
   return 0;
 }
 } // namespace
@@ -589,8 +594,9 @@ int on_frame_send_callback(nghttp2_session *session, const nghttp2_frame *frame,
         req.path = http2::rewrite_clean_path(nv.value, nv.value + nv.valuelen);
         break;
       }
-      req.fs.add_header(nv.name, nv.namelen, nv.value, nv.valuelen,
-                        nv.flags & NGHTTP2_NV_FLAG_NO_INDEX, token);
+      req.fs.add_header_token(StringRef{nv.name, nv.namelen},
+                              StringRef{nv.value, nv.valuelen},
+                              nv.flags & NGHTTP2_NV_FLAG_NO_INDEX, token);
     }
 
     promised_downstream->inspect_http2_request();
@@ -661,13 +667,6 @@ int on_frame_not_send_callback(nghttp2_session *session,
 }
 } // namespace
 
-void Http2Upstream::set_pending_data_downstream(Downstream *downstream,
-                                                size_t n, size_t padlen) {
-  pending_data_downstream_ = downstream;
-  data_pendinglen_ = n;
-  padding_pendinglen_ = padlen;
-}
-
 namespace {
 constexpr auto PADDING = std::array<uint8_t, 256>{};
 } // namespace
@@ -682,51 +681,21 @@ int send_data_callback(nghttp2_session *session, nghttp2_frame *frame,
 
   auto wb = upstream->get_response_buf();
 
-  size_t padlen;
+  size_t padlen = 0;
 
-  if (frame->data.padlen == 0) {
-    if (wb->wleft() < 9) {
-      return NGHTTP2_ERR_WOULDBLOCK;
-    }
-
-    wb->write(framehd, 9);
-    padlen = 0;
-  } else {
-    if (wb->wleft() < 10) {
-      return NGHTTP2_ERR_WOULDBLOCK;
-    }
-
-    wb->write(framehd, 9);
+  wb->append(framehd, 9);
+  if (frame->data.padlen > 0) {
     padlen = frame->data.padlen - 1;
-    *wb->last++ = padlen;
+    wb->append(static_cast<uint8_t>(padlen));
   }
 
-  size_t npadwrite = 0;
-  auto nwrite = std::min(length, wb->wleft());
-  body->remove(wb->last, nwrite);
-  wb->write(nwrite);
-  if (nwrite < length) {
-    // We must store unsent amount of data to somewhere.  We just tell
-    // libnghttp2 that we wrote everything, so downstream could be
-    // deleted.  We handle this situation in
-    // Http2Upstream::remove_downstream().
-    upstream->set_pending_data_downstream(downstream, length - nwrite, padlen);
-  } else if (padlen > 0) {
-    npadwrite = std::min(padlen, wb->wleft());
-    wb->write(PADDING.data(), npadwrite);
+  body->remove(*wb, length);
 
-    if (npadwrite < padlen) {
-      upstream->set_pending_data_downstream(nullptr, 0, padlen - npadwrite);
-    }
-  }
+  wb->append(PADDING.data(), padlen);
 
-  if (wb->rleft() == 0) {
-    downstream->disable_upstream_wtimer();
-  } else {
-    downstream->reset_upstream_wtimer();
-  }
+  downstream->reset_upstream_wtimer();
 
-  if (nwrite > 0 && downstream->resume_read(SHRPX_NO_BUFFER, nwrite) != 0) {
+  if (length > 0 && downstream->resume_read(SHRPX_NO_BUFFER, length) != 0) {
     return NGHTTP2_ERR_CALLBACK_FAILURE;
   }
 
@@ -734,7 +703,7 @@ int send_data_callback(nghttp2_session *session, nghttp2_frame *frame,
   // data transferred.
   downstream->response_sent_body_length += length;
 
-  return (nwrite < length || npadwrite < padlen) ? NGHTTP2_ERR_PAUSE : 0;
+  return wb->rleft() >= MAX_BUFFER_SIZE ? NGHTTP2_ERR_PAUSE : 0;
 }
 } // namespace
 
@@ -851,16 +820,16 @@ nghttp2_session_callbacks *create_http2_upstream_callbacks() {
 }
 
 Http2Upstream::Http2Upstream(ClientHandler *handler)
-    : downstream_queue_(
+    : wb_(handler->get_worker()->get_mcpool()),
+      downstream_queue_(
           get_config()->http2_proxy
               ? get_config()->conn.downstream.connections_per_host
               : get_config()->conn.downstream.proto == PROTO_HTTP
                     ? get_config()->conn.downstream.connections_per_frontend
                     : 0,
           !get_config()->http2_proxy),
-      pending_response_buf_(handler->get_worker()->get_mcpool()),
-      pending_data_downstream_(nullptr), handler_(handler), session_(nullptr),
-      data_pending_(nullptr), data_pendinglen_(0), padding_pendinglen_(0),
+      handler_(handler),
+      session_(nullptr),
       shutdown_handled_(false) {
 
   int rv;
@@ -963,66 +932,11 @@ int Http2Upstream::on_read() {
 
 // After this function call, downstream may be deleted.
 int Http2Upstream::on_write() {
-  if (wb_.rleft() == 0) {
-    wb_.reset();
-  }
-
-  if (data_pendinglen_ > 0) {
-    if (data_pending_) {
-      auto n = std::min(wb_.wleft(), data_pendinglen_);
-      wb_.write(data_pending_, n);
-      data_pending_ += n;
-      data_pendinglen_ -= n;
-
-      if (data_pendinglen_ > 0) {
-        return 0;
-      }
-
-      data_pending_ = nullptr;
-    } else {
-      auto nwrite = std::min(wb_.wleft(), data_pendinglen_);
-      DefaultMemchunks *body;
-      if (pending_data_downstream_) {
-        body = pending_data_downstream_->get_response_buf();
-      } else {
-        body = &pending_response_buf_;
-      }
-      body->remove(wb_.last, nwrite);
-      wb_.write(nwrite);
-      data_pendinglen_ -= nwrite;
-
-      if (pending_data_downstream_ && nwrite > 0) {
-        if (pending_data_downstream_->resume_read(SHRPX_NO_BUFFER, nwrite) !=
-            0) {
-          return -1;
-        }
-      }
-
-      if (data_pendinglen_ > 0) {
-        return 0;
-      }
-
-      if (pending_data_downstream_) {
-        pending_data_downstream_ = nullptr;
-      } else {
-        // Downstream was already deleted, and we don't need its
-        // response data.
-        body->reset();
-      }
-    }
-  }
-
-  if (padding_pendinglen_ > 0) {
-    auto nwrite = std::min(wb_.wleft(), padding_pendinglen_);
-    wb_.write(PADDING.data(), nwrite);
-    padding_pendinglen_ -= nwrite;
-
-    if (padding_pendinglen_ > 0) {
+  for (;;) {
+    if (wb_.rleft() >= MAX_BUFFER_SIZE) {
       return 0;
     }
-  }
 
-  for (;;) {
     const uint8_t *data;
     auto datalen = nghttp2_session_mem_send(session_, &data);
 
@@ -1034,12 +948,7 @@ int Http2Upstream::on_write() {
     if (datalen == 0) {
       break;
     }
-    auto n = wb_.write(data, datalen);
-    if (n < static_cast<decltype(n)>(datalen)) {
-      data_pending_ = data + n;
-      data_pendinglen_ = datalen - n;
-      return 0;
-    }
+    wb_.append(data, datalen);
   }
 
   if (nghttp2_session_want_read(session_) == 0 &&
@@ -1299,11 +1208,12 @@ int Http2Upstream::send_reply(Downstream *downstream, const uint8_t *body,
   }
 
   const auto &resp = downstream->response();
+  auto &httpconf = get_config()->http;
 
   const auto &headers = resp.fs.headers();
   auto nva = std::vector<nghttp2_nv>();
   // 2 for :status and server
-  nva.reserve(2 + headers.size());
+  nva.reserve(2 + headers.size() + httpconf.add_response_headers.size());
 
   std::string status_code_str;
   auto response_status_const = http2::stringify_status(resp.http_status);
@@ -1333,6 +1243,10 @@ int Http2Upstream::send_reply(Downstream *downstream, const uint8_t *body,
   if (!resp.fs.header(http2::HD_SERVER)) {
     nva.push_back(
         http2::make_nv_ls_nocopy("server", get_config()->http.server_name));
+  }
+
+  for (auto &p : httpconf.add_response_headers) {
+    nva.push_back(http2::make_nv_nocopy(p.name, p.value));
   }
 
   rv = nghttp2_submit_response(session_, downstream->get_stream_id(),
@@ -1408,11 +1322,6 @@ void Http2Upstream::remove_downstream(Downstream *downstream) {
 
   nghttp2_session_set_stream_user_data(session_, downstream->get_stream_id(),
                                        nullptr);
-
-  if (downstream == pending_data_downstream_) {
-    pending_data_downstream_ = nullptr;
-    pending_response_buf_ = downstream->pop_response_buf();
-  }
 
   auto next_downstream = downstream_queue_.remove_and_get_blocked(downstream);
 
@@ -1534,7 +1443,7 @@ int Http2Upstream::on_downstream_header_complete(Downstream *downstream) {
   }
 
   for (auto &p : httpconf.add_response_headers) {
-    nva.push_back(http2::make_nv_nocopy(p.first, p.second));
+    nva.push_back(http2::make_nv_nocopy(p.name, p.value));
   }
 
   if (downstream->get_stream_id() % 2 == 0) {
@@ -1651,7 +1560,9 @@ int Http2Upstream::adjust_pushed_stream_priority(Downstream *downstream) {
   }
 
   if (!util::istarts_with_l(ct->value, "application/javascript") &&
-      !util::istarts_with_l(ct->value, "text/css")) {
+      !util::istarts_with_l(ct->value, "text/css") &&
+      // for polymer...
+      !util::istarts_with_l(ct->value, "text/html")) {
     return 0;
   }
 
@@ -1999,17 +1910,14 @@ int Http2Upstream::response_riovec(struct iovec *iov, int iovcnt) const {
     return 0;
   }
 
-  iov->iov_base = wb_.pos;
-  iov->iov_len = wb_.rleft();
-
-  return 1;
+  return wb_.riovec(iov, iovcnt);
 }
 
 void Http2Upstream::response_drain(size_t n) { wb_.drain(n); }
 
 bool Http2Upstream::response_empty() const { return wb_.rleft() == 0; }
 
-Http2Upstream::WriteBuffer *Http2Upstream::get_response_buf() { return &wb_; }
+DefaultMemchunks *Http2Upstream::get_response_buf() { return &wb_; }
 
 Downstream *
 Http2Upstream::on_downstream_push_promise(Downstream *downstream,

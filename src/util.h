@@ -49,19 +49,22 @@
 
 #include "http-parser/http_parser.h"
 
+#include "template.h"
+#include "network.h"
+
 namespace nghttp2 {
 
 // The additional HTTP/2 protocol ALPN protocol identifier we also
 // supports for our applications to make smooth migration into final
 // h2 ALPN ID.
-constexpr const char NGHTTP2_H2_16_ALPN[] = "\x5h2-16";
-constexpr const char NGHTTP2_H2_16[] = "h2-16";
+constexpr char NGHTTP2_H2_16_ALPN[] = "\x5h2-16";
+constexpr char NGHTTP2_H2_16[] = "h2-16";
 
-constexpr const char NGHTTP2_H2_14_ALPN[] = "\x5h2-14";
-constexpr const char NGHTTP2_H2_14[] = "h2-14";
+constexpr char NGHTTP2_H2_14_ALPN[] = "\x5h2-14";
+constexpr char NGHTTP2_H2_14[] = "h2-14";
 
-constexpr const char NGHTTP2_H1_1_ALPN[] = "\x8http/1.1";
-constexpr const char NGHTTP2_H1_1[] = "http/1.1";
+constexpr char NGHTTP2_H1_1_ALPN[] = "\x8http/1.1";
+constexpr char NGHTTP2_H1_1[] = "http/1.1";
 
 namespace util {
 
@@ -98,19 +101,24 @@ std::string percent_encode_path(const std::string &s);
 template <typename InputIt>
 std::string percent_decode(InputIt first, InputIt last) {
   std::string result;
+  result.resize(last - first);
+  auto p = std::begin(result);
   for (; first != last; ++first) {
-    if (*first == '%') {
-      if (first + 1 != last && first + 2 != last &&
-          is_hex_digit(*(first + 1)) && is_hex_digit(*(first + 2))) {
-        result += (hex_to_uint(*(first + 1)) << 4) + hex_to_uint(*(first + 2));
-        first += 2;
-        continue;
-      }
-      result += *first;
+    if (*first != '%') {
+      *p++ = *first;
       continue;
     }
-    result += *first;
+
+    if (first + 1 != last && first + 2 != last && is_hex_digit(*(first + 1)) &&
+        is_hex_digit(*(first + 2))) {
+      *p++ = (hex_to_uint(*(first + 1)) << 4) + hex_to_uint(*(first + 2));
+      first += 2;
+      continue;
+    }
+
+    *p++ = *first;
   }
+  result.resize(p - std::begin(result));
   return result;
 }
 
@@ -212,8 +220,8 @@ bool istarts_with(InputIt a, size_t an, const char *b) {
 
 bool istarts_with(const char *a, const char *b);
 
-template <size_t N>
-bool istarts_with_l(const std::string &a, const char(&b)[N]) {
+template <typename CharT, size_t N>
+bool istarts_with_l(const std::string &a, const CharT(&b)[N]) {
   return istarts_with(std::begin(a), std::end(a), b, b + N - 1);
 }
 
@@ -243,7 +251,8 @@ inline bool iends_with(const std::string &a, const std::string &b) {
   return iends_with(std::begin(a), std::end(a), std::begin(b), std::end(b));
 }
 
-template <size_t N> bool iends_with_l(const std::string &a, const char(&b)[N]) {
+template <typename CharT, size_t N>
+bool iends_with_l(const std::string &a, const CharT(&b)[N]) {
   return iends_with(std::begin(a), std::end(a), b, b + N - 1);
 }
 
@@ -286,12 +295,13 @@ inline bool strieq(const char *a, const std::string &b) {
   return strieq(a, b.c_str(), b.size());
 }
 
-template <typename InputIt, size_t N>
-bool strieq_l(const char(&a)[N], InputIt b, size_t blen) {
+template <typename CharT, typename InputIt, size_t N>
+bool strieq_l(const CharT(&a)[N], InputIt b, size_t blen) {
   return strieq(a, N - 1, b, blen);
 }
 
-template <size_t N> bool strieq_l(const char(&a)[N], const std::string &b) {
+template <typename CharT, size_t N>
+bool strieq_l(const CharT(&a)[N], const std::string &b) {
   return strieq(a, N - 1, std::begin(b), b.size());
 }
 
@@ -320,12 +330,13 @@ inline bool streq(const char *a, const char *b) {
   return streq(a, strlen(a), b, strlen(b));
 }
 
-template <typename InputIt, size_t N>
-bool streq_l(const char(&a)[N], InputIt b, size_t blen) {
+template <typename CharT, typename InputIt, size_t N>
+bool streq_l(const CharT(&a)[N], InputIt b, size_t blen) {
   return streq(a, N - 1, b, blen);
 }
 
-template <size_t N> bool streq_l(const char(&a)[N], const std::string &b) {
+template <typename CharT, size_t N>
+bool streq_l(const CharT(&a)[N], const std::string &b) {
   return streq(a, N - 1, std::begin(b), b.size());
 }
 
@@ -450,6 +461,12 @@ bool numeric_host(const char *hostname, int family);
 // Returns numeric address string of |addr|.  If getnameinfo() is
 // failed, "unknown" is returned.
 std::string numeric_name(const struct sockaddr *sa, socklen_t salen);
+
+// Returns string representation of numeric address and port of
+// |addr|.  If address family is AF_UNIX, this return path to UNIX
+// domain socket.  Otherwise, the format is like <HOST>:<PORT>.  For
+// IPv6 address, address is enclosed by square brackets ([]).
+std::string to_numeric_addr(const Address *addr);
 
 // Makes internal copy of stderr (and possibly stdout in the future),
 // which is then used as pointer to /dev/stderr or /proc/self/fd/2
@@ -610,7 +627,11 @@ std::string format_duration(double t);
 // Creates "host:port" string using given |host| and |port|.  If
 // |host| is numeric IPv6 address (e.g., ::1), it is enclosed by "["
 // and "]".  If |port| is 80 or 443, port part is omitted.
-std::string make_hostport(const char *host, uint16_t port);
+std::string make_http_hostport(const StringRef &host, uint16_t port);
+
+// Just like make_http_hostport(), but doesn't treat 80 and 443
+// specially.
+std::string make_hostport(const StringRef &host, uint16_t port);
 
 // Dumps |src| of length |len| in the format similar to `hexdump -C`.
 void hexdump(FILE *out, const uint8_t *src, size_t len);
