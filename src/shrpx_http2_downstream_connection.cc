@@ -46,8 +46,11 @@ namespace shrpx {
 
 Http2DownstreamConnection::Http2DownstreamConnection(
     DownstreamConnectionPool *dconn_pool, Http2Session *http2session)
-    : DownstreamConnection(dconn_pool), dlnext(nullptr), dlprev(nullptr),
-      http2session_(http2session), sd_(nullptr) {}
+    : DownstreamConnection(dconn_pool),
+      dlnext(nullptr),
+      dlprev(nullptr),
+      http2session_(http2session),
+      sd_(nullptr) {}
 
 Http2DownstreamConnection::~Http2DownstreamConnection() {
   if (LOG_ENABLED(INFO)) {
@@ -95,6 +98,9 @@ int Http2DownstreamConnection::attach_downstream(Downstream *downstream) {
   http2session_->add_downstream_connection(this);
   if (http2session_->get_state() == Http2Session::DISCONNECTED) {
     http2session_->signal_write();
+    if (http2session_->get_state() == Http2Session::DISCONNECTED) {
+      return -1;
+    }
   }
 
   downstream_ = downstream;
@@ -265,10 +271,7 @@ int Http2DownstreamConnection::push_request_headers() {
 
   // http2session_ has already in CONNECTED state, so we can get
   // addr_idx here.
-  auto addr_idx = http2session_->get_addr_idx();
-  auto group = http2session_->get_group();
-  const auto &downstream_hostport =
-      get_config()->conn.downstream.addr_groups[group].addrs[addr_idx].hostport;
+  const auto &downstream_hostport = http2session_->get_addr()->hostport;
 
   // For HTTP/1.0 request, there is no authority in request.  In that
   // case, we use backend server's host nonetheless.
@@ -422,7 +425,7 @@ int Http2DownstreamConnection::push_request_headers() {
   }
 
   for (auto &p : httpconf.add_request_headers) {
-    nva.push_back(http2::make_nv_nocopy(p.first, p.second));
+    nva.push_back(http2::make_nv_nocopy(p.name, p.value));
   }
 
   if (LOG_ENABLED(INFO)) {

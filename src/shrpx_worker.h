@@ -30,6 +30,8 @@
 #include <mutex>
 #include <vector>
 #include <random>
+#include <unordered_map>
+#include <deque>
 #include <thread>
 #ifndef NOTHREADS
 #include <future>
@@ -51,6 +53,7 @@ namespace shrpx {
 class Http2Session;
 class ConnectBlocker;
 class MemcachedDispatcher;
+struct UpstreamAddr;
 
 #ifdef HAVE_MRUBY
 namespace mruby {
@@ -93,6 +96,7 @@ struct WorkerEvent {
     sockaddr_union client_addr;
     size_t client_addrlen;
     int client_fd;
+    const UpstreamAddr *faddr;
   };
   std::shared_ptr<TicketKeys> ticket_keys;
 };
@@ -100,6 +104,7 @@ struct WorkerEvent {
 class Worker {
 public:
   Worker(struct ev_loop *loop, SSL_CTX *sv_ssl_ctx, SSL_CTX *cl_ssl_ctx,
+         SSL_CTX *tls_session_cache_memcached_ssl_ctx,
          ssl::CertLookupTree *cert_tree,
          const std::shared_ptr<TicketKeys> &ticket_keys);
   ~Worker();
@@ -118,7 +123,6 @@ public:
   WorkerStat *get_worker_stat();
   DownstreamConnectionPool *get_dconn_pool();
   Http2Session *next_http2_session(size_t group);
-  ConnectBlocker *get_connect_blocker() const;
   struct ev_loop *get_loop() const;
   SSL_CTX *get_sv_ssl_ctx() const;
   SSL_CTX *get_cl_ssl_ctx() const;
@@ -141,6 +145,10 @@ public:
   mruby::MRubyContext *get_mruby_context() const;
 #endif // HAVE_MRUBY
 
+  std::vector<DownstreamAddrGroup> &get_downstream_addr_groups();
+
+  ConnectBlocker *get_connect_blocker() const;
+
 private:
 #ifndef NOTHREADS
   std::future<void> fut_;
@@ -154,6 +162,7 @@ private:
   DownstreamConnectionPool dconn_pool_;
   WorkerStat worker_stat_;
   std::vector<DownstreamGroup> dgrps_;
+
   std::unique_ptr<MemcachedDispatcher> session_cache_memcached_dispatcher_;
 #ifdef HAVE_MRUBY
   std::unique_ptr<mruby::MRubyContext> mruby_ctx_;
@@ -167,6 +176,9 @@ private:
   ssl::CertLookupTree *cert_tree_;
 
   std::shared_ptr<TicketKeys> ticket_keys_;
+  std::vector<DownstreamAddrGroup> downstream_addr_groups_;
+  // Worker level blocker for downstream connection.  For example,
+  // this is used when file decriptor is exhausted.
   std::unique_ptr<ConnectBlocker> connect_blocker_;
 
   bool graceful_shutdown_;

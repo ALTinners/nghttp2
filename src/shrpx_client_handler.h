@@ -53,7 +53,7 @@ struct WorkerStat;
 class ClientHandler {
 public:
   ClientHandler(Worker *worker, int fd, SSL *ssl, const char *ipaddr,
-                const char *port);
+                const char *port, int family, const UpstreamAddr *faddr);
   ~ClientHandler();
 
   int noop();
@@ -99,7 +99,6 @@ public:
   get_downstream_connection(Downstream *downstream);
   MemchunkPool *get_mcpool();
   SSL *get_ssl() const;
-  ConnectBlocker *get_connect_blocker() const;
   // Call this function when HTTP/2 connection header is received at
   // the start of the connection.
   void direct_http2_upgrade();
@@ -136,7 +135,7 @@ public:
 
   // Returns string suitable for use in "by" parameter of Forwarded
   // header field.
-  const std::string &get_forwarded_by();
+  StringRef get_forwarded_by();
   // Returns string suitable for use in "for" parameter of Forwarded
   // header field.
   const std::string &get_forwarded_for() const;
@@ -152,13 +151,13 @@ private:
   std::string port_;
   // The ALPN identifier negotiated for this connection.
   std::string alpn_;
-  // Host and port of this socket (e.g., "[::1]:8443")
-  std::string local_hostport_;
-  // The obfuscated version of client address used in "for" parameter
-  // of Forwarded header field.
-  std::string forwarded_for_obfuscated_;
+  // The client address used in "for" parameter of Forwarded header
+  // field.
+  std::string forwarded_for_;
   std::function<int(ClientHandler &)> read_, write_;
   std::function<int(ClientHandler &)> on_read_, on_write_;
+  // Address of frontend listening socket
+  const UpstreamAddr *faddr_;
   Worker *worker_;
   // The number of bytes of HTTP/2 client connection header to read
   size_t left_connhd_len_;

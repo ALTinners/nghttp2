@@ -92,21 +92,29 @@ using namespace nghttp2;
 
 namespace shrpx {
 
-// Environment variables to tell new binary the listening socket's
-// file descriptors.  They are not close-on-exec.
+// Deprecated: Environment variables to tell new binary the listening
+// socket's file descriptors.  They are not close-on-exec.
 #define ENV_LISTENER4_FD "NGHTTPX_LISTENER4_FD"
 #define ENV_LISTENER6_FD "NGHTTPX_LISTENER6_FD"
 
-// Environment variable to tell new binary the port number the current
-// binary is listening to.
+// Deprecated: Environment variable to tell new binary the port number
+// the current binary is listening to.
 #define ENV_PORT "NGHTTPX_PORT"
 
-// Environment variable to tell new binary the listening socket's file
-// descriptor if frontend listens UNIX domain socket.
+// Deprecated: Environment variable to tell new binary the listening
+// socket's file descriptor if frontend listens UNIX domain socket.
 #define ENV_UNIX_FD "NGHTTP2_UNIX_FD"
-// Environment variable to tell new binary the UNIX domain socket
-// path.
+// Deprecated: Environment variable to tell new binary the UNIX domain
+// socket path.
 #define ENV_UNIX_PATH "NGHTTP2_UNIX_PATH"
+
+// Prefix of environment variables to tell new binary the listening
+// socket's file descriptor.  They are not close-on-exec.  For TCP
+// socket, the value must be comma separated 2 parameters: tcp,<FD>.
+// <FD> is file descriptor.  For UNIX domain socket, the value must be
+// comma separated 3 parameters: unix,<FD>,<PATH>.  <FD> is file
+// descriptor.  <PATH> is a path to UNIX domain socket.
+constexpr char ENV_ACCEPT_PREFIX[] = "NGHTTPX_ACCEPT_";
 
 #ifndef _KERNEL_FASTOPEN
 #define _KERNEL_FASTOPEN
@@ -122,16 +130,8 @@ namespace shrpx {
 #endif
 
 struct SignalServer {
-  SignalServer()
-      : ipc_fd{{-1, -1}}, server_fd(-1), server_fd6(-1),
-        worker_process_pid(-1) {}
+  SignalServer() : ipc_fd{{-1, -1}}, worker_process_pid(-1) {}
   ~SignalServer() {
-    if (server_fd6 != -1) {
-      close(server_fd6);
-    }
-    if (server_fd != -1) {
-      close(server_fd);
-    }
     if (ipc_fd[0] != -1) {
       close(ipc_fd[0]);
     }
@@ -142,10 +142,6 @@ struct SignalServer {
   }
 
   std::array<int, 2> ipc_fd;
-  // server socket, either IPv4 or UNIX domain
-  int server_fd;
-  // server socket IPv6
-  int server_fd6;
   pid_t worker_process_pid;
 };
 
@@ -174,8 +170,8 @@ int resolve_hostname(Address *addr, const char *hostname, uint16_t port,
   auto res_d = defer(freeaddrinfo, res);
 
   char host[NI_MAXHOST];
-  rv = getnameinfo(res->ai_addr, res->ai_addrlen, host, sizeof(host), 0, 0,
-                   NI_NUMERICHOST);
+  rv = getnameinfo(res->ai_addr, res->ai_addrlen, host, sizeof(host), nullptr,
+                   0, NI_NUMERICHOST);
   if (rv != 0) {
     LOG(FATAL) << "Address resolution for " << hostname
                << " failed: " << gai_strerror(rv);
@@ -203,18 +199,18 @@ int chown_to_running_user(const char *path) {
 
 namespace {
 void save_pid() {
-  std::ofstream out(get_config()->pid_file.get(), std::ios::binary);
+  std::ofstream out(get_config()->pid_file.c_str(), std::ios::binary);
   out << get_config()->pid << "\n";
   out.close();
   if (!out) {
-    LOG(ERROR) << "Could not save PID to file " << get_config()->pid_file.get();
+    LOG(ERROR) << "Could not save PID to file " << get_config()->pid_file;
     exit(EXIT_FAILURE);
   }
 
   if (get_config()->uid != 0) {
-    if (chown_to_running_user(get_config()->pid_file.get()) == -1) {
+    if (chown_to_running_user(get_config()->pid_file.c_str()) == -1) {
       auto error = errno;
-      LOG(WARN) << "Changing owner of pid file " << get_config()->pid_file.get()
+      LOG(WARN) << "Changing owner of pid file " << get_config()->pid_file
                 << " failed: " << strerror(error);
     }
   }
@@ -293,42 +289,35 @@ void exec_binary(SignalServer *ssv) {
   size_t envlen = 0;
   for (char **p = environ; *p; ++p, ++envlen)
     ;
-  // 3 for missing (fd4, fd6 and port) or (unix fd and unix path)
-  auto envp = make_unique<char *[]>(envlen + 3 + 1);
-  size_t envidx = 0;
-
-  std::string fd, fd6, path, port;
 
   auto &listenerconf = get_config()->conn.listener;
 
-  if (listenerconf.host_unix) {
-    fd = ENV_UNIX_FD "=";
-    fd += util::utos(ssv->server_fd);
-    envp[envidx++] = &fd[0];
+  auto envp = make_unique<char *[]>(envlen + listenerconf.addrs.size() + 1);
+  size_t envidx = 0;
 
-    path = ENV_UNIX_PATH "=";
-    path += listenerconf.host.get();
-    envp[envidx++] = &path[0];
-  } else {
-    if (ssv->server_fd) {
-      fd = ENV_LISTENER4_FD "=";
-      fd += util::utos(ssv->server_fd);
-      envp[envidx++] = &fd[0];
+  std::vector<ImmutableString> fd_envs;
+  for (size_t i = 0; i < listenerconf.addrs.size(); ++i) {
+    auto &addr = listenerconf.addrs[i];
+    std::string s = ENV_ACCEPT_PREFIX;
+    s += util::utos(i + 1);
+    s += '=';
+    if (addr.host_unix) {
+      s += "unix,";
+      s += util::utos(addr.fd);
+      s += ',';
+      s += addr.host;
+    } else {
+      s += "tcp,";
+      s += util::utos(addr.fd);
     }
 
-    if (ssv->server_fd6) {
-      fd6 = ENV_LISTENER6_FD "=";
-      fd6 += util::utos(ssv->server_fd6);
-      envp[envidx++] = &fd6[0];
-    }
-
-    port = ENV_PORT "=";
-    port += util::utos(listenerconf.port);
-    envp[envidx++] = &port[0];
+    fd_envs.emplace_back(s);
+    envp[envidx++] = const_cast<char *>(fd_envs.back().c_str());
   }
 
   for (size_t i = 0; i < envlen; ++i) {
-    if (util::starts_with(environ[i], ENV_LISTENER4_FD) ||
+    if (util::starts_with(environ[i], ENV_ACCEPT_PREFIX) ||
+        util::starts_with(environ[i], ENV_LISTENER4_FD) ||
         util::starts_with(environ[i], ENV_LISTENER6_FD) ||
         util::starts_with(environ[i], ENV_PORT) ||
         util::starts_with(environ[i], ENV_UNIX_FD) ||
@@ -430,38 +419,45 @@ void worker_process_child_cb(struct ev_loop *loop, ev_child *w, int revents) {
 }
 } // namespace
 
+struct InheritedAddr {
+  // IP address if TCP socket.  Otherwise, UNIX domain socket path.
+  ImmutableString host;
+  uint16_t port;
+  // true if UNIX domain socket path
+  bool host_unix;
+  int fd;
+  bool used;
+};
+
 namespace {
-int create_unix_domain_server_socket() {
-  auto &listenerconf = get_config()->conn.listener;
+int create_unix_domain_server_socket(UpstreamAddr &faddr,
+                                     std::vector<InheritedAddr> &iaddrs) {
+  auto found = std::find_if(
+      std::begin(iaddrs), std::end(iaddrs), [&faddr](const InheritedAddr &ia) {
+        return !ia.used && ia.host_unix && ia.host == faddr.host;
+      });
 
-  auto path = listenerconf.host.get();
-  auto pathlen = strlen(path);
-  {
-    auto envfd = getenv(ENV_UNIX_FD);
-    auto envpath = getenv(ENV_UNIX_PATH);
-    if (envfd && envpath) {
-      auto fd = strtoul(envfd, nullptr, 10);
+  if (found != std::end(iaddrs)) {
+    LOG(NOTICE) << "Listening on UNIX domain socket " << faddr.host;
+    (*found).used = true;
+    faddr.fd = (*found).fd;
+    faddr.hostport = "localhost";
 
-      if (util::streq(envpath, path)) {
-        LOG(NOTICE) << "Listening on UNIX domain socket " << path;
-
-        return fd;
-      }
-
-      LOG(WARN) << "UNIX domain socket path was changed between old binary ("
-                << envpath << ") and new binary (" << path << ")";
-      close(fd);
-    }
+    return 0;
   }
 
 #ifdef SOCK_NONBLOCK
   auto fd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0);
   if (fd == -1) {
+    auto error = errno;
+    LOG(WARN) << "socket() syscall failed: " << strerror(error);
     return -1;
   }
 #else  // !SOCK_NONBLOCK
   auto fd = socket(AF_UNIX, SOCK_STREAM, 0);
   if (fd == -1) {
+    auto error = errno;
+    LOG(WARN) << "socket() syscall failed: " << strerror(error);
     return -1;
   }
   util::make_socket_nonblocking(fd);
@@ -469,115 +465,122 @@ int create_unix_domain_server_socket() {
   int val = 1;
   if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &val,
                  static_cast<socklen_t>(sizeof(val))) == -1) {
+    auto error = errno;
+    LOG(WARN) << "Failed to set SO_REUSEADDR option to listener socket: "
+              << strerror(error);
     close(fd);
     return -1;
   }
 
   sockaddr_union addr;
   addr.un.sun_family = AF_UNIX;
-  if (pathlen + 1 > sizeof(addr.un.sun_path)) {
-    LOG(FATAL) << "UNIX domain socket path " << path << " is too long > "
+  if (faddr.host.size() + 1 > sizeof(addr.un.sun_path)) {
+    LOG(FATAL) << "UNIX domain socket path " << faddr.host << " is too long > "
                << sizeof(addr.un.sun_path);
     close(fd);
     return -1;
   }
   // copy path including terminal NULL
-  std::copy_n(path, pathlen + 1, addr.un.sun_path);
+  std::copy_n(faddr.host.c_str(), faddr.host.size() + 1, addr.un.sun_path);
 
   // unlink (remove) already existing UNIX domain socket path
-  unlink(path);
+  unlink(faddr.host.c_str());
 
   if (bind(fd, &addr.sa, sizeof(addr.un)) != 0) {
     auto error = errno;
-    LOG(FATAL) << "Failed to bind UNIX domain socket, error=" << error;
+    LOG(FATAL) << "Failed to bind UNIX domain socket: " << strerror(error);
     close(fd);
     return -1;
   }
+
+  auto &listenerconf = get_config()->conn.listener;
 
   if (listen(fd, listenerconf.backlog) != 0) {
     auto error = errno;
-    LOG(FATAL) << "Failed to listen to UNIX domain socket, error=" << error;
+    LOG(FATAL) << "Failed to listen to UNIX domain socket: " << strerror(error);
     close(fd);
     return -1;
   }
 
-  LOG(NOTICE) << "Listening on UNIX domain socket " << path;
+  LOG(NOTICE) << "Listening on UNIX domain socket " << faddr.host;
 
-  return fd;
+  faddr.fd = fd;
+  faddr.hostport = "localhost";
+
+  return 0;
 }
 } // namespace
 
 namespace {
-int create_tcp_server_socket(int family) {
-  auto &listenerconf = get_config()->conn.listener;
-
-  {
-    auto envfd =
-        getenv(family == AF_INET ? ENV_LISTENER4_FD : ENV_LISTENER6_FD);
-    auto envport = getenv(ENV_PORT);
-
-    if (envfd && envport) {
-      auto fd = strtoul(envfd, nullptr, 10);
-      auto port = strtoul(envport, nullptr, 10);
-
-      // Only do this iff NGHTTPX_PORT == get_config()->port.
-      // Otherwise, close fd, and create server socket as usual.
-
-      if (port == listenerconf.port) {
-        LOG(NOTICE) << "Listening on port " << listenerconf.port;
-
-        return fd;
-      }
-
-      LOG(WARN) << "Port was changed between old binary (" << port
-                << ") and new binary (" << listenerconf.port << ")";
-      close(fd);
-    }
-  }
-
+int create_tcp_server_socket(UpstreamAddr &faddr,
+                             std::vector<InheritedAddr> &iaddrs) {
   int fd = -1;
   int rv;
 
-  auto service = util::utos(listenerconf.port);
+  auto &listenerconf = get_config()->conn.listener;
+
+  auto service = util::utos(faddr.port);
   addrinfo hints{};
-  hints.ai_family = family;
+  hints.ai_family = faddr.family;
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_flags = AI_PASSIVE;
 #ifdef AI_ADDRCONFIG
   hints.ai_flags |= AI_ADDRCONFIG;
 #endif // AI_ADDRCONFIG
 
-  auto node = strcmp("*", listenerconf.host.get()) == 0
-                  ? nullptr
-                  : listenerconf.host.get();
+  auto node = faddr.host == "*" ? nullptr : faddr.host.c_str();
 
   addrinfo *res, *rp;
   rv = getaddrinfo(node, service.c_str(), &hints, &res);
   if (rv != 0) {
     if (LOG_ENABLED(INFO)) {
-      LOG(INFO) << "Unable to get IPv" << (family == AF_INET ? "4" : "6")
-                << " address for " << listenerconf.host.get() << ": "
-                << gai_strerror(rv);
+      LOG(INFO) << "Unable to get IPv" << (faddr.family == AF_INET ? "4" : "6")
+                << " address for " << faddr.host << ", port " << faddr.port
+                << ": " << gai_strerror(rv);
     }
     return -1;
   }
 
   auto res_d = defer(freeaddrinfo, res);
 
+  std::array<char, NI_MAXHOST> host;
+
   for (rp = res; rp; rp = rp->ai_next) {
+
+    rv = getnameinfo(rp->ai_addr, rp->ai_addrlen, host.data(), host.size(),
+                     nullptr, 0, NI_NUMERICHOST);
+
+    if (rv != 0) {
+      LOG(WARN) << "getnameinfo() failed: " << gai_strerror(rv);
+      continue;
+    }
+
+    auto found = std::find_if(std::begin(iaddrs), std::end(iaddrs),
+                              [&host, &faddr](const InheritedAddr &ia) {
+                                return !ia.used && !ia.host_unix &&
+                                       ia.host == host.data() &&
+                                       ia.port == faddr.port;
+                              });
+
+    if (found != std::end(iaddrs)) {
+      (*found).used = true;
+      fd = (*found).fd;
+      break;
+    }
+
 #ifdef SOCK_NONBLOCK
     fd =
         socket(rp->ai_family, rp->ai_socktype | SOCK_NONBLOCK, rp->ai_protocol);
     if (fd == -1) {
       auto error = errno;
-      LOG(WARN) << "socket() syscall failed, error=" << error;
+      LOG(WARN) << "socket() syscall failed: " << strerror(error);
       continue;
     }
 #else  // !SOCK_NONBLOCK
     fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
     if (fd == -1) {
       auto error = errno;
-      LOG(WARN) << "socket() syscall failed, error=" << error;
+      LOG(WARN) << "socket() syscall failed: " << strerror(error);
       continue;
     }
     util::make_socket_nonblocking(fd);
@@ -586,21 +589,19 @@ int create_tcp_server_socket(int family) {
     if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &val,
                    static_cast<socklen_t>(sizeof(val))) == -1) {
       auto error = errno;
-      LOG(WARN)
-          << "Failed to set SO_REUSEADDR option to listener socket, error="
-          << error;
+      LOG(WARN) << "Failed to set SO_REUSEADDR option to listener socket: "
+                << strerror(error);
       close(fd);
       continue;
     }
 
 #ifdef IPV6_V6ONLY
-    if (family == AF_INET6) {
+    if (faddr.family == AF_INET6) {
       if (setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &val,
                      static_cast<socklen_t>(sizeof(val))) == -1) {
         auto error = errno;
-        LOG(WARN)
-            << "Failed to set IPV6_V6ONLY option to listener socket, error="
-            << error;
+        LOG(WARN) << "Failed to set IPV6_V6ONLY option to listener socket: "
+                  << strerror(error);
         close(fd);
         continue;
       }
@@ -611,7 +612,9 @@ int create_tcp_server_socket(int family) {
     val = 3;
     if (setsockopt(fd, IPPROTO_TCP, TCP_DEFER_ACCEPT, &val,
                    static_cast<socklen_t>(sizeof(val))) == -1) {
-      LOG(WARN) << "Failed to set TCP_DEFER_ACCEPT option to listener socket";
+      auto error = errno;
+      LOG(WARN) << "Failed to set TCP_DEFER_ACCEPT option to listener socket: "
+                << strerror(error);
     }
 #endif // TCP_DEFER_ACCEPT
 
@@ -620,7 +623,7 @@ int create_tcp_server_socket(int family) {
     // ports will fail with permission denied error.
     if (bind(fd, rp->ai_addr, rp->ai_addrlen) == -1) {
       auto error = errno;
-      LOG(WARN) << "bind() syscall failed, error=" << error;
+      LOG(WARN) << "bind() syscall failed: " << strerror(error);
       close(fd);
       continue;
     }
@@ -629,13 +632,15 @@ int create_tcp_server_socket(int family) {
       val = listenerconf.fastopen;
       if (setsockopt(fd, SOL_TCP, TCP_FASTOPEN, &val,
                      static_cast<socklen_t>(sizeof(val))) == -1) {
-        LOG(WARN) << "Failed to set TCP_FASTOPEN option to listener socket";
+        auto error = errno;
+        LOG(WARN) << "Failed to set TCP_FASTOPEN option to listener socket: "
+                  << strerror(error);
       }
     }
 
     if (listen(fd, listenerconf.backlog) == -1) {
       auto error = errno;
-      LOG(WARN) << "listen() syscall failed, error=" << error;
+      LOG(WARN) << "listen() syscall failed: " << strerror(error);
       close(fd);
       continue;
     }
@@ -644,27 +649,200 @@ int create_tcp_server_socket(int family) {
   }
 
   if (!rp) {
-    LOG(WARN) << "Listening " << (family == AF_INET ? "IPv4" : "IPv6")
+    LOG(WARN) << "Listening " << (faddr.family == AF_INET ? "IPv4" : "IPv6")
               << " socket failed";
 
     return -1;
   }
 
-  char host[NI_MAXHOST];
-  rv = getnameinfo(rp->ai_addr, rp->ai_addrlen, host, sizeof(host), nullptr, 0,
-                   NI_NUMERICHOST);
+  faddr.fd = fd;
+  faddr.hostport = util::make_http_hostport(host.data(), faddr.port);
 
-  if (rv != 0) {
-    LOG(WARN) << gai_strerror(rv);
+  LOG(NOTICE) << "Listening on " << faddr.hostport;
 
-    close(fd);
+  return 0;
+}
+} // namespace
 
-    return -1;
+namespace {
+int create_acceptor_socket() {
+  int rv;
+
+  auto &listenerconf = mod_config()->conn.listener;
+
+  std::vector<InheritedAddr> iaddrs;
+
+  {
+    // Upgrade from 1.7.0 or earlier
+    auto portenv = getenv(ENV_PORT);
+    if (portenv) {
+      size_t i = 1;
+      for (auto env_name : {ENV_LISTENER4_FD, ENV_LISTENER6_FD}) {
+        auto fdenv = getenv(env_name);
+        if (fdenv) {
+          std::string name = ENV_ACCEPT_PREFIX;
+          name += util::utos(i);
+          std::string value = "tcp,";
+          value += fdenv;
+          setenv(name.c_str(), value.c_str(), 0);
+          ++i;
+        }
+      }
+    } else {
+      auto pathenv = getenv(ENV_UNIX_PATH);
+      auto fdenv = getenv(ENV_UNIX_FD);
+      if (pathenv && fdenv) {
+        std::string name = ENV_ACCEPT_PREFIX;
+        name += '1';
+        std::string value = "unix,";
+        value += fdenv;
+        value += ',';
+        value += pathenv;
+        setenv(name.c_str(), value.c_str(), 0);
+      }
+    }
   }
 
-  LOG(NOTICE) << "Listening on " << host << ", port " << listenerconf.port;
+  for (size_t i = 1;; ++i) {
+    std::string name = ENV_ACCEPT_PREFIX;
+    name += util::utos(i);
+    auto env = getenv(name.c_str());
+    if (!env) {
+      break;
+    }
 
-  return fd;
+    if (LOG_ENABLED(INFO)) {
+      LOG(INFO) << "Read env " << name << "=" << env;
+    }
+
+    auto end_type = strchr(env, ',');
+    if (!end_type) {
+      continue;
+    }
+
+    auto type = StringRef(env, end_type);
+    auto value = end_type + 1;
+
+    if (type == "unix") {
+      auto endfd = strchr(value, ',');
+      if (!endfd) {
+        continue;
+      }
+      auto fd = util::parse_uint(reinterpret_cast<const uint8_t *>(value),
+                                 endfd - value);
+      if (fd == -1) {
+        LOG(WARN) << "Could not parse file descriptor from "
+                  << std::string(value, endfd - value);
+        continue;
+      }
+
+      auto path = endfd + 1;
+      if (strlen(path) == 0) {
+        LOG(WARN) << "Empty UNIX domain socket path (fd=" << fd << ")";
+        close(fd);
+        continue;
+      }
+
+      if (LOG_ENABLED(INFO)) {
+        LOG(INFO) << "Inherit UNIX domain socket fd=" << fd
+                  << ", path=" << path;
+      }
+
+      InheritedAddr addr{};
+      addr.host = path;
+      addr.host_unix = true;
+      addr.fd = static_cast<int>(fd);
+      iaddrs.push_back(std::move(addr));
+    }
+
+    if (type == "tcp") {
+      auto fd = util::parse_uint(value);
+      if (fd == -1) {
+        LOG(WARN) << "Could not parse file descriptor from " << value;
+        continue;
+      }
+
+      sockaddr_union su;
+      socklen_t salen = sizeof(su);
+
+      if (getsockname(fd, &su.sa, &salen) != 0) {
+        auto error = errno;
+        LOG(WARN) << "getsockname() syscall failed (fd=" << fd
+                  << "): " << strerror(error);
+        close(fd);
+        continue;
+      }
+
+      uint16_t port;
+
+      switch (su.storage.ss_family) {
+      case AF_INET:
+        port = ntohs(su.in.sin_port);
+        break;
+      case AF_INET6:
+        port = ntohs(su.in6.sin6_port);
+        break;
+      default:
+        close(fd);
+        continue;
+      }
+
+      std::array<char, NI_MAXHOST> host;
+      rv = getnameinfo(&su.sa, salen, host.data(), host.size(), nullptr, 0,
+                       NI_NUMERICHOST);
+      if (rv != 0) {
+        LOG(WARN) << "getnameinfo() failed (fd=" << fd
+                  << "): " << gai_strerror(rv);
+        close(fd);
+        continue;
+      }
+
+      if (LOG_ENABLED(INFO)) {
+        LOG(INFO) << "Inherit TCP socket fd=" << fd
+                  << ", address=" << host.data() << ", port=" << port;
+      }
+
+      InheritedAddr addr{};
+      addr.host = host.data();
+      addr.port = static_cast<uint16_t>(port);
+      addr.fd = static_cast<int>(fd);
+      iaddrs.push_back(std::move(addr));
+      continue;
+    }
+  }
+
+  for (auto &addr : listenerconf.addrs) {
+    if (addr.host_unix) {
+      if (create_unix_domain_server_socket(addr, iaddrs) != 0) {
+        return -1;
+      }
+
+      if (get_config()->uid != 0) {
+        // fd is not associated to inode, so we cannot use fchown(2)
+        // here.  https://lkml.org/lkml/2004/11/1/84
+        if (chown_to_running_user(addr.host.c_str()) == -1) {
+          auto error = errno;
+          LOG(WARN) << "Changing owner of UNIX domain socket " << addr.host
+                    << " failed: " << strerror(error);
+        }
+      }
+      continue;
+    }
+
+    if (create_tcp_server_socket(addr, iaddrs) != 0) {
+      return -1;
+    }
+  }
+
+  for (auto &ia : iaddrs) {
+    if (ia.used) {
+      continue;
+    }
+
+    close(ia.fd);
+  }
+
+  return 0;
 }
 } // namespace
 
@@ -675,19 +853,6 @@ int call_daemon() {
 #else  // !__sgi
   return daemon(0, 0);
 #endif // !__sgi
-}
-} // namespace
-
-namespace {
-void close_env_fd(std::initializer_list<const char *> envnames) {
-  for (auto envname : envnames) {
-    auto envfd = getenv(envname);
-    if (!envfd) {
-      continue;
-    }
-    auto fd = strtol(envfd, nullptr, 10);
-    close(fd);
-  }
 }
 } // namespace
 
@@ -720,7 +885,7 @@ pid_t fork_worker_process(SignalServer *ssv) {
     }
 
     close(ssv->ipc_fd[1]);
-    WorkerProcessConfig wpconf{ssv->ipc_fd[0], ssv->server_fd, ssv->server_fd6};
+    WorkerProcessConfig wpconf{ssv->ipc_fd[0]};
     rv = worker_process_event_loop(&wpconf);
     if (rv != 0) {
       LOG(FATAL) << "Worker process returned error";
@@ -781,7 +946,7 @@ int event_loop() {
     redirect_stderr_to_errorlog();
   }
 
-  if (get_config()->pid_file) {
+  if (!get_config()->pid_file.empty()) {
     save_pid();
   }
 
@@ -801,40 +966,8 @@ int event_loop() {
     util::make_socket_closeonexec(fd);
   }
 
-  auto &listenerconf = get_config()->conn.listener;
-
-  if (listenerconf.host_unix) {
-    close_env_fd({ENV_LISTENER4_FD, ENV_LISTENER6_FD});
-    auto fd = create_unix_domain_server_socket();
-    if (fd == -1) {
-      LOG(FATAL) << "Failed to listen on UNIX domain socket "
-                 << listenerconf.host.get();
-      return -1;
-    }
-
-    ssv.server_fd = fd;
-
-    if (get_config()->uid != 0) {
-      // fd is not associated to inode, so we cannot use fchown(2)
-      // here.  https://lkml.org/lkml/2004/11/1/84
-      if (chown_to_running_user(listenerconf.host.get()) == -1) {
-        auto error = errno;
-        LOG(WARN) << "Changing owner of UNIX domain socket "
-                  << listenerconf.host.get() << " failed: " << strerror(error);
-      }
-    }
-  } else {
-    close_env_fd({ENV_UNIX_FD});
-    auto fd6 = create_tcp_server_socket(AF_INET6);
-    auto fd4 = create_tcp_server_socket(AF_INET);
-    if (fd6 == -1 && fd4 == -1) {
-      LOG(FATAL) << "Failed to listen on address " << listenerconf.host.get()
-                 << ", port " << listenerconf.port;
-      return -1;
-    }
-
-    ssv.server_fd = fd4;
-    ssv.server_fd6 = fd6;
+  if (create_acceptor_socket() != 0) {
+    return -1;
   }
 
   auto loop = EV_DEFAULT;
@@ -907,39 +1040,51 @@ void fill_default_config() {
   *mod_config() = {};
 
   mod_config()->num_worker = 1;
-  mod_config()->conf_path = strcopy("/etc/nghttpx/nghttpx.conf");
+  mod_config()->conf_path = "/etc/nghttpx/nghttpx.conf";
   mod_config()->pid = getpid();
 
   auto &tlsconf = mod_config()->tls;
   {
     auto &ticketconf = tlsconf.ticket;
-    ticketconf.cipher = EVP_aes_128_cbc();
-
     {
       auto &memcachedconf = ticketconf.memcached;
       memcachedconf.max_retry = 3;
       memcachedconf.max_fail = 2;
       memcachedconf.interval = 10_min;
+      memcachedconf.family = AF_UNSPEC;
     }
 
+    auto &session_cacheconf = tlsconf.session_cache;
+    {
+      auto &memcachedconf = session_cacheconf.memcached;
+      memcachedconf.family = AF_UNSPEC;
+    }
+
+    ticketconf.cipher = EVP_aes_128_cbc();
+  }
+
+  {
     auto &ocspconf = tlsconf.ocsp;
     // ocsp update interval = 14400 secs = 4 hours, borrowed from h2o
     ocspconf.update_interval = 4_h;
-    ocspconf.fetch_ocsp_response_file =
-        strcopy(PKGDATADIR "/fetch-ocsp-response");
+    ocspconf.fetch_ocsp_response_file = PKGDATADIR "/fetch-ocsp-response";
+  }
 
+  {
     auto &dyn_recconf = tlsconf.dyn_rec;
     dyn_recconf.warmup_threshold = 1_m;
     dyn_recconf.idle_timeout = 1_s;
-
-    tlsconf.session_timeout = std::chrono::hours(12);
   }
+
+  tlsconf.session_timeout = std::chrono::hours(12);
 
   auto &httpconf = mod_config()->http;
   httpconf.server_name = "nghttpx nghttp2/" NGHTTP2_VERSION;
   httpconf.no_host_rewrite = true;
-  httpconf.header_field_buffer = 64_k;
-  httpconf.max_header_fields = 100;
+  httpconf.request_header_field_buffer = 64_k;
+  httpconf.max_request_header_fields = 100;
+  httpconf.response_header_field_buffer = 64_k;
+  httpconf.max_response_header_fields = 500;
 
   auto &http2conf = mod_config()->http2;
   {
@@ -975,7 +1120,7 @@ void fill_default_config() {
     accessconf.format = parse_log_format(DEFAULT_ACCESSLOG_FORMAT);
 
     auto &errorconf = loggingconf.error;
-    errorconf.file = strcopy("/dev/stderr");
+    errorconf.file = "/dev/stderr";
   }
 
   loggingconf.syslog_facility = LOG_DAEMON;
@@ -984,8 +1129,6 @@ void fill_default_config() {
   {
     auto &listenerconf = connconf.listener;
     {
-      listenerconf.host = strcopy("*");
-      listenerconf.port = 3000;
       // Default accept() backlog
       listenerconf.backlog = 512;
       listenerconf.timeout.sleep = 30_s;
@@ -1021,6 +1164,7 @@ void fill_default_config() {
     downstreamconf.connections_per_host = 8;
     downstreamconf.request_buffer_size = 16_k;
     downstreamconf.response_buffer_size = 128_k;
+    downstreamconf.family = AF_UNSPEC;
   }
 }
 
@@ -1118,16 +1262,19 @@ Connections:
               Set  frontend  host and  port.   If  <HOST> is  '*',  it
               assumes  all addresses  including  both  IPv4 and  IPv6.
               UNIX domain  socket can  be specified by  prefixing path
-              name with "unix:" (e.g., unix:/var/run/nghttpx.sock)
-              Default: )" << get_config()->conn.listener.host.get() << ","
-      << get_config()->conn.listener.port << R"(
+              name  with  "unix:" (e.g.,  unix:/var/run/nghttpx.sock).
+              This  option can  be used  multiple times  to listen  to
+              multiple addresses.
+              Default: *,3000
   --backlog=<N>
               Set listen backlog size.
               Default: )" << get_config()->conn.listener.backlog << R"(
-  --backend-ipv4
-              Resolve backend hostname to IPv4 address only.
-  --backend-ipv6
-              Resolve backend hostname to IPv6 address only.
+  --backend-address-family=(auto|IPv4|IPv6)
+              Specify  address  family  of  backend  connections.   If
+              "auto" is given, both IPv4  and IPv6 are considered.  If
+              "IPv4" is  given, only  IPv4 address is  considered.  If
+              "IPv6" is given, only IPv6 address is considered.
+              Default: auto
   --backend-http-proxy-uri=<URI>
               Specify      proxy       URI      in       the      form
               http://[<USER>:<PASS>@]<PROXY>:<PORT>.    If   a   proxy
@@ -1143,6 +1290,16 @@ Connections:
               --backend-write-timeout options.
   --accept-proxy-protocol
               Accept PROXY protocol version 1 on frontend connection.
+  --backend-no-tls
+              Disable  SSL/TLS  on  backend connections.   For  HTTP/2
+              backend  connections, TLS  is enabled  by default.   For
+              HTTP/1 backend connections, TLS  is disabled by default,
+              and can  be enabled  by --backend-http1-tls  option.  If
+              both  --backend-no-tls  and --backend-http1-tls  options
+              are used, --backend-no-tls has the precedence.
+  --backend-http1-tls
+              Enable SSL/TLS on backend  HTTP/1 connections.  See also
+              --backend-no-tls option.
 
 Performance:
   -n, --workers=<N>
@@ -1292,16 +1449,14 @@ SSL/TLS:
               Set allowed  cipher list.  The  format of the  string is
               described in OpenSSL ciphers(1).
   -k, --insecure
-              Don't  verify   backend  server's  certificate   if  -p,
-              --client    or    --http2-bridge     are    given    and
-              --backend-no-tls is not given.
+              Don't  verify backend  server's  certificate  if TLS  is
+              enabled for backend connections.
   --cacert=<PATH>
-              Set path to trusted CA  certificate file if -p, --client
-              or --http2-bridge are given  and --backend-no-tls is not
-              given.  The file must be  in PEM format.  It can contain
-              multiple  certificates.    If  the  linked   OpenSSL  is
-              configured to  load system  wide certificates,  they are
-              loaded at startup regardless of this option.
+              Set path to trusted CA  certificate file used in backend
+              TLS connections.   The file must  be in PEM  format.  It
+              can  contain  multiple   certificates.   If  the  linked
+              OpenSSL is configured to  load system wide certificates,
+              they are loaded at startup regardless of this option.
   --private-key-passwd-file=<PATH>
               Path  to file  that contains  password for  the server's
               private key.   If none is  given and the private  key is
@@ -1373,16 +1528,23 @@ SSL/TLS:
               ticket  key sharing  between  nghttpx  instances is  not
               required.
   --tls-ticket-key-memcached=<HOST>,<PORT>
-              Specify  address of  memcached server  to store  session
-              cache.   This  enables  shared TLS  ticket  key  between
-              multiple nghttpx  instances.  nghttpx  does not  set TLS
-              ticket  key  to  memcached.   The  external  ticket  key
-              generator  is required.   nghttpx just  gets TLS  ticket
-              keys from  memcached, and  use them,  possibly replacing
-              current set of keys.  It is  up to extern TLS ticket key
-              generator to  rotate keys frequently.  See  "TLS SESSION
-              TICKET RESUMPTION"  section in  manual page to  know the
-              data format in memcached entry.
+              Specify address  of memcached  server to get  TLS ticket
+              keys for  session resumption.   This enables  shared TLS
+              ticket key between  multiple nghttpx instances.  nghttpx
+              does not set TLS ticket  key to memcached.  The external
+              ticket key generator is required.  nghttpx just gets TLS
+              ticket  keys  from  memcached, and  use  them,  possibly
+              replacing current set  of keys.  It is up  to extern TLS
+              ticket  key generator  to rotate  keys frequently.   See
+              "TLS SESSION  TICKET RESUMPTION" section in  manual page
+              to know the data format in memcached entry.
+  --tls-ticket-key-memcached-address-family=(auto|IPv4|IPv6)
+              Specify address  family of memcached connections  to get
+              TLS ticket keys.  If "auto" is given, both IPv4 and IPv6
+              are considered.   If "IPv4" is given,  only IPv4 address
+              is considered.  If "IPv6" is given, only IPv6 address is
+              considered.
+              Default: auto
   --tls-ticket-key-memcached-interval=<DURATION>
               Set interval to get TLS ticket keys from memcached.
               Default: )"
@@ -1403,11 +1565,20 @@ SSL/TLS:
               Specify cipher  to encrypt TLS session  ticket.  Specify
               either   aes-128-cbc   or  aes-256-cbc.    By   default,
               aes-128-cbc is used.
+  --tls-ticket-key-memcached-tls
+              Enable  SSL/TLS  on  memcached connections  to  get  TLS
+              ticket keys.
+  --tls-ticket-key-memcached-cert-file=<PATH>
+              Path to client certificate  for memcached connections to
+              get TLS ticket keys.
+  --tls-ticket-key-memcached-private-key-file=<PATH>
+              Path to client private  key for memcached connections to
+              get TLS ticket keys.
   --fetch-ocsp-response-file=<PATH>
               Path to  fetch-ocsp-response script file.  It  should be
               absolute path.
-              Default: )"
-      << get_config()->tls.ocsp.fetch_ocsp_response_file.get() << R"(
+              Default: )" << get_config()->tls.ocsp.fetch_ocsp_response_file
+      << R"(
   --ocsp-update-interval=<DURATION>
               Set interval to update OCSP response cache.
               Default: )"
@@ -1417,6 +1588,22 @@ SSL/TLS:
               Specify  address of  memcached server  to store  session
               cache.   This  enables   shared  session  cache  between
               multiple nghttpx instances.
+  --tls-session-cache-memcached-address-family=(auto|IPv4|IPv6)
+              Specify address family of memcached connections to store
+              session cache.  If  "auto" is given, both  IPv4 and IPv6
+              are considered.   If "IPv4" is given,  only IPv4 address
+              is considered.  If "IPv6" is given, only IPv6 address is
+              considered.
+              Default: auto
+  --tls-session-cache-memcached-tls
+              Enable SSL/TLS on memcached connections to store session
+              cache.
+  --tls-session-cache-memcached-cert-file=<PATH>
+              Path to client certificate  for memcached connections to
+              store session cache.
+  --tls-session-cache-memcached-private-key-file=<PATH>
+              Path to client private  key for memcached connections to
+              store session cache.
   --tls-dyn-rec-warmup-threshold=<SIZE>
               Specify the  threshold size for TLS  dynamic record size
               behaviour.  During  a TLS  session, after  the threshold
@@ -1437,6 +1624,10 @@ SSL/TLS:
               TLS HTTP/2 backends.
               Default: )"
       << util::duration_str(get_config()->tls.dyn_rec.idle_timeout) << R"(
+  --no-http2-cipher-black-list
+              Allow black  listed cipher  suite on  HTTP/2 connection.
+              See  https://tools.ietf.org/html/rfc7540#appendix-A  for
+              the complete HTTP/2 cipher suites black list.
 
 HTTP/2 and SPDY:
   -c, --http2-max-concurrent-streams=<N>
@@ -1465,8 +1656,6 @@ HTTP/2 and SPDY:
               connection to 2**<N>-1.
               Default: )"
       << get_config()->http2.downstream.connection_window_bits << R"(
-  --backend-no-tls
-              Disable SSL/TLS on backend connections.
   --http2-no-cookie-crumbling
               Don't crumble cookie header field.
   --padding=<N>
@@ -1557,7 +1746,7 @@ Logging:
               Set path to write error  log.  To reopen file, send USR1
               signal  to nghttpx.   stderr will  be redirected  to the
               error log file unless --errorlog-syslog is used.
-              Default: )" << get_config()->logging.error.file.get() << R"(
+              Default: )" << get_config()->logging.error.file << R"(
   --errorlog-syslog
               Send  error log  to  syslog.  If  this  option is  used,
               --errorlog-file option is ignored.
@@ -1590,11 +1779,12 @@ HTTP:
               of Forwarded  header field.   If "obfuscated"  is given,
               the string is randomly generated at startup.  If "ip" is
               given,   the  interface   address  of   the  connection,
-              including  port number,  is  sent  with "by"  parameter.
-              User can also specify the static obfuscated string.  The
-              limitation  is that  it must  start with  "_", and  only
-              consists of  character set [A-Za-z0-9._-],  as described
-              in RFC 7239.
+              including port number, is  sent with "by" parameter.  In
+              case of UNIX domain  socket, "localhost" is used instead
+              of address and  port.  User can also  specify the static
+              obfuscated string.  The limitation is that it must start
+              with   "_",  and   only   consists   of  character   set
+              [A-Za-z0-9._-], as described in RFC 7239.
               Default: obfuscated
   --forwarded-for=(obfuscated|ip)
               Specify  the   parameter  value  sent  out   with  "for"
@@ -1602,7 +1792,8 @@ HTTP:
               given, the string is  randomly generated for each client
               connection.  If "ip" is given, the remote client address
               of  the connection,  without port  number, is  sent with
-              "for" parameter.
+              "for"  parameter.   In  case   of  UNIX  domain  socket,
+              "localhost" is used instead of address.
               Default: obfuscated
   --no-via    Don't append to  Via header field.  If  Via header field
               is received, it is left unaltered.
@@ -1635,17 +1826,31 @@ HTTP:
               won't replace anything already  set.  This option can be
               used several  times to  specify multiple  header fields.
               Example: --add-response-header="foo: bar"
-  --header-field-buffer=<SIZE>
+  --request-header-field-buffer=<SIZE>
               Set maximum buffer size for incoming HTTP request header
               field list.  This is the sum of header name and value in
-              bytes.
+              bytes.   If  trailer  fields  exist,  they  are  counted
+              towards this number.
               Default: )"
-      << util::utos_unit(get_config()->http.header_field_buffer) << R"(
-  --max-header-fields=<N>
+      << util::utos_unit(get_config()->http.request_header_field_buffer) << R"(
+  --max-request-header-fields=<N>
               Set  maximum  number  of incoming  HTTP  request  header
-              fields, which  appear in one request  or response header
-              field list.
-              Default: )" << get_config()->http.max_header_fields << R"(
+              fields.   If  trailer  fields exist,  they  are  counted
+              towards this number.
+              Default: )" << get_config()->http.max_request_header_fields << R"(
+  --response-header-field-buffer=<SIZE>
+              Set  maximum  buffer  size for  incoming  HTTP  response
+              header field list.   This is the sum of  header name and
+              value  in  bytes.  If  trailer  fields  exist, they  are
+              counted towards this number.
+              Default: )"
+      << util::utos_unit(get_config()->http.response_header_field_buffer) << R"(
+  --max-response-header-fields=<N>
+              Set  maximum number  of  incoming  HTTP response  header
+              fields.   If  trailer  fields exist,  they  are  counted
+              towards this number.
+              Default: )" << get_config()->http.max_response_header_fields
+      << R"(
 
 Debug:
   --frontend-http2-dump-request-header=<PATH>
@@ -1682,7 +1887,7 @@ Scripting:
 Misc:
   --conf=<PATH>
               Load configuration from <PATH>.
-              Default: )" << get_config()->conf_path.get() << R"(
+              Default: )" << get_config()->conf_path << R"(
   --include=<PATH>
               Load additional configurations from <PATH>.  File <PATH>
               is  read  when  configuration  parser  encountered  this
@@ -1708,11 +1913,11 @@ namespace {
 void process_options(
     int argc, char **argv,
     std::vector<std::pair<const char *, const char *>> &cmdcfgs) {
-  if (conf_exists(get_config()->conf_path.get())) {
+  if (conf_exists(get_config()->conf_path.c_str())) {
     std::set<std::string> include_set;
-    if (load_config(get_config()->conf_path.get(), include_set) == -1) {
+    if (load_config(get_config()->conf_path.c_str(), include_set) == -1) {
       LOG(FATAL) << "Failed to load configuration from "
-                 << get_config()->conf_path.get();
+                 << get_config()->conf_path;
       exit(EXIT_FAILURE);
     }
     assert(include_set.empty());
@@ -1775,8 +1980,8 @@ void process_options(
   {
     auto &dumpconf = http2conf.upstream.debug.dump;
 
-    if (dumpconf.request_header_file) {
-      auto path = dumpconf.request_header_file.get();
+    if (!dumpconf.request_header_file.empty()) {
+      auto path = dumpconf.request_header_file.c_str();
       auto f = open_file_for_write(path);
 
       if (f == nullptr) {
@@ -1796,8 +2001,8 @@ void process_options(
       }
     }
 
-    if (dumpconf.response_header_file) {
-      auto path = dumpconf.response_header_file.get();
+    if (!dumpconf.response_header_file.empty()) {
+      auto path = dumpconf.response_header_file.c_str();
       auto f = open_file_for_write(path);
 
       if (f == nullptr) {
@@ -1836,10 +2041,14 @@ void process_options(
   auto &upstreamconf = mod_config()->conn.upstream;
   auto &downstreamconf = mod_config()->conn.downstream;
 
-  if (downstreamconf.ipv4 && downstreamconf.ipv6) {
-    LOG(FATAL) << "--backend-ipv4 and --backend-ipv6 cannot be used at the "
-               << "same time.";
-    exit(EXIT_FAILURE);
+  if (listenerconf.addrs.empty()) {
+    UpstreamAddr addr{};
+    addr.host = "*";
+    addr.port = 3000;
+    addr.family = AF_INET;
+    listenerconf.addrs.push_back(addr);
+    addr.family = AF_INET6;
+    listenerconf.addrs.push_back(std::move(addr));
   }
 
   if (upstreamconf.worker_connections == 0) {
@@ -1865,8 +2074,12 @@ void process_options(
     downstreamconf.proto = PROTO_HTTP;
   }
 
+  if (downstreamconf.proto == PROTO_HTTP && !downstreamconf.http1_tls) {
+    downstreamconf.no_tls = true;
+  }
+
   if (!upstreamconf.no_tls &&
-      (!tlsconf.private_key_file || !tlsconf.cert_file)) {
+      (tlsconf.private_key_file.empty() || tlsconf.cert_file.empty())) {
     print_usage(std::cerr);
     LOG(FATAL) << "Too few arguments";
     exit(EXIT_FAILURE);
@@ -1874,10 +2087,10 @@ void process_options(
 
   if (!upstreamconf.no_tls && !tlsconf.ocsp.disabled) {
     struct stat buf;
-    if (stat(tlsconf.ocsp.fetch_ocsp_response_file.get(), &buf) != 0) {
+    if (stat(tlsconf.ocsp.fetch_ocsp_response_file.c_str(), &buf) != 0) {
       tlsconf.ocsp.disabled = true;
       LOG(WARN) << "--fetch-ocsp-response-file: "
-                << tlsconf.ocsp.fetch_ocsp_response_file.get()
+                << tlsconf.ocsp.fetch_ocsp_response_file
                 << " not found.  OCSP stapling has been disabled.";
     }
   }
@@ -1885,18 +2098,18 @@ void process_options(
   auto &addr_groups = downstreamconf.addr_groups;
 
   if (addr_groups.empty()) {
-    DownstreamAddr addr;
+    DownstreamAddr addr{};
     addr.host = ImmutableString::from_lit(DEFAULT_DOWNSTREAM_HOST);
     addr.port = DEFAULT_DOWNSTREAM_PORT;
 
-    DownstreamAddrGroup g("/");
+    DownstreamAddrGroup g(StringRef::from_lit("/"));
     g.addrs.push_back(std::move(addr));
-    mod_config()->router.add_route(g.pattern.get(), 1, addr_groups.size());
+    mod_config()->router.add_route(StringRef{g.pattern}, addr_groups.size());
     addr_groups.push_back(std::move(g));
   } else if (get_config()->http2_proxy || get_config()->client_proxy) {
     // We don't support host mapping in these cases.  Move all
     // non-catch-all patterns to catch-all pattern.
-    DownstreamAddrGroup catch_all("/");
+    DownstreamAddrGroup catch_all(StringRef::from_lit("/"));
     for (auto &g : addr_groups) {
       std::move(std::begin(g.addrs), std::end(g.addrs),
                 std::back_inserter(catch_all.addrs));
@@ -1904,7 +2117,7 @@ void process_options(
     std::vector<DownstreamAddrGroup>().swap(addr_groups);
     // maybe not necessary?
     mod_config()->router = Router();
-    mod_config()->router.add_route(catch_all.pattern.get(), 1,
+    mod_config()->router.add_route(StringRef{catch_all.pattern},
                                    addr_groups.size());
     addr_groups.push_back(std::move(catch_all));
   }
@@ -1916,11 +2129,11 @@ void process_options(
   ssize_t catch_all_group = -1;
   for (size_t i = 0; i < addr_groups.size(); ++i) {
     auto &g = addr_groups[i];
-    if (util::streq(g.pattern.get(), "/")) {
+    if (g.pattern == "/") {
       catch_all_group = i;
     }
     if (LOG_ENABLED(INFO)) {
-      LOG(INFO) << "Host-path pattern: group " << i << ": '" << g.pattern.get()
+      LOG(INFO) << "Host-path pattern: group " << i << ": '" << g.pattern
                 << "'";
       for (auto &addr : g.addrs) {
         LOG(INFO) << "group " << i << " -> " << addr.host.c_str()
@@ -1947,8 +2160,7 @@ void process_options(
         // for AF_UNIX socket, we use "localhost" as host for backend
         // hostport.  This is used as Host header field to backend and
         // not going to be passed to any syscalls.
-        addr.hostport = ImmutableString(
-            util::make_hostport("localhost", listenerconf.port));
+        addr.hostport = "localhost";
 
         auto path = addr.host.c_str();
         auto pathlen = addr.host.size();
@@ -1959,8 +2171,10 @@ void process_options(
           exit(EXIT_FAILURE);
         }
 
-        LOG(INFO) << "Use UNIX domain socket path " << path
-                  << " for backend connection";
+        if (LOG_ENABLED(INFO)) {
+          LOG(INFO) << "Use UNIX domain socket path " << path
+                    << " for backend connection";
+        }
 
         addr.addr.su.un.sun_family = AF_UNIX;
         // copy path including terminal NULL
@@ -1970,47 +2184,63 @@ void process_options(
         continue;
       }
 
-      addr.hostport =
-          ImmutableString(util::make_hostport(addr.host.c_str(), addr.port));
+      addr.hostport = ImmutableString(
+          util::make_http_hostport(StringRef(addr.host), addr.port));
 
-      if (resolve_hostname(
-              &addr.addr, addr.host.c_str(), addr.port,
-              downstreamconf.ipv4
-                  ? AF_INET
-                  : (downstreamconf.ipv6 ? AF_INET6 : AF_UNSPEC)) == -1) {
+      auto hostport = util::make_hostport(addr.host.c_str(), addr.port);
+
+      if (resolve_hostname(&addr.addr, addr.host.c_str(), addr.port,
+                           downstreamconf.family) == -1) {
+        LOG(FATAL) << "Resolving backend address failed: " << hostport;
         exit(EXIT_FAILURE);
       }
+      LOG(NOTICE) << "Resolved backend address: " << hostport << " -> "
+                  << util::to_numeric_addr(&addr.addr);
     }
   }
 
   auto &proxy = mod_config()->downstream_http_proxy;
   if (!proxy.host.empty()) {
-    if (LOG_ENABLED(INFO)) {
-      LOG(INFO) << "Resolving backend http proxy address";
-    }
+    auto hostport = util::make_hostport(proxy.host.c_str(), proxy.port);
     if (resolve_hostname(&proxy.addr, proxy.host.c_str(), proxy.port,
                          AF_UNSPEC) == -1) {
+      LOG(FATAL) << "Resolving backend HTTP proxy address failed: " << hostport;
       exit(EXIT_FAILURE);
     }
+    LOG(NOTICE) << "Backend HTTP proxy address: " << hostport << " -> "
+                << util::to_numeric_addr(&proxy.addr);
   }
 
   {
     auto &memcachedconf = tlsconf.session_cache.memcached;
-    if (memcachedconf.host) {
-      if (resolve_hostname(&memcachedconf.addr, memcachedconf.host.get(),
-                           memcachedconf.port, AF_UNSPEC) == -1) {
+    if (!memcachedconf.host.empty()) {
+      auto hostport = util::make_hostport(StringRef{memcachedconf.host},
+                                          memcachedconf.port);
+      if (resolve_hostname(&memcachedconf.addr, memcachedconf.host.c_str(),
+                           memcachedconf.port, memcachedconf.family) == -1) {
+        LOG(FATAL)
+            << "Resolving memcached address for TLS session cache failed: "
+            << hostport;
         exit(EXIT_FAILURE);
       }
+      LOG(NOTICE) << "Memcached address for TLS session cache: " << hostport
+                  << " -> " << util::to_numeric_addr(&memcachedconf.addr);
     }
   }
 
   {
     auto &memcachedconf = tlsconf.ticket.memcached;
-    if (memcachedconf.host) {
-      if (resolve_hostname(&memcachedconf.addr, memcachedconf.host.get(),
-                           memcachedconf.port, AF_UNSPEC) == -1) {
+    if (!memcachedconf.host.empty()) {
+      auto hostport = util::make_hostport(StringRef{memcachedconf.host},
+                                          memcachedconf.port);
+      if (resolve_hostname(&memcachedconf.addr, memcachedconf.host.c_str(),
+                           memcachedconf.port, memcachedconf.family) == -1) {
+        LOG(FATAL) << "Resolving memcached address for TLS ticket key failed: "
+                   << hostport;
         exit(EXIT_FAILURE);
       }
+      LOG(NOTICE) << "Memcached address for TLS ticket key: " << hostport
+                  << " -> " << util::to_numeric_addr(&memcachedconf.addr);
     }
   }
 
@@ -2209,6 +2439,27 @@ int main(int argc, char **argv) {
         {SHRPX_OPT_STRIP_INCOMING_FORWARDED, no_argument, &flag, 98},
         {SHRPX_OPT_FORWARDED_BY, required_argument, &flag, 99},
         {SHRPX_OPT_FORWARDED_FOR, required_argument, &flag, 100},
+        {SHRPX_OPT_RESPONSE_HEADER_FIELD_BUFFER, required_argument, &flag, 101},
+        {SHRPX_OPT_MAX_RESPONSE_HEADER_FIELDS, required_argument, &flag, 102},
+        {SHRPX_OPT_NO_HTTP2_CIPHER_BLACK_LIST, no_argument, &flag, 103},
+        {SHRPX_OPT_REQUEST_HEADER_FIELD_BUFFER, required_argument, &flag, 104},
+        {SHRPX_OPT_MAX_REQUEST_HEADER_FIELDS, required_argument, &flag, 105},
+        {SHRPX_OPT_BACKEND_HTTP1_TLS, no_argument, &flag, 106},
+        {SHRPX_OPT_TLS_SESSION_CACHE_MEMCACHED_TLS, no_argument, &flag, 108},
+        {SHRPX_OPT_TLS_SESSION_CACHE_MEMCACHED_CERT_FILE, required_argument,
+         &flag, 109},
+        {SHRPX_OPT_TLS_SESSION_CACHE_MEMCACHED_PRIVATE_KEY_FILE,
+         required_argument, &flag, 110},
+        {SHRPX_OPT_TLS_TICKET_KEY_MEMCACHED_TLS, no_argument, &flag, 111},
+        {SHRPX_OPT_TLS_TICKET_KEY_MEMCACHED_CERT_FILE, required_argument, &flag,
+         112},
+        {SHRPX_OPT_TLS_TICKET_KEY_MEMCACHED_PRIVATE_KEY_FILE, required_argument,
+         &flag, 113},
+        {SHRPX_OPT_TLS_TICKET_KEY_MEMCACHED_ADDRESS_FAMILY, required_argument,
+         &flag, 114},
+        {SHRPX_OPT_TLS_SESSION_CACHE_MEMCACHED_ADDRESS_FAMILY,
+         required_argument, &flag, 115},
+        {SHRPX_OPT_BACKEND_ADDRESS_FAMILY, required_argument, &flag, 116},
         {nullptr, 0, nullptr, 0}};
 
     int option_index = 0;
@@ -2302,7 +2553,7 @@ int main(int argc, char **argv) {
         break;
       case 12:
         // --conf
-        mod_config()->conf_path = strcopy(optarg);
+        mod_config()->conf_path = optarg;
         break;
       case 14:
         // --syslog-facility
@@ -2637,6 +2888,72 @@ int main(int argc, char **argv) {
       case 100:
         // --forwarded-for
         cmdcfgs.emplace_back(SHRPX_OPT_FORWARDED_FOR, optarg);
+        break;
+      case 101:
+        // --response-header-field-buffer
+        cmdcfgs.emplace_back(SHRPX_OPT_RESPONSE_HEADER_FIELD_BUFFER, optarg);
+        break;
+      case 102:
+        // --max-response-header-fields
+        cmdcfgs.emplace_back(SHRPX_OPT_MAX_RESPONSE_HEADER_FIELDS, optarg);
+        break;
+      case 103:
+        // --no-http2-cipher-black-list
+        cmdcfgs.emplace_back(SHRPX_OPT_NO_HTTP2_CIPHER_BLACK_LIST, "yes");
+        break;
+      case 104:
+        // --request-header-field-buffer
+        cmdcfgs.emplace_back(SHRPX_OPT_REQUEST_HEADER_FIELD_BUFFER, optarg);
+        break;
+      case 105:
+        // --max-request-header-fields
+        cmdcfgs.emplace_back(SHRPX_OPT_MAX_REQUEST_HEADER_FIELDS, optarg);
+        break;
+      case 106:
+        // --backend-http1-tls
+        cmdcfgs.emplace_back(SHRPX_OPT_BACKEND_HTTP1_TLS, "yes");
+        break;
+      case 108:
+        // --tls-session-cache-memcached-tls
+        cmdcfgs.emplace_back(SHRPX_OPT_TLS_SESSION_CACHE_MEMCACHED_TLS, "yes");
+        break;
+      case 109:
+        // --tls-session-cache-memcached-cert-file
+        cmdcfgs.emplace_back(SHRPX_OPT_TLS_SESSION_CACHE_MEMCACHED_CERT_FILE,
+                             optarg);
+        break;
+      case 110:
+        // --tls-session-cache-memcached-private-key-file
+        cmdcfgs.emplace_back(
+            SHRPX_OPT_TLS_SESSION_CACHE_MEMCACHED_PRIVATE_KEY_FILE, optarg);
+        break;
+      case 111:
+        // --tls-ticket-key-memcached-tls
+        cmdcfgs.emplace_back(SHRPX_OPT_TLS_TICKET_KEY_MEMCACHED_TLS, "yes");
+        break;
+      case 112:
+        // --tls-ticket-key-memcached-cert-file
+        cmdcfgs.emplace_back(SHRPX_OPT_TLS_TICKET_KEY_MEMCACHED_CERT_FILE,
+                             optarg);
+        break;
+      case 113:
+        // --tls-ticket-key-memcached-private-key-file
+        cmdcfgs.emplace_back(
+            SHRPX_OPT_TLS_TICKET_KEY_MEMCACHED_PRIVATE_KEY_FILE, optarg);
+        break;
+      case 114:
+        // --tls-ticket-key-memcached-address-family
+        cmdcfgs.emplace_back(SHRPX_OPT_TLS_TICKET_KEY_MEMCACHED_ADDRESS_FAMILY,
+                             optarg);
+        break;
+      case 115:
+        // --tls-session-cache-memcached-address-family
+        cmdcfgs.emplace_back(
+            SHRPX_OPT_TLS_SESSION_CACHE_MEMCACHED_ADDRESS_FAMILY, optarg);
+        break;
+      case 116:
+        // --backend-address-family
+        cmdcfgs.emplace_back(SHRPX_OPT_BACKEND_ADDRESS_FAMILY, optarg);
         break;
       default:
         break;

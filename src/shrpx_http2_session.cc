@@ -58,6 +58,10 @@ const ev_tstamp CONNCHK_PING_TIMEOUT = 1.;
 } // namespace
 
 namespace {
+constexpr size_t MAX_BUFFER_SIZE = 32_k;
+} // namespace
+
+namespace {
 void connchk_timeout_cb(struct ev_loop *loop, ev_timer *w, int revents) {
   auto http2session = static_cast<Http2Session *>(w->data);
 
@@ -143,20 +147,27 @@ void writecb(struct ev_loop *loop, ev_io *w, int revents) {
 } // namespace
 
 Http2Session::Http2Session(struct ev_loop *loop, SSL_CTX *ssl_ctx,
-                           ConnectBlocker *connect_blocker, Worker *worker,
-                           size_t group, size_t idx)
+                           Worker *worker, size_t group, size_t idx)
     : conn_(loop, -1, nullptr, worker->get_mcpool(),
             get_config()->conn.downstream.timeout.write,
             get_config()->conn.downstream.timeout.read, {}, {}, writecb, readcb,
             timeoutcb, this, get_config()->tls.dyn_rec.warmup_threshold,
             get_config()->tls.dyn_rec.idle_timeout),
-      worker_(worker), connect_blocker_(connect_blocker), ssl_ctx_(ssl_ctx),
-      session_(nullptr), data_pending_(nullptr), data_pendinglen_(0),
-      addr_idx_(0), group_(group), index_(idx), state_(DISCONNECTED),
-      connection_check_state_(CONNECTION_CHECK_NONE), flow_control_(false) {
+      wb_(worker->get_mcpool()),
+      worker_(worker),
+      ssl_ctx_(ssl_ctx),
+      addr_(nullptr),
+      session_(nullptr),
+      group_(group),
+      index_(idx),
+      state_(DISCONNECTED),
+      connection_check_state_(CONNECTION_CHECK_NONE),
+      flow_control_(false) {
 
   read_ = write_ = &Http2Session::noop;
-  on_read_ = on_write_ = &Http2Session::noop;
+
+  on_read_ = &Http2Session::read_noop;
+  on_write_ = &Http2Session::write_noop;
 
   // We will resuse this many times, so use repeat timeout value.  The
   // timeout value is set later.
@@ -180,7 +191,6 @@ int Http2Session::disconnect(bool hard) {
   nghttp2_session_del(session_);
   session_ = nullptr;
 
-  rb_.reset();
   wb_.reset();
 
   conn_.rlimit.stopw();
@@ -190,11 +200,13 @@ int Http2Session::disconnect(bool hard) {
   ev_timer_stop(conn_.loop, &connchk_timer_);
 
   read_ = write_ = &Http2Session::noop;
-  on_read_ = on_write_ = &Http2Session::noop;
+
+  on_read_ = &Http2Session::read_noop;
+  on_write_ = &Http2Session::write_noop;
 
   conn_.disconnect();
 
-  addr_idx_ = 0;
+  addr_ = nullptr;
 
   if (proxy_htp_) {
     proxy_htp_.reset();
@@ -237,39 +249,60 @@ int Http2Session::disconnect(bool hard) {
   return 0;
 }
 
-int Http2Session::check_cert() {
-  return ssl::check_cert(
-      conn_.tls.ssl,
-      &get_config()->conn.downstream.addr_groups[group_].addrs[addr_idx_]);
-}
-
 int Http2Session::initiate_connection() {
   int rv = 0;
 
-  auto &addrs = get_config()->conn.downstream.addr_groups[group_].addrs;
+  auto &groups = worker_->get_downstream_addr_groups();
+  auto &addrs = groups[group_].addrs;
+  auto worker_blocker = worker_->get_connect_blocker();
 
   if (state_ == DISCONNECTED) {
-    if (connect_blocker_->blocked()) {
+    if (worker_blocker->blocked()) {
       if (LOG_ENABLED(INFO)) {
-        DCLOG(INFO, this)
-            << "Downstream connection was blocked by connect_blocker";
+        SSLOG(INFO, this)
+            << "Worker wide backend connection was blocked temporarily";
       }
       return -1;
     }
 
     auto &next_downstream = worker_->get_dgrp(group_)->next;
-    addr_idx_ = next_downstream;
-    if (++next_downstream >= addrs.size()) {
-      next_downstream = 0;
-    }
+    auto end = next_downstream;
 
-    if (LOG_ENABLED(INFO)) {
-      SSLOG(INFO, this) << "Using downstream address idx=" << addr_idx_
-                        << " out of " << addrs.size();
+    for (;;) {
+      auto &addr = addrs[next_downstream];
+
+      if (++next_downstream >= addrs.size()) {
+        next_downstream = 0;
+      }
+
+      auto &connect_blocker = addr.connect_blocker;
+
+      if (connect_blocker->blocked()) {
+        if (LOG_ENABLED(INFO)) {
+          SSLOG(INFO, this) << "Backend server "
+                            << util::to_numeric_addr(&addr.addr)
+                            << " was not available temporarily";
+        }
+
+        if (end == next_downstream) {
+          return -1;
+        }
+
+        continue;
+      }
+
+      if (LOG_ENABLED(INFO)) {
+        SSLOG(INFO, this) << "Using downstream address idx=" << next_downstream
+                          << " out of " << addrs.size();
+      }
+
+      addr_ = &addr;
+
+      break;
     }
   }
 
-  auto &downstream_addr = addrs[addr_idx_];
+  auto &connect_blocker = addr_->connect_blocker;
 
   const auto &proxy = get_config()->downstream_http_proxy;
   if (!proxy.host.empty() && state_ == DISCONNECTED) {
@@ -281,15 +314,25 @@ int Http2Session::initiate_connection() {
     conn_.fd = util::create_nonblock_socket(proxy.addr.su.storage.ss_family);
 
     if (conn_.fd == -1) {
-      connect_blocker_->on_failure();
+      auto error = errno;
+      SSLOG(WARN, this) << "Backend proxy socket() failed; addr="
+                        << util::to_numeric_addr(&proxy.addr)
+                        << ", errno=" << error;
+
+      worker_blocker->on_failure();
       return -1;
     }
 
+    worker_blocker->on_success();
+
     rv = connect(conn_.fd, &proxy.addr.su.sa, proxy.addr.len);
     if (rv != 0 && errno != EINPROGRESS) {
-      SSLOG(ERROR, this) << "Failed to connect to the proxy " << proxy.host
-                         << ":" << proxy.port;
-      connect_blocker_->on_failure();
+      auto error = errno;
+      SSLOG(WARN, this) << "Backend proxy connect() failed; addr="
+                        << util::to_numeric_addr(&proxy.addr)
+                        << ", errno=" << error;
+
+      connect_blocker->on_failure();
       return -1;
     }
 
@@ -333,7 +376,7 @@ int Http2Session::initiate_connection() {
 
       auto sni_name = !get_config()->tls.backend_sni_name.empty()
                           ? StringRef(get_config()->tls.backend_sni_name)
-                          : StringRef(downstream_addr.host);
+                          : StringRef(addr_->host);
 
       if (!util::numeric_host(sni_name.c_str())) {
         // TLS extensions: SNI. There is no documentation about the return
@@ -346,19 +389,31 @@ int Http2Session::initiate_connection() {
       if (state_ == DISCONNECTED) {
         assert(conn_.fd == -1);
 
-        conn_.fd = util::create_nonblock_socket(
-            downstream_addr.addr.su.storage.ss_family);
+        conn_.fd =
+            util::create_nonblock_socket(addr_->addr.su.storage.ss_family);
         if (conn_.fd == -1) {
-          connect_blocker_->on_failure();
+          auto error = errno;
+          SSLOG(WARN, this)
+              << "socket() failed; addr=" << util::to_numeric_addr(&addr_->addr)
+              << ", errno=" << error;
+
+          worker_blocker->on_failure();
           return -1;
         }
 
+        worker_blocker->on_success();
+
         rv = connect(conn_.fd,
                      // TODO maybe not thread-safe?
-                     const_cast<sockaddr *>(&downstream_addr.addr.su.sa),
-                     downstream_addr.addr.len);
+                     const_cast<sockaddr *>(&addr_->addr.su.sa),
+                     addr_->addr.len);
         if (rv != 0 && errno != EINPROGRESS) {
-          connect_blocker_->on_failure();
+          auto error = errno;
+          SSLOG(WARN, this) << "connect() failed; addr="
+                            << util::to_numeric_addr(&addr_->addr)
+                            << ", errno=" << error;
+
+          connect_blocker->on_failure();
           return -1;
         }
 
@@ -372,19 +427,30 @@ int Http2Session::initiate_connection() {
         // Without TLS and proxy.
         assert(conn_.fd == -1);
 
-        conn_.fd = util::create_nonblock_socket(
-            downstream_addr.addr.su.storage.ss_family);
+        conn_.fd =
+            util::create_nonblock_socket(addr_->addr.su.storage.ss_family);
 
         if (conn_.fd == -1) {
-          connect_blocker_->on_failure();
+          auto error = errno;
+          SSLOG(WARN, this)
+              << "socket() failed; addr=" << util::to_numeric_addr(&addr_->addr)
+              << ", errno=" << error;
+
+          worker_blocker->on_failure();
           return -1;
         }
 
-        rv = connect(conn_.fd,
-                     const_cast<sockaddr *>(&downstream_addr.addr.su.sa),
-                     downstream_addr.addr.len);
+        worker_blocker->on_success();
+
+        rv = connect(conn_.fd, const_cast<sockaddr *>(&addr_->addr.su.sa),
+                     addr_->addr.len);
         if (rv != 0 && errno != EINPROGRESS) {
-          connect_blocker_->on_failure();
+          auto error = errno;
+          SSLOG(WARN, this) << "connect() failed; addr="
+                            << util::to_numeric_addr(&addr_->addr)
+                            << ", errno=" << error;
+
+          connect_blocker->on_failure();
           return -1;
         }
 
@@ -462,29 +528,17 @@ http_parser_settings htp_hooks = {
 };
 } // namespace
 
-int Http2Session::downstream_read_proxy() {
-  if (rb_.rleft() == 0) {
-    return 0;
-  }
-
-  size_t nread =
+int Http2Session::downstream_read_proxy(const uint8_t *data, size_t datalen) {
+  auto nread =
       http_parser_execute(proxy_htp_.get(), &htp_hooks,
-                          reinterpret_cast<const char *>(rb_.pos), rb_.rleft());
-
-  rb_.drain(nread);
+                          reinterpret_cast<const char *>(data), datalen);
+  (void)nread;
 
   auto htperr = HTTP_PARSER_ERRNO(proxy_htp_.get());
 
   if (htperr == HPE_PAUSED) {
     switch (state_) {
     case Http2Session::PROXY_CONNECTED:
-      // we need to increment nread by 1 since http_parser_execute()
-      // returns 1 less value we expect.  This means taht
-      // rb_.pos[nread] points to \x0a (LF), which is last byte of
-      // empty line to terminate headers.  We want to eat that byte
-      // here.
-      rb_.drain(1);
-
       // Initiate SSL/TLS handshake through established tunnel.
       if (initiate_connection() != 0) {
         return -1;
@@ -508,17 +562,15 @@ int Http2Session::downstream_connect_proxy() {
   if (LOG_ENABLED(INFO)) {
     SSLOG(INFO, this) << "Connected to the proxy";
   }
-  auto &downstream_addr =
-      get_config()->conn.downstream.addr_groups[group_].addrs[addr_idx_];
 
   std::string req = "CONNECT ";
-  req.append(downstream_addr.hostport.c_str(), downstream_addr.hostport.size());
-  if (downstream_addr.port == 80 || downstream_addr.port == 443) {
+  req.append(addr_->hostport.c_str(), addr_->hostport.size());
+  if (addr_->port == 80 || addr_->port == 443) {
     req += ':';
-    req += util::utos(downstream_addr.port);
+    req += util::utos(addr_->port);
   }
   req += " HTTP/1.1\r\nHost: ";
-  req.append(downstream_addr.host.c_str(), downstream_addr.host.size());
+  req += addr_->host;
   req += "\r\n";
   const auto &proxy = get_config()->downstream_http_proxy;
   if (!proxy.userinfo.empty()) {
@@ -530,12 +582,9 @@ int Http2Session::downstream_connect_proxy() {
   if (LOG_ENABLED(INFO)) {
     SSLOG(INFO, this) << "HTTP proxy request headers\n" << req;
   }
-  auto nwrite = wb_.write(req.c_str(), req.size());
-  if (nwrite != req.size()) {
-    SSLOG(WARN, this) << "HTTP proxy request is too large";
-    return -1;
-  }
-  on_write_ = &Http2Session::noop;
+  wb_.append(req);
+
+  on_write_ = &Http2Session::write_noop;
 
   signal_write();
   return 0;
@@ -721,23 +770,43 @@ int on_header_callback(nghttp2_session *session, const nghttp2_frame *frame,
   }
 
   auto &resp = downstream->response();
+  auto &httpconf = get_config()->http;
 
   switch (frame->hd.type) {
   case NGHTTP2_HEADERS: {
     auto trailer = frame->headers.cat == NGHTTP2_HCAT_HEADERS &&
                    !downstream->get_expect_final_response();
 
-    if (trailer) {
-      // just store header fields for trailer part
-      resp.fs.add_trailer(name, namelen, value, valuelen,
-                          flags & NGHTTP2_NV_FLAG_NO_INDEX, -1);
-      return 0;
+    if (resp.fs.buffer_size() + namelen + valuelen >
+            httpconf.response_header_field_buffer ||
+        resp.fs.num_fields() >= httpconf.max_response_header_fields) {
+      if (LOG_ENABLED(INFO)) {
+        DLOG(INFO, downstream) << "Too large or many header field size="
+                               << resp.fs.buffer_size() + namelen + valuelen
+                               << ", num=" << resp.fs.num_fields() + 1;
+      }
+
+      if (trailer) {
+        // We don't care trailer part exceeds header size limit; just
+        // discard it.
+        return 0;
+      }
+
+      return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
     }
 
     auto token = http2::lookup_token(name, namelen);
+    auto no_index = flags & NGHTTP2_NV_FLAG_NO_INDEX;
 
-    resp.fs.add_header(name, namelen, value, valuelen,
-                       flags & NGHTTP2_NV_FLAG_NO_INDEX, token);
+    if (trailer) {
+      // just store header fields for trailer part
+      resp.fs.add_trailer_token(StringRef{name, namelen},
+                                StringRef{value, valuelen}, no_index, token);
+      return 0;
+    }
+
+    resp.fs.add_header_token(StringRef{name, namelen},
+                             StringRef{value, valuelen}, no_index, token);
     return 0;
   }
   case NGHTTP2_PUSH_PROMISE: {
@@ -755,9 +824,24 @@ int on_header_callback(nghttp2_session *session, const nghttp2_frame *frame,
 
     auto &promised_req = promised_downstream->request();
 
+    // We use request header limit for PUSH_PROMISE
+    if (promised_req.fs.buffer_size() + namelen + valuelen >
+            httpconf.request_header_field_buffer ||
+        promised_req.fs.num_fields() >= httpconf.max_request_header_fields) {
+      if (LOG_ENABLED(INFO)) {
+        DLOG(INFO, downstream)
+            << "Too large or many header field size="
+            << promised_req.fs.buffer_size() + namelen + valuelen
+            << ", num=" << promised_req.fs.num_fields() + 1;
+      }
+
+      return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
+    }
+
     auto token = http2::lookup_token(name, namelen);
-    promised_req.fs.add_header(name, namelen, value, valuelen,
-                               flags & NGHTTP2_NV_FLAG_NO_INDEX, token);
+    promised_req.fs.add_header_token(StringRef{name, namelen},
+                                     StringRef{value, valuelen},
+                                     flags & NGHTTP2_NV_FLAG_NO_INDEX, token);
     return 0;
   }
   }
@@ -904,8 +988,9 @@ int on_response_headers(Http2Session *http2session, Downstream *downstream,
         // Otherwise, use chunked encoding to keep upstream connection
         // open.  In HTTP2, we are supporsed not to receive
         // transfer-encoding.
-        resp.fs.add_header("transfer-encoding", "chunked",
-                           http2::HD_TRANSFER_ENCODING);
+        resp.fs.add_header_token(StringRef::from_lit("transfer-encoding"),
+                                 StringRef::from_lit("chunked"), false,
+                                 http2::HD_TRANSFER_ENCODING);
         downstream->set_chunked_response(true);
       }
     }
@@ -1381,25 +1466,20 @@ int Http2Session::connection_made() {
 int Http2Session::do_read() { return read_(*this); }
 int Http2Session::do_write() { return write_(*this); }
 
-int Http2Session::on_read() { return on_read_(*this); }
+int Http2Session::on_read(const uint8_t *data, size_t datalen) {
+  return on_read_(*this, data, datalen);
+}
+
 int Http2Session::on_write() { return on_write_(*this); }
 
-int Http2Session::downstream_read() {
-  ssize_t rv = 0;
+int Http2Session::downstream_read(const uint8_t *data, size_t datalen) {
+  ssize_t rv;
 
-  if (rb_.rleft() > 0) {
-    rv = nghttp2_session_mem_recv(
-        session_, reinterpret_cast<const uint8_t *>(rb_.pos), rb_.rleft());
-
-    if (rv < 0) {
-      SSLOG(ERROR, this) << "nghttp2_session_recv() returned error: "
-                         << nghttp2_strerror(rv);
-      return -1;
-    }
-
-    // nghttp2_session_mem_recv() should consume all input data in
-    // case of success.
-    rb_.reset();
+  rv = nghttp2_session_mem_recv(session_, data, datalen);
+  if (rv < 0) {
+    SSLOG(ERROR, this) << "nghttp2_session_recv() returned error: "
+                       << nghttp2_strerror(rv);
+    return -1;
   }
 
   if (nghttp2_session_want_read(session_) == 0 &&
@@ -1415,19 +1495,6 @@ int Http2Session::downstream_read() {
 }
 
 int Http2Session::downstream_write() {
-  if (data_pending_) {
-    auto n = std::min(wb_.wleft(), data_pendinglen_);
-    wb_.write(data_pending_, n);
-    if (n < data_pendinglen_) {
-      data_pending_ += n;
-      data_pendinglen_ -= n;
-      return 0;
-    }
-
-    data_pending_ = nullptr;
-    data_pendinglen_ = 0;
-  }
-
   for (;;) {
     const uint8_t *data;
     auto datalen = nghttp2_session_mem_send(session_, &data);
@@ -1440,11 +1507,10 @@ int Http2Session::downstream_write() {
     if (datalen == 0) {
       break;
     }
-    auto n = wb_.write(data, datalen);
-    if (n < static_cast<decltype(n)>(datalen)) {
-      data_pending_ = data + n;
-      data_pendinglen_ = datalen - n;
-      return 0;
+    wb_.append(data, datalen);
+
+    if (wb_.rleft() >= MAX_BUFFER_SIZE) {
+      break;
     }
   }
 
@@ -1604,12 +1670,25 @@ int Http2Session::get_connection_check_state() const {
 
 int Http2Session::noop() { return 0; }
 
+int Http2Session::read_noop(const uint8_t *data, size_t datalen) { return 0; }
+
+int Http2Session::write_noop() { return 0; }
+
 int Http2Session::connected() {
+  auto &connect_blocker = addr_->connect_blocker;
+
   if (!util::check_socket_connected(conn_.fd)) {
+    if (LOG_ENABLED(INFO)) {
+      SSLOG(INFO, this) << "Backend connect failed; addr="
+                        << util::to_numeric_addr(&addr_->addr);
+    }
+
+    connect_blocker->on_failure();
+
     return -1;
   }
 
-  connect_blocker_->on_success();
+  connect_blocker->on_success();
 
   if (LOG_ENABLED(INFO)) {
     SSLOG(INFO, this) << "Connection established";
@@ -1642,17 +1721,10 @@ int Http2Session::connected() {
 int Http2Session::read_clear() {
   ev_timer_again(conn_.loop, &conn_.rt);
 
-  for (;;) {
-    // we should process buffered data first before we read EOF.
-    if (rb_.rleft() && on_read() != 0) {
-      return -1;
-    }
-    if (rb_.rleft()) {
-      return 0;
-    }
-    rb_.reset();
+  std::array<uint8_t, 16_k> buf;
 
-    auto nread = conn_.read_clear(rb_.last, rb_.wleft());
+  for (;;) {
+    auto nread = conn_.read_clear(buf.data(), buf.size());
 
     if (nread == 0) {
       return 0;
@@ -1662,16 +1734,21 @@ int Http2Session::read_clear() {
       return nread;
     }
 
-    rb_.write(nread);
+    if (on_read(buf.data(), nread) != 0) {
+      return -1;
+    }
   }
 }
 
 int Http2Session::write_clear() {
   ev_timer_again(conn_.loop, &conn_.rt);
 
+  std::array<struct iovec, MAX_WR_IOVCNT> iov;
+
   for (;;) {
     if (wb_.rleft() > 0) {
-      auto nwrite = conn_.write_clear(wb_.pos, wb_.rleft());
+      auto iovcnt = wb_.riovec(iov.data(), iov.size());
+      auto nwrite = conn_.writev_clear(iov.data(), iovcnt);
 
       if (nwrite == 0) {
         return 0;
@@ -1685,7 +1762,6 @@ int Http2Session::write_clear() {
       continue;
     }
 
-    wb_.reset();
     if (on_write() != 0) {
       return -1;
     }
@@ -1719,8 +1795,8 @@ int Http2Session::tls_handshake() {
     SSLOG(INFO, this) << "SSL/TLS handshake completed";
   }
 
-  if (!get_config()->conn.downstream.no_tls && !get_config()->tls.insecure &&
-      check_cert() != 0) {
+  if (!get_config()->tls.insecure &&
+      ssl::check_cert(conn_.tls.ssl, addr_) != 0) {
     return -1;
   }
 
@@ -1738,19 +1814,12 @@ int Http2Session::tls_handshake() {
 int Http2Session::read_tls() {
   ev_timer_again(conn_.loop, &conn_.rt);
 
+  std::array<uint8_t, 16_k> buf;
+
   ERR_clear_error();
 
   for (;;) {
-    // we should process buffered data first before we read EOF.
-    if (rb_.rleft() && on_read() != 0) {
-      return -1;
-    }
-    if (rb_.rleft()) {
-      return 0;
-    }
-    rb_.reset();
-
-    auto nread = conn_.read_tls(rb_.last, rb_.wleft());
+    auto nread = conn_.read_tls(buf.data(), buf.size());
 
     if (nread == 0) {
       return 0;
@@ -1760,7 +1829,9 @@ int Http2Session::read_tls() {
       return nread;
     }
 
-    rb_.write(nread);
+    if (on_read(buf.data(), nread) != 0) {
+      return -1;
+    }
   }
 }
 
@@ -1769,9 +1840,13 @@ int Http2Session::write_tls() {
 
   ERR_clear_error();
 
+  struct iovec iov;
+
   for (;;) {
     if (wb_.rleft() > 0) {
-      auto nwrite = conn_.write_tls(wb_.pos, wb_.rleft());
+      auto iovcnt = wb_.riovec(&iov, 1);
+      assert(iovcnt == 1);
+      auto nwrite = conn_.write_tls(iov.iov_base, iov.iov_len);
 
       if (nwrite == 0) {
         return 0;
@@ -1785,7 +1860,7 @@ int Http2Session::write_tls() {
 
       continue;
     }
-    wb_.reset();
+
     if (on_write() != 0) {
       return -1;
     }
@@ -1813,7 +1888,7 @@ bool Http2Session::should_hard_fail() const {
   }
 }
 
-size_t Http2Session::get_addr_idx() const { return addr_idx_; }
+const DownstreamAddr *Http2Session::get_addr() const { return addr_; }
 
 size_t Http2Session::get_group() const { return group_; }
 

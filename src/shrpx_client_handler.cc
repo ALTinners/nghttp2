@@ -127,6 +127,10 @@ int ClientHandler::read_clear() {
       return 0;
     }
 
+    if (!ev_is_active(&conn_.rev)) {
+      return 0;
+    }
+
     auto nread = conn_.read_clear(rb_.last, rb_.wleft());
 
     if (nread == 0) {
@@ -217,6 +221,10 @@ int ClientHandler::read_tls() {
       rb_.reset();
     } else if (rb_.wleft() == 0) {
       conn_.rlimit.stopw();
+      return 0;
+    }
+
+    if (!ev_is_active(&conn_.rev)) {
       return 0;
     }
 
@@ -369,7 +377,8 @@ int ClientHandler::upstream_http1_connhd_read() {
 }
 
 ClientHandler::ClientHandler(Worker *worker, int fd, SSL *ssl,
-                             const char *ipaddr, const char *port)
+                             const char *ipaddr, const char *port, int family,
+                             const UpstreamAddr *faddr)
     : conn_(worker->get_loop(), fd, ssl, worker->get_mcpool(),
             get_config()->conn.upstream.timeout.write,
             get_config()->conn.upstream.timeout.read,
@@ -380,9 +389,12 @@ ClientHandler::ClientHandler(Worker *worker, int fd, SSL *ssl,
       pinned_http2sessions_(
           get_config()->conn.downstream.proto == PROTO_HTTP2
               ? make_unique<std::vector<ssize_t>>(
-                    get_config()->conn.downstream.addr_groups.size(), -1)
+                    worker->get_downstream_addr_groups().size(), -1)
               : nullptr),
-      ipaddr_(ipaddr), port_(port), worker_(worker),
+      ipaddr_(ipaddr),
+      port_(port),
+      faddr_(faddr),
+      worker_(worker),
       left_connhd_len_(NGHTTP2_CLIENT_MAGIC_LEN),
       should_close_after_write_(false) {
 
@@ -406,11 +418,19 @@ ClientHandler::ClientHandler(Worker *worker, int fd, SSL *ssl,
 
   auto &fwdconf = get_config()->http.forwarded;
 
-  if ((fwdconf.params & FORWARDED_FOR) &&
-      fwdconf.for_node_type == FORWARDED_NODE_OBFUSCATED) {
-    forwarded_for_obfuscated_ = "_";
-    forwarded_for_obfuscated_ += util::random_alpha_digit(
-        worker_->get_randgen(), SHRPX_OBFUSCATED_NODE_LENGTH);
+  if (fwdconf.params & FORWARDED_FOR) {
+    if (fwdconf.for_node_type == FORWARDED_NODE_OBFUSCATED) {
+      forwarded_for_ = "_";
+      forwarded_for_ += util::random_alpha_digit(worker_->get_randgen(),
+                                                 SHRPX_OBFUSCATED_NODE_LENGTH);
+    } else if (family == AF_INET6) {
+      forwarded_for_ = "[";
+      forwarded_for_ += ipaddr_;
+      forwarded_for_ += ']';
+    } else {
+      // family == AF_INET or family == AF_UNIX
+      forwarded_for_ = ipaddr_;
+    }
   }
 }
 
@@ -644,8 +664,8 @@ std::unique_ptr<DownstreamConnection>
 ClientHandler::get_downstream_connection(Downstream *downstream) {
   size_t group;
   auto &downstreamconf = get_config()->conn.downstream;
-  auto &groups = downstreamconf.addr_groups;
   auto catch_all = downstreamconf.addr_group_catch_all;
+  auto &groups = worker_->get_downstream_addr_groups();
 
   const auto &req = downstream->request();
 
@@ -661,16 +681,19 @@ ClientHandler::get_downstream_connection(Downstream *downstream) {
   } else {
     auto &router = get_config()->router;
     if (!req.authority.empty()) {
-      group = match_downstream_addr_group(router, req.authority, req.path,
-                                          groups, catch_all);
+      group =
+          match_downstream_addr_group(router, StringRef{req.authority},
+                                      StringRef{req.path}, groups, catch_all);
     } else {
       auto h = req.fs.header(http2::HD_HOST);
       if (h) {
-        group = match_downstream_addr_group(router, h->value, req.path, groups,
-                                            catch_all);
+        group =
+            match_downstream_addr_group(router, StringRef{h->value},
+                                        StringRef{req.path}, groups, catch_all);
       } else {
-        group = match_downstream_addr_group(router, "", req.path, groups,
-                                            catch_all);
+        group =
+            match_downstream_addr_group(router, StringRef::from_lit(""),
+                                        StringRef{req.path}, groups, catch_all);
       }
     }
   }
@@ -702,8 +725,8 @@ ClientHandler::get_downstream_connection(Downstream *downstream) {
       }
       dconn = make_unique<Http2DownstreamConnection>(dconn_pool, http2session);
     } else {
-      dconn =
-          make_unique<HttpDownstreamConnection>(dconn_pool, group, conn_.loop);
+      dconn = make_unique<HttpDownstreamConnection>(dconn_pool, group,
+                                                    conn_.loop, worker_);
     }
     dconn->set_client_handler(this);
     return dconn;
@@ -722,10 +745,6 @@ ClientHandler::get_downstream_connection(Downstream *downstream) {
 MemchunkPool *ClientHandler::get_mcpool() { return worker_->get_mcpool(); }
 
 SSL *ClientHandler::get_ssl() const { return conn_.tls.ssl; }
-
-ConnectBlocker *ClientHandler::get_connect_blocker() const {
-  return worker_->get_connect_blocker();
-}
 
 void ClientHandler::direct_http2_upgrade() {
   upstream_ = make_unique<Http2Upstream>(this);
@@ -753,17 +772,6 @@ int ClientHandler::perform_http2_upgrade(HttpsUpstream *http) {
       "Upgrade: " NGHTTP2_CLEARTEXT_PROTO_VERSION_ID "\r\n"
       "\r\n";
 
-  auto required_size = str_size(res) + input->rleft();
-
-  if (output->wleft() < required_size) {
-    if (LOG_ENABLED(INFO)) {
-      CLOG(INFO, this)
-          << "HTTP Upgrade failed because of insufficient buffer space: need "
-          << required_size << ", available " << output->wleft();
-    }
-    return -1;
-  }
-
   if (upstream->upgrade_upstream(http) != 0) {
     return -1;
   }
@@ -775,11 +783,8 @@ int ClientHandler::perform_http2_upgrade(HttpsUpstream *http) {
   on_read_ = &ClientHandler::upstream_http2_connhd_read;
   write_ = &ClientHandler::write_clear;
 
-  auto nread =
-      downstream->get_response_buf()->remove(output->last, output->wleft());
-  output->write(nread);
-
-  output->write(res, str_size(res));
+  input->remove(*output, input->rleft());
+  output->append(res, str_size(res));
   upstream_ = std::move(upstream);
 
   signal_write();
@@ -855,8 +860,8 @@ void ClientHandler::write_accesslog(Downstream *downstream) {
           std::chrono::high_resolution_clock::now(), // request_end_time
 
           req.http_major, req.http_minor, resp.http_status,
-          downstream->response_sent_body_length, StringRef(port_),
-          get_config()->conn.listener.port, get_config()->pid,
+          downstream->response_sent_body_length, StringRef(port_), faddr_->port,
+          get_config()->pid,
       });
 }
 
@@ -879,7 +884,7 @@ void ClientHandler::write_accesslog(int major, int minor, unsigned int status,
                          highres_now,  // request_end_time
                          major, minor, // major, minor
                          status, body_bytes_sent, StringRef(port_),
-                         get_config()->conn.listener.port, get_config()->pid,
+                         faddr_->port, get_config()->pid,
                      });
 }
 
@@ -969,7 +974,7 @@ int ClientHandler::proxy_protocol_read() {
 
   --end;
 
-  constexpr const char HEADER[] = "PROXY ";
+  constexpr char HEADER[] = "PROXY ";
 
   if (static_cast<size_t>(end - rb_.pos) < str_size(HEADER)) {
     if (LOG_ENABLED(INFO)) {
@@ -1120,63 +1125,18 @@ int ClientHandler::proxy_protocol_read() {
   return on_proxy_protocol_finish();
 }
 
-const std::string &ClientHandler::get_forwarded_by() {
+StringRef ClientHandler::get_forwarded_by() {
   auto &fwdconf = get_config()->http.forwarded;
 
   if (fwdconf.by_node_type == FORWARDED_NODE_OBFUSCATED) {
-    return fwdconf.by_obfuscated;
-  }
-  if (!local_hostport_.empty()) {
-    return local_hostport_;
+    return StringRef(fwdconf.by_obfuscated);
   }
 
-  auto &listenerconf = get_config()->conn.listener;
-
-  // For UNIX domain socket listener, just return empty string.
-  if (listenerconf.host_unix) {
-    return local_hostport_;
-  }
-
-  int rv;
-  sockaddr_union su;
-  socklen_t addrlen = sizeof(su);
-
-  rv = getsockname(conn_.fd, &su.sa, &addrlen);
-  if (rv != 0) {
-    return local_hostport_;
-  }
-
-  char host[NI_MAXHOST];
-  rv = getnameinfo(&su.sa, addrlen, host, sizeof(host), nullptr, 0,
-                   NI_NUMERICHOST);
-  if (rv != 0) {
-    return local_hostport_;
-  }
-
-  if (su.storage.ss_family == AF_INET6) {
-    local_hostport_ = "[";
-    local_hostport_ += host;
-    local_hostport_ += "]:";
-  } else {
-    local_hostport_ = host;
-    local_hostport_ += ':';
-  }
-
-  local_hostport_ += util::utos(listenerconf.port);
-
-  return local_hostport_;
+  return StringRef(faddr_->hostport);
 }
 
 const std::string &ClientHandler::get_forwarded_for() const {
-  if (get_config()->http.forwarded.for_node_type == FORWARDED_NODE_OBFUSCATED) {
-    return forwarded_for_obfuscated_;
-  }
-
-  if (get_config()->conn.listener.host_unix) {
-    return EMPTY_STRING;
-  }
-
-  return ipaddr_;
+  return forwarded_for_;
 }
 
 } // namespace shrpx

@@ -380,7 +380,7 @@ inflatehd_DEPENDENCIES = $(top_builddir)/lib/libnghttp2.la \
 	$(top_builddir)/third-party/libhttp-parser.la
 am__nghttp_SOURCES_DIST = util.cc http2.cc timegm.c app_helper.cc \
 	nghttp2_gzip.c util.h http2.h timegm.h app_helper.h \
-	nghttp2_config.h nghttp2_gzip.h nghttp.cc nghttp.h \
+	nghttp2_config.h nghttp2_gzip.h network.h nghttp.cc nghttp.h \
 	HtmlParser.cc HtmlParser.h ssl.cc ssl.h
 @ENABLE_APP_TRUE@am__objects_6 = util.$(OBJEXT) http2.$(OBJEXT) \
 @ENABLE_APP_TRUE@	timegm.$(OBJEXT) app_helper.$(OBJEXT) \
@@ -398,8 +398,8 @@ nghttp_DEPENDENCIES = $(top_builddir)/lib/libnghttp2.la \
 	$(top_builddir)/third-party/libhttp-parser.la
 am__nghttpd_SOURCES_DIST = util.cc http2.cc timegm.c app_helper.cc \
 	nghttp2_gzip.c util.h http2.h timegm.h app_helper.h \
-	nghttp2_config.h nghttp2_gzip.h nghttpd.cc ssl.cc ssl.h \
-	HttpServer.cc HttpServer.h
+	nghttp2_config.h nghttp2_gzip.h network.h nghttpd.cc ssl.cc \
+	ssl.h HttpServer.cc HttpServer.h
 @ENABLE_APP_TRUE@am_nghttpd_OBJECTS = $(am__objects_6) \
 @ENABLE_APP_TRUE@	$(am__objects_7) nghttpd.$(OBJEXT) \
 @ENABLE_APP_TRUE@	ssl.$(OBJEXT) HttpServer.$(OBJEXT)
@@ -422,7 +422,8 @@ am__nghttpx_unittest_SOURCES_DIST = shrpx-unittest.cc \
 	http2_test.cc http2_test.h util_test.cc util_test.h \
 	nghttp2_gzip_test.c nghttp2_gzip_test.h nghttp2_gzip.c \
 	nghttp2_gzip.h buffer_test.cc buffer_test.h memchunk_test.cc \
-	memchunk_test.h template_test.cc template_test.h
+	memchunk_test.h template_test.cc template_test.h \
+	base64_test.cc base64_test.h
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@am_nghttpx_unittest_OBJECTS = nghttpx_unittest-shrpx-unittest.$(OBJEXT) \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	nghttpx_unittest-shrpx_ssl_test.$(OBJEXT) \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	nghttpx_unittest-shrpx_downstream_test.$(OBJEXT) \
@@ -434,7 +435,8 @@ am__nghttpx_unittest_SOURCES_DIST = shrpx-unittest.cc \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	nghttpx_unittest-nghttp2_gzip.$(OBJEXT) \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	nghttpx_unittest-buffer_test.$(OBJEXT) \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	nghttpx_unittest-memchunk_test.$(OBJEXT) \
-@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	nghttpx_unittest-template_test.$(OBJEXT)
+@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	nghttpx_unittest-template_test.$(OBJEXT) \
+@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	nghttpx_unittest-base64_test.$(OBJEXT)
 nghttpx_unittest_OBJECTS = $(am_nghttpx_unittest_OBJECTS)
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@nghttpx_unittest_DEPENDENCIES =  \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	libnghttpx.a \
@@ -773,6 +775,7 @@ CPPFLAGS = @CPPFLAGS@
 CUNIT_CFLAGS = @CUNIT_CFLAGS@
 CUNIT_LIBS = @CUNIT_LIBS@
 CXX = @CXX@
+CXX1XCXXFLAGS = @CXX1XCXXFLAGS@
 CXXCPP = @CXXCPP@
 CXXDEPMODE = @CXXDEPMODE@
 CXXFLAGS = @CXXFLAGS@
@@ -938,7 +941,7 @@ top_srcdir = @top_srcdir@
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 SUBDIRS = includes
 AM_CFLAGS = $(WARNCFLAGS)
-AM_CXXFLAGS = $(WARNCXXFLAGS)
+AM_CXXFLAGS = $(WARNCXXFLAGS) $(CXX1XCXXFLAGS)
 AM_CPPFLAGS = \
 	-DPKGDATADIR='"$(pkgdatadir)"' \
 	-I$(top_srcdir)/lib/includes \
@@ -970,7 +973,7 @@ LDADD = $(top_builddir)/lib/libnghttp2.la \
 
 @ENABLE_APP_TRUE@HELPER_HFILES = util.h \
 @ENABLE_APP_TRUE@	http2.h timegm.h app_helper.h nghttp2_config.h \
-@ENABLE_APP_TRUE@	nghttp2_gzip.h
+@ENABLE_APP_TRUE@	nghttp2_gzip.h network.h
 
 @ENABLE_APP_TRUE@HTML_PARSER_OBJECTS = $(am__append_2)
 @ENABLE_APP_TRUE@HTML_PARSER_HFILES = HtmlParser.h
@@ -1054,7 +1057,8 @@ LDADD = $(top_builddir)/lib/libnghttp2.la \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	nghttp2_gzip.c nghttp2_gzip.h \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	buffer_test.cc buffer_test.h \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	memchunk_test.cc memchunk_test.h \
-@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	template_test.cc template_test.h
+@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	template_test.cc template_test.h \
+@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	base64_test.cc base64_test.h
 
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@nghttpx_unittest_CPPFLAGS =  \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	${AM_CPPFLAGS} \
@@ -1369,6 +1373,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_gzip.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttpd.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttpx-shrpx.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttpx_unittest-base64_test.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttpx_unittest-buffer_test.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttpx_unittest-http2_test.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttpx_unittest-memchunk_test.Po@am__quote@
@@ -2342,6 +2347,20 @@ nghttpx_unittest-template_test.obj: template_test.cc
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='template_test.cc' object='nghttpx_unittest-template_test.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(nghttpx_unittest_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o nghttpx_unittest-template_test.obj `if test -f 'template_test.cc'; then $(CYGPATH_W) 'template_test.cc'; else $(CYGPATH_W) '$(srcdir)/template_test.cc'; fi`
+
+nghttpx_unittest-base64_test.o: base64_test.cc
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(nghttpx_unittest_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT nghttpx_unittest-base64_test.o -MD -MP -MF $(DEPDIR)/nghttpx_unittest-base64_test.Tpo -c -o nghttpx_unittest-base64_test.o `test -f 'base64_test.cc' || echo '$(srcdir)/'`base64_test.cc
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/nghttpx_unittest-base64_test.Tpo $(DEPDIR)/nghttpx_unittest-base64_test.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='base64_test.cc' object='nghttpx_unittest-base64_test.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(nghttpx_unittest_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o nghttpx_unittest-base64_test.o `test -f 'base64_test.cc' || echo '$(srcdir)/'`base64_test.cc
+
+nghttpx_unittest-base64_test.obj: base64_test.cc
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(nghttpx_unittest_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT nghttpx_unittest-base64_test.obj -MD -MP -MF $(DEPDIR)/nghttpx_unittest-base64_test.Tpo -c -o nghttpx_unittest-base64_test.obj `if test -f 'base64_test.cc'; then $(CYGPATH_W) 'base64_test.cc'; else $(CYGPATH_W) '$(srcdir)/base64_test.cc'; fi`
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/nghttpx_unittest-base64_test.Tpo $(DEPDIR)/nghttpx_unittest-base64_test.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='base64_test.cc' object='nghttpx_unittest-base64_test.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(nghttpx_unittest_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o nghttpx_unittest-base64_test.obj `if test -f 'base64_test.cc'; then $(CYGPATH_W) 'base64_test.cc'; else $(CYGPATH_W) '$(srcdir)/base64_test.cc'; fi`
 
 mostlyclean-libtool:
 	-rm -f *.lo

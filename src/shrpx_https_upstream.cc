@@ -49,7 +49,8 @@ using namespace nghttp2;
 namespace shrpx {
 
 HttpsUpstream::HttpsUpstream(ClientHandler *handler)
-    : handler_(handler), current_header_length_(0),
+    : handler_(handler),
+      current_header_length_(0),
       ioctrl_(handler->get_rlimit()) {
   http_parser_init(&htp_, HTTP_REQUEST);
   htp_.data = this;
@@ -88,7 +89,8 @@ int htp_uricb(http_parser *htp, const char *data, size_t len) {
   // We happen to have the same value for method token.
   req.method = htp->method;
 
-  if (req.fs.buffer_size() + len > get_config()->http.header_field_buffer) {
+  if (req.fs.buffer_size() + len >
+      get_config()->http.request_header_field_buffer) {
     if (LOG_ENABLED(INFO)) {
       ULOG(INFO, upstream) << "Too large URI size="
                            << req.fs.buffer_size() + len;
@@ -117,7 +119,7 @@ int htp_hdr_keycb(http_parser *htp, const char *data, size_t len) {
   auto &req = downstream->request();
   auto &httpconf = get_config()->http;
 
-  if (req.fs.buffer_size() + len > httpconf.header_field_buffer) {
+  if (req.fs.buffer_size() + len > httpconf.request_header_field_buffer) {
     if (LOG_ENABLED(INFO)) {
       ULOG(INFO, upstream) << "Too large header block size="
                            << req.fs.buffer_size() + len;
@@ -131,7 +133,7 @@ int htp_hdr_keycb(http_parser *htp, const char *data, size_t len) {
     if (req.fs.header_key_prev()) {
       req.fs.append_last_header_key(data, len);
     } else {
-      if (req.fs.num_fields() >= httpconf.max_header_fields) {
+      if (req.fs.num_fields() >= httpconf.max_request_header_fields) {
         if (LOG_ENABLED(INFO)) {
           ULOG(INFO, upstream)
               << "Too many header field num=" << req.fs.num_fields() + 1;
@@ -140,21 +142,21 @@ int htp_hdr_keycb(http_parser *htp, const char *data, size_t len) {
             Downstream::HTTP1_REQUEST_HEADER_TOO_LARGE);
         return -1;
       }
-      req.fs.add_header(std::string(data, len), "");
+      req.fs.add_header_lower(StringRef{data, len}, StringRef{}, false);
     }
   } else {
     // trailer part
     if (req.fs.trailer_key_prev()) {
       req.fs.append_last_trailer_key(data, len);
     } else {
-      if (req.fs.num_fields() >= httpconf.max_header_fields) {
+      if (req.fs.num_fields() >= httpconf.max_request_header_fields) {
         if (LOG_ENABLED(INFO)) {
           ULOG(INFO, upstream)
               << "Too many header field num=" << req.fs.num_fields() + 1;
         }
         return -1;
       }
-      req.fs.add_trailer(std::string(data, len), "");
+      req.fs.add_trailer_lower(StringRef{data, len}, StringRef{}, false);
     }
   }
   return 0;
@@ -167,7 +169,8 @@ int htp_hdr_valcb(http_parser *htp, const char *data, size_t len) {
   auto downstream = upstream->get_downstream();
   auto &req = downstream->request();
 
-  if (req.fs.buffer_size() + len > get_config()->http.header_field_buffer) {
+  if (req.fs.buffer_size() + len >
+      get_config()->http.request_header_field_buffer) {
     if (LOG_ENABLED(INFO)) {
       ULOG(INFO, upstream) << "Too large header block size="
                            << req.fs.buffer_size() + len;
@@ -267,7 +270,7 @@ int htp_hdrs_completecb(http_parser *htp) {
     ULOG(INFO, upstream) << "HTTP request headers\n" << ss.str();
   }
 
-  if (req.fs.index_headers() != 0) {
+  if (req.fs.parse_content_length() != 0) {
     return -1;
   }
 
@@ -795,6 +798,15 @@ int HttpsUpstream::send_reply(Downstream *downstream, const uint8_t *body,
     output->append("\r\n");
   }
 
+  auto &httpconf = get_config()->http;
+
+  for (auto &p : httpconf.add_response_headers) {
+    output->append(p.name);
+    output->append(": ");
+    output->append(p.value);
+    output->append("\r\n");
+  }
+
   output->append("\r\n");
 
   output->append(body, bodylen);
@@ -1019,9 +1031,9 @@ int HttpsUpstream::on_downstream_header_complete(Downstream *downstream) {
   }
 
   for (auto &p : httpconf.add_response_headers) {
-    buf->append(p.first);
+    buf->append(p.name);
     buf->append(": ");
-    buf->append(p.second);
+    buf->append(p.value);
     buf->append("\r\n");
   }
 

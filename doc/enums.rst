@@ -161,6 +161,10 @@ Enums
 
         (``-534``) 
         Unexpected internal error, but recovered.
+    .. macro:: NGHTTP2_ERR_CANCEL
+
+        (``-535``) 
+        Indicates that a processing was canceled.
     .. macro:: NGHTTP2_ERR_FATAL
 
         (``-900``) 
