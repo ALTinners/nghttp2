@@ -1,3 +1,11 @@
+nghttp2 (1.8.0-1) unstable; urgency=medium
+
+  * Imported upstream version 1.8.0 (Closes: #811995)
+  * d/symbols: update symbol list
+  * d/control: bump std-ver to 3.9.7 (no changes needed)
+
+ -- Tomasz Buchert <tomasz@debian.org>  Mon, 29 Feb 2016 13:28:57 +0100
+
 nghttp2 (1.7.1-2) unstable; urgency=medium
 
   * Add missing script for OCSP stapling (Closes: #815226)
