@@ -111,23 +111,22 @@ void connectcb(struct ev_loop *loop, ev_io *w, int revents) {
 }
 } // namespace
 
-HttpDownstreamConnection::HttpDownstreamConnection(
-    DownstreamConnectionPool *dconn_pool, size_t group, struct ev_loop *loop,
-    Worker *worker)
-    : DownstreamConnection(dconn_pool),
-      conn_(loop, -1, nullptr, worker->get_mcpool(),
+HttpDownstreamConnection::HttpDownstreamConnection(DownstreamAddrGroup *group,
+                                                   struct ev_loop *loop,
+                                                   Worker *worker)
+    : conn_(loop, -1, nullptr, worker->get_mcpool(),
             get_config()->conn.downstream.timeout.write,
             get_config()->conn.downstream.timeout.read, {}, {}, connectcb,
             readcb, timeoutcb, this, get_config()->tls.dyn_rec.warmup_threshold,
-            get_config()->tls.dyn_rec.idle_timeout),
+            get_config()->tls.dyn_rec.idle_timeout, PROTO_HTTP1),
       do_read_(&HttpDownstreamConnection::noop),
       do_write_(&HttpDownstreamConnection::noop),
       worker_(worker),
-      ssl_ctx_(worker->get_cl_ssl_ctx()),
+      ssl_ctx_(group->shared_addr->tls ? worker->get_cl_ssl_ctx() : nullptr),
+      group_(group),
       addr_(nullptr),
       ioctrl_(&conn_.rlimit),
-      response_htp_{0},
-      group_(group) {}
+      response_htp_{0} {}
 
 HttpDownstreamConnection::~HttpDownstreamConnection() {}
 
@@ -154,13 +153,15 @@ int HttpDownstreamConnection::attach_downstream(Downstream *downstream) {
         return -1;
       }
 
+      ssl::setup_downstream_http1_alpn(ssl);
+
       conn_.set_ssl(ssl);
     }
 
-    auto &next_downstream = worker_->get_dgrp(group_)->next;
+    auto &shared_addr = group_->shared_addr;
+    auto &addrs = shared_addr->addrs;
+    auto &next_downstream = shared_addr->next;
     auto end = next_downstream;
-    auto &groups = worker_->get_downstream_addr_groups();
-    auto &addrs = groups[group_].addrs;
     for (;;) {
       auto &addr = addrs[next_downstream];
 
@@ -272,6 +273,8 @@ int HttpDownstreamConnection::push_request_headers() {
   const auto &downstream_hostport = addr_->hostport;
   const auto &req = downstream_->request();
 
+  auto &balloc = downstream_->get_block_allocator();
+
   auto connect_method = req.method == HTTP_CONNECT;
 
   auto &httpconf = get_config()->http;
@@ -279,26 +282,25 @@ int HttpDownstreamConnection::push_request_headers() {
   // For HTTP/1.0 request, there is no authority in request.  In that
   // case, we use backend server's host nonetheless.
   auto authority = StringRef(downstream_hostport);
-  auto no_host_rewrite = httpconf.no_host_rewrite ||
-                         get_config()->http2_proxy ||
-                         get_config()->client_proxy || connect_method;
+  auto no_host_rewrite =
+      httpconf.no_host_rewrite || get_config()->http2_proxy || connect_method;
 
   if (no_host_rewrite && !req.authority.empty()) {
-    authority = StringRef(req.authority);
+    authority = req.authority;
   }
 
-  downstream_->set_request_downstream_host(authority.str());
+  downstream_->set_request_downstream_host(authority);
 
   auto buf = downstream_->get_request_buf();
 
   // Assume that method and request path do not contain \r\n.
   auto meth = http2::to_method_string(req.method);
-  buf->append(meth, strlen(meth));
+  buf->append(meth);
   buf->append(" ");
 
   if (connect_method) {
     buf->append(authority);
-  } else if (get_config()->http2_proxy || get_config()->client_proxy) {
+  } else if (get_config()->http2_proxy) {
     // Construct absolute-form request target because we are going to
     // send a request to a HTTP/1 proxy.
     assert(!req.scheme.empty());
@@ -363,14 +365,14 @@ int HttpDownstreamConnection::push_request_headers() {
   if (fwdconf.params) {
     auto params = fwdconf.params;
 
-    if (get_config()->http2_proxy || get_config()->client_proxy ||
-        connect_method) {
+    if (get_config()->http2_proxy || connect_method) {
       params &= ~FORWARDED_PROTO;
     }
 
-    auto value = http::create_forwarded(params, handler->get_forwarded_by(),
-                                        handler->get_forwarded_for(),
-                                        req.authority, req.scheme);
+    auto value = http::create_forwarded(
+        balloc, params, handler->get_forwarded_by(),
+        handler->get_forwarded_for(), req.authority, req.scheme);
+
     if (fwd || !value.empty()) {
       buf->append("Forwarded: ");
       if (fwd) {
@@ -407,8 +409,7 @@ int HttpDownstreamConnection::push_request_headers() {
     buf->append((*xff).value);
     buf->append("\r\n");
   }
-  if (!get_config()->http2_proxy && !get_config()->client_proxy &&
-      !connect_method) {
+  if (!get_config()->http2_proxy && !connect_method) {
     buf->append("X-Forwarded-Proto: ");
     assert(!req.scheme.empty());
     buf->append(req.scheme);
@@ -427,7 +428,10 @@ int HttpDownstreamConnection::push_request_headers() {
       buf->append((*via).value);
       buf->append(", ");
     }
-    buf->append(http::create_via_header_value(req.http_major, req.http_minor));
+    std::array<char, 16> viabuf;
+    auto end = http::create_via_header_value(viabuf.data(), req.http_major,
+                                             req.http_minor);
+    buf->append(viabuf.data(), end - viabuf.data());
     buf->append("\r\n");
   }
 
@@ -508,8 +512,9 @@ void idle_readcb(struct ev_loop *loop, ev_io *w, int revents) {
   if (LOG_ENABLED(INFO)) {
     DCLOG(INFO, dconn) << "Idle connection EOF";
   }
-  auto dconn_pool = dconn->get_dconn_pool();
-  dconn_pool->remove_downstream_connection(dconn);
+  auto &dconn_pool =
+      dconn->get_downstream_addr_group()->shared_addr->dconn_pool;
+  dconn_pool.remove_downstream_connection(dconn);
   // dconn was deleted
 }
 } // namespace
@@ -521,8 +526,9 @@ void idle_timeoutcb(struct ev_loop *loop, ev_timer *w, int revents) {
   if (LOG_ENABLED(INFO)) {
     DCLOG(INFO, dconn) << "Idle connection timeout";
   }
-  auto dconn_pool = dconn->get_dconn_pool();
-  dconn_pool->remove_downstream_connection(dconn);
+  auto &dconn_pool =
+      dconn->get_downstream_addr_group()->shared_addr->dconn_pool;
+  dconn_pool.remove_downstream_connection(dconn);
   // dconn was deleted
 }
 } // namespace
@@ -693,6 +699,7 @@ int htp_hdr_keycb(http_parser *htp, const char *data, size_t len) {
   auto downstream = static_cast<Downstream *>(htp->data);
   auto &resp = downstream->response();
   auto &httpconf = get_config()->http;
+  auto &balloc = downstream->get_block_allocator();
 
   if (ensure_header_field_buffer(downstream, httpconf, len) != 0) {
     return -1;
@@ -705,7 +712,9 @@ int htp_hdr_keycb(http_parser *htp, const char *data, size_t len) {
       if (ensure_max_header_fields(downstream, httpconf) != 0) {
         return -1;
       }
-      resp.fs.add_header_lower(StringRef{data, len}, StringRef{}, false);
+      auto name = http2::copy_lower(balloc, StringRef{data, len});
+      auto token = http2::lookup_token(name);
+      resp.fs.add_header_token(name, StringRef{}, false, token);
     }
   } else {
     // trailer part
@@ -718,7 +727,9 @@ int htp_hdr_keycb(http_parser *htp, const char *data, size_t len) {
         // wrong place or crash if trailer fields are currently empty.
         return -1;
       }
-      resp.fs.add_trailer_lower(StringRef(data, len), StringRef{}, false);
+      auto name = http2::copy_lower(balloc, StringRef{data, len});
+      auto token = http2::lookup_token(name);
+      resp.fs.add_trailer_token(name, StringRef{}, false, token);
     }
   }
   return 0;
@@ -1033,7 +1044,7 @@ int HttpDownstreamConnection::process_input(const uint8_t *data,
 }
 
 int HttpDownstreamConnection::connected() {
-  auto connect_blocker = addr_->connect_blocker;
+  auto &connect_blocker = addr_->connect_blocker;
 
   if (!util::check_socket_connected(conn_.fd)) {
     conn_.wlimit.stopw();
@@ -1083,8 +1094,11 @@ void HttpDownstreamConnection::signal_write() {
   ev_feed_event(conn_.loop, &conn_.wev, EV_WRITE);
 }
 
-size_t HttpDownstreamConnection::get_group() const { return group_; }
-
 int HttpDownstreamConnection::noop() { return 0; }
+
+DownstreamAddrGroup *
+HttpDownstreamConnection::get_downstream_addr_group() const {
+  return group_;
+}
 
 } // namespace shrpx
