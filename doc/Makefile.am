@@ -49,11 +49,13 @@ APIDOCS= \
 	nghttp2_hd_inflate_hd.rst \
 	nghttp2_hd_inflate_new.rst \
 	nghttp2_hd_inflate_new2.rst \
+	nghttp2_http2_strerror.rst \
 	nghttp2_is_fatal.rst \
 	nghttp2_nv_compare_name.rst \
 	nghttp2_option_del.rst \
 	nghttp2_option_new.rst \
 	nghttp2_option_set_max_reserved_remote_streams.rst \
+	nghttp2_option_set_no_auto_ping_ack.rst \
 	nghttp2_option_set_no_auto_window_update.rst \
 	nghttp2_option_set_no_http_messaging.rst \
 	nghttp2_option_set_no_recv_client_magic.rst \
@@ -63,11 +65,15 @@ APIDOCS= \
 	nghttp2_priority_spec_check_default.rst \
 	nghttp2_priority_spec_default_init.rst \
 	nghttp2_priority_spec_init.rst \
+	nghttp2_rcbuf_decref.rst \
+	nghttp2_rcbuf_get_buf.rst \
+	nghttp2_rcbuf_incref.rst \
 	nghttp2_select_next_protocol.rst \
 	nghttp2_session_callbacks_del.rst \
 	nghttp2_session_callbacks_new.rst \
 	nghttp2_session_callbacks_set_before_frame_send_callback.rst \
 	nghttp2_session_callbacks_set_data_source_read_length_callback.rst \
+	nghttp2_session_callbacks_set_error_callback.rst \
 	nghttp2_session_callbacks_set_on_begin_frame_callback.rst \
 	nghttp2_session_callbacks_set_on_begin_headers_callback.rst \
 	nghttp2_session_callbacks_set_on_data_chunk_recv_callback.rst \
@@ -76,6 +82,7 @@ APIDOCS= \
 	nghttp2_session_callbacks_set_on_frame_recv_callback.rst \
 	nghttp2_session_callbacks_set_on_frame_send_callback.rst \
 	nghttp2_session_callbacks_set_on_header_callback.rst \
+	nghttp2_session_callbacks_set_on_header_callback2.rst \
 	nghttp2_session_callbacks_set_on_invalid_frame_recv_callback.rst \
 	nghttp2_session_callbacks_set_on_stream_close_callback.rst \
 	nghttp2_session_callbacks_set_pack_extension_callback.rst \
@@ -159,6 +166,7 @@ RST_FILES = \
 	h2load.1.rst
 
 EXTRA_DIST = \
+	CMakeLists.txt \
 	mkapiref.py \
 	$(RST_FILES) \
 	$(APIDOCS) \

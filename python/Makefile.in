@@ -151,7 +151,6 @@ am__can_run_installinfo = \
     n|no|NO) false;; \
     *) (install-info --version) >/dev/null 2>&1;; \
   esac
-am__extra_recursive_targets = it-recursive itprep-recursive
 am__tagged_files = $(HEADERS) $(SOURCES) $(TAGS_FILES) $(LISP)
 am__DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/setup.py.in
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
@@ -333,7 +332,7 @@ target_vendor = @target_vendor@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-EXTRA_DIST = cnghttp2.pxd nghttp2.pyx
+EXTRA_DIST = cnghttp2.pxd nghttp2.pyx CMakeLists.txt install-python.cmake.in
 all: all-am
 
 .SUFFIXES:
@@ -375,8 +374,6 @@ mostlyclean-libtool:
 
 clean-libtool:
 	-rm -rf .libs _libs
-it-local: 
-itprep-local: 
 tags TAGS:
 
 ctags CTAGS:
@@ -449,8 +446,8 @@ distclean-generic:
 maintainer-clean-generic:
 	@echo "This command is intended for maintainers to use"
 	@echo "it deletes files that may require special tools to rebuild."
-@ENABLE_PYTHON_BINDINGS_FALSE@uninstall-local:
 @ENABLE_PYTHON_BINDINGS_FALSE@install-exec-local:
+@ENABLE_PYTHON_BINDINGS_FALSE@uninstall-local:
 @ENABLE_PYTHON_BINDINGS_FALSE@clean-local:
 clean: clean-am
 
@@ -500,14 +497,6 @@ install-ps-am:
 
 installcheck-am:
 
-it: it-am
-
-it-am: it-local
-
-itprep: itprep-am
-
-itprep-am: itprep-local
-
 maintainer-clean: maintainer-clean-am
 	-rm -f Makefile
 maintainer-clean-am: distclean-am maintainer-clean-generic
@@ -536,11 +525,10 @@ uninstall-am: uninstall-local
 	install-exec-am install-exec-local install-html \
 	install-html-am install-info install-info-am install-man \
 	install-pdf install-pdf-am install-ps install-ps-am \
-	install-strip installcheck installcheck-am installdirs it-am \
-	it-local itprep-am itprep-local maintainer-clean \
-	maintainer-clean-generic mostlyclean mostlyclean-generic \
-	mostlyclean-libtool pdf pdf-am ps ps-am tags-am uninstall \
-	uninstall-am uninstall-local
+	install-strip installcheck installcheck-am installdirs \
+	maintainer-clean maintainer-clean-generic mostlyclean \
+	mostlyclean-generic mostlyclean-libtool pdf pdf-am ps ps-am \
+	tags-am uninstall uninstall-am uninstall-local
 
 .PRECIOUS: Makefile
 

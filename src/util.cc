@@ -339,71 +339,13 @@ std::string iso8601_date(int64_t ms) {
   return res;
 }
 
-time_t parse_http_date(const std::string &s) {
+time_t parse_http_date(const StringRef &s) {
   tm tm{};
   char *r = strptime(s.c_str(), "%a, %d %b %Y %H:%M:%S GMT", &tm);
   if (r == 0) {
     return 0;
   }
   return nghttp2_timegm_without_yday(&tm);
-}
-
-namespace {
-void streq_advance(const char **ap, const char **bp) {
-  for (; **ap && **bp && lowcase(**ap) == lowcase(**bp); ++*ap, ++*bp)
-    ;
-}
-} // namespace
-
-bool istarts_with(const char *a, const char *b) {
-  if (!a || !b) {
-    return false;
-  }
-  streq_advance(&a, &b);
-  return !*b;
-}
-
-bool strieq(const char *a, const char *b) {
-  if (!a || !b) {
-    return false;
-  }
-  for (; *a && *b && lowcase(*a) == lowcase(*b); ++a, ++b)
-    ;
-  return !*a && !*b;
-}
-
-int strcompare(const char *a, const uint8_t *b, size_t bn) {
-  assert(a && b);
-  const uint8_t *blast = b + bn;
-  for (; *a && b != blast; ++a, ++b) {
-    if (*a < *b) {
-      return -1;
-    } else if (*a > *b) {
-      return 1;
-    }
-  }
-  if (!*a && b == blast) {
-    return 0;
-  } else if (b == blast) {
-    return 1;
-  } else {
-    return -1;
-  }
-}
-
-bool strifind(const char *a, const char *b) {
-  if (!a || !b) {
-    return false;
-  }
-  for (size_t i = 0; a[i]; ++i) {
-    const char *ap = &a[i], *bp = b;
-    for (; *ap && *bp && lowcase(*ap) == lowcase(*bp); ++ap, ++bp)
-      ;
-    if (!*bp) {
-      return true;
-    }
-  }
-  return false;
 }
 
 char upcase(char c) {
@@ -591,13 +533,13 @@ bool fieldeq(const char *uri, const http_parser_url &u,
   return i == len && !t[i];
 }
 
-std::string get_uri_field(const char *uri, const http_parser_url &u,
-                          http_parser_url_fields field) {
-  if (util::has_uri_field(u, field)) {
-    return std::string(uri + u.field_data[field].off, u.field_data[field].len);
-  } else {
-    return "";
+StringRef get_uri_field(const char *uri, const http_parser_url &u,
+                        http_parser_url_fields field) {
+  if (!util::has_uri_field(u, field)) {
+    return StringRef{};
   }
+
+  return StringRef{uri + u.field_data[field].off, u.field_data[field].len};
 }
 
 uint16_t get_default_port(const char *uri, const http_parser_url &u) {
@@ -793,25 +735,24 @@ bool check_path(const std::string &path) {
          path.find('\\') == std::string::npos &&
          path.find("/../") == std::string::npos &&
          path.find("/./") == std::string::npos &&
-         !util::ends_with(path, "/..") && !util::ends_with(path, "/.");
+         !util::ends_with_l(path, "/..") && !util::ends_with_l(path, "/.");
 }
 
 int64_t to_time64(const timeval &tv) {
   return tv.tv_sec * 1000000 + tv.tv_usec;
 }
 
-bool check_h2_is_selected(const unsigned char *proto, size_t len) {
-  return streq_l(NGHTTP2_PROTO_VERSION_ID, proto, len) ||
-         streq_l(NGHTTP2_H2_16, proto, len) ||
-         streq_l(NGHTTP2_H2_14, proto, len);
+bool check_h2_is_selected(const StringRef &proto) {
+  return streq(NGHTTP2_H2, proto) || streq(NGHTTP2_H2_16, proto) ||
+         streq(NGHTTP2_H2_14, proto);
 }
 
 namespace {
 bool select_proto(const unsigned char **out, unsigned char *outlen,
-                  const unsigned char *in, unsigned int inlen, const char *key,
-                  unsigned int keylen) {
-  for (auto p = in, end = in + inlen; p + keylen <= end; p += *p + 1) {
-    if (std::equal(key, key + keylen, p)) {
+                  const unsigned char *in, unsigned int inlen,
+                  const StringRef &key) {
+  for (auto p = in, end = in + inlen; p + key.size() <= end; p += *p + 1) {
+    if (std::equal(std::begin(key), std::end(key), p)) {
       *out = p + 1;
       *outlen = *p;
       return true;
@@ -823,20 +764,16 @@ bool select_proto(const unsigned char **out, unsigned char *outlen,
 
 bool select_h2(const unsigned char **out, unsigned char *outlen,
                const unsigned char *in, unsigned int inlen) {
-  return select_proto(out, outlen, in, inlen, NGHTTP2_PROTO_ALPN,
-                      str_size(NGHTTP2_PROTO_ALPN)) ||
-         select_proto(out, outlen, in, inlen, NGHTTP2_H2_16_ALPN,
-                      str_size(NGHTTP2_H2_16_ALPN)) ||
-         select_proto(out, outlen, in, inlen, NGHTTP2_H2_14_ALPN,
-                      str_size(NGHTTP2_H2_14_ALPN));
+  return select_proto(out, outlen, in, inlen, NGHTTP2_H2_ALPN) ||
+         select_proto(out, outlen, in, inlen, NGHTTP2_H2_16_ALPN) ||
+         select_proto(out, outlen, in, inlen, NGHTTP2_H2_14_ALPN);
 }
 
 bool select_protocol(const unsigned char **out, unsigned char *outlen,
                      const unsigned char *in, unsigned int inlen,
                      std::vector<std::string> proto_list) {
   for (const auto &proto : proto_list) {
-    if (select_proto(out, outlen, in, inlen, proto.c_str(),
-                     static_cast<unsigned int>(proto.size()))) {
+    if (select_proto(out, outlen, in, inlen, StringRef{proto})) {
       return true;
     }
   }
@@ -845,32 +782,31 @@ bool select_protocol(const unsigned char **out, unsigned char *outlen,
 }
 
 std::vector<unsigned char> get_default_alpn() {
-  auto res = std::vector<unsigned char>(str_size(NGHTTP2_PROTO_ALPN) +
-                                        str_size(NGHTTP2_H2_16_ALPN) +
-                                        str_size(NGHTTP2_H2_14_ALPN));
+  auto res = std::vector<unsigned char>(NGHTTP2_H2_ALPN.size() +
+                                        NGHTTP2_H2_16_ALPN.size() +
+                                        NGHTTP2_H2_14_ALPN.size());
   auto p = std::begin(res);
 
-  p = std::copy_n(NGHTTP2_PROTO_ALPN, str_size(NGHTTP2_PROTO_ALPN), p);
-  p = std::copy_n(NGHTTP2_H2_16_ALPN, str_size(NGHTTP2_H2_16_ALPN), p);
-  p = std::copy_n(NGHTTP2_H2_14_ALPN, str_size(NGHTTP2_H2_14_ALPN), p);
+  p = std::copy_n(std::begin(NGHTTP2_H2_ALPN), NGHTTP2_H2_ALPN.size(), p);
+  p = std::copy_n(std::begin(NGHTTP2_H2_16_ALPN), NGHTTP2_H2_16_ALPN.size(), p);
+  p = std::copy_n(std::begin(NGHTTP2_H2_14_ALPN), NGHTTP2_H2_14_ALPN.size(), p);
 
   return res;
 }
 
-std::vector<Range<const char *>> split_config_str_list(const char *s,
-                                                       char delim) {
+std::vector<StringRef> split_str(const StringRef &s, char delim) {
   size_t len = 1;
-  auto last = s + strlen(s);
-  for (const char *first = s, *d = nullptr;
+  auto last = std::end(s);
+  for (auto first = std::begin(s), d = first;
        (d = std::find(first, last, delim)) != last; ++len, first = d + 1)
     ;
 
-  auto list = std::vector<Range<const char *>>(len);
+  auto list = std::vector<StringRef>(len);
 
   len = 0;
-  for (auto first = s;; ++len) {
+  for (auto first = std::begin(s);; ++len) {
     auto stop = std::find(first, last, delim);
-    list[len] = {first, stop};
+    list[len] = StringRef{first, stop};
     if (stop == last) {
       break;
     }
@@ -879,12 +815,12 @@ std::vector<Range<const char *>> split_config_str_list(const char *s,
   return list;
 }
 
-std::vector<std::string> parse_config_str_list(const char *s, char delim) {
-  auto ranges = split_config_str_list(s, delim);
+std::vector<std::string> parse_config_str_list(const StringRef &s, char delim) {
+  auto sublist = split_str(s, delim);
   auto res = std::vector<std::string>();
-  res.reserve(ranges.size());
-  for (const auto &range : ranges) {
-    res.emplace_back(range.first, range.second);
+  res.reserve(sublist.size());
+  for (const auto &s : sublist) {
+    res.emplace_back(std::begin(s), std::end(s));
   }
   return res;
 }
@@ -990,9 +926,16 @@ std::pair<int64_t, size_t> parse_uint_digits(const void *ss, size_t len) {
 } // namespace
 
 int64_t parse_uint_with_unit(const char *s) {
+  return parse_uint_with_unit(reinterpret_cast<const uint8_t *>(s), strlen(s));
+}
+
+int64_t parse_uint_with_unit(const StringRef &s) {
+  return parse_uint_with_unit(s.byte(), s.size());
+}
+
+int64_t parse_uint_with_unit(const uint8_t *s, size_t len) {
   int64_t n;
   size_t i;
-  auto len = strlen(s);
   std::tie(n, i) = parse_uint_digits(s, len);
   if (n == -1) {
     return -1;
@@ -1035,6 +978,10 @@ int64_t parse_uint(const std::string &s) {
   return parse_uint(reinterpret_cast<const uint8_t *>(s.c_str()), s.size());
 }
 
+int64_t parse_uint(const StringRef &s) {
+  return parse_uint(s.byte(), s.size());
+}
+
 int64_t parse_uint(const uint8_t *s, size_t len) {
   int64_t n;
   size_t i;
@@ -1046,10 +993,19 @@ int64_t parse_uint(const uint8_t *s, size_t len) {
 }
 
 double parse_duration_with_unit(const char *s) {
+  return parse_duration_with_unit(reinterpret_cast<const uint8_t *>(s),
+                                  strlen(s));
+}
+
+double parse_duration_with_unit(const StringRef &s) {
+  return parse_duration_with_unit(s.byte(), s.size());
+}
+
+double parse_duration_with_unit(const uint8_t *s, size_t len) {
   constexpr auto max = std::numeric_limits<int64_t>::max();
   int64_t n;
   size_t i;
-  auto len = strlen(s);
+
   std::tie(n, i) = parse_uint_digits(s, len);
   if (n == -1) {
     goto fail;
@@ -1336,6 +1292,28 @@ int read_mime_types(std::map<std::string, std::string> &res,
   }
 
   return 0;
+}
+
+StringRef percent_decode(BlockAllocator &balloc, const StringRef &src) {
+  auto iov = make_byte_ref(balloc, src.size() * 3 + 1);
+  auto p = iov.base;
+  for (auto first = std::begin(src); first != std::end(src); ++first) {
+    if (*first != '%') {
+      *p++ = *first;
+      continue;
+    }
+
+    if (first + 1 != std::end(src) && first + 2 != std::end(src) &&
+        is_hex_digit(*(first + 1)) && is_hex_digit(*(first + 2))) {
+      *p++ = (hex_to_uint(*(first + 1)) << 4) + hex_to_uint(*(first + 2));
+      first += 2;
+      continue;
+    }
+
+    *p++ = *first;
+  }
+  *p = '\0';
+  return StringRef{iov.base, p};
 }
 
 } // namespace util

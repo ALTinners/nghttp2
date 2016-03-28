@@ -31,6 +31,25 @@ Types (structs, unions and typedefs)
         points to the :macro:`NGHTTP2_PROTO_VERSION_ID` string this
         instance implements (since age ==1)
 
+.. type:: nghttp2_vec
+
+    
+    The object representing single contagious buffer.
+
+    .. member::   uint8_t *base
+
+        The pointer to the buffer.
+    .. member::   size_t len
+
+        The length of the buffer.
+
+.. type:: nghttp2_rcbuf
+
+    
+    The object representing reference counted buffer.  The details of
+    this structure are intentionally hidden from the public API.
+
+
 .. type:: nghttp2_nv
 
     
@@ -781,6 +800,25 @@ Types (structs, unions and typedefs)
       of header fields or large header fields to cause out of memory in
       local endpoint.  Due to how HPACK works, peer can do this
       effectively without using much memory on their own.
+.. type:: typedef int (*nghttp2_on_header_callback2)(nghttp2_session *session, const nghttp2_frame *frame, nghttp2_rcbuf *name, nghttp2_rcbuf *value, uint8_t flags, void *user_data)
+
+    
+    Callback function invoked when a header name/value pair is received
+    for the *frame*.  The *name* is header name.  The *value* is header
+    value.  The *flags* is bitwise OR of one or more of
+    :type:`nghttp2_nv_flag`.
+    
+    This callback behaves like :type:`nghttp2_on_header_callback`,
+    except that *name* and *value* are stored in reference counted
+    buffer.  If application wishes to keep these references without
+    copying them, use `nghttp2_rcbuf_incref()` to increment their
+    reference count.  It is the application's responsibility to call
+    `nghttp2_rcbuf_decref()` if they called `nghttp2_rcbuf_incref()` so
+    as not to leak memory.  If the *session* is created by
+    `nghttp2_session_server_new3()` or `nghttp2_session_client_new3()`,
+    the function to free memory is the one belongs to the mem
+    parameter.  As long as this free function alives, *name* and
+    *value* can live after *session* was destroyed.
 .. type:: typedef ssize_t (*nghttp2_select_padding_callback)(nghttp2_session *session, const nghttp2_frame *frame, size_t max_payloadlen, void *user_data)
 
     
@@ -917,6 +955,27 @@ Types (structs, unions and typedefs)
     :macro:`NGHTTP2_ERR_CALLBACK_FAILURE`.  If the return value is
     strictly larger than *len*, it is treated as
     :macro:`NGHTTP2_ERR_CALLBACK_FAILURE`.
+.. type:: typedef int (*nghttp2_error_callback)(nghttp2_session *session, const char *msg, size_t len, void *user_data)
+
+    
+    Callback function invoked when library provides the error message
+    intended for human consumption.  This callback is solely for
+    debugging purpose.  The *msg* is typically NULL-terminated string
+    of length *len*.  *len* does not include the sentinel NULL
+    character.
+    
+    The format of error message may change between nghttp2 library
+    versions.  The application should not depend on the particular
+    format.
+    
+    Normally, application should return 0 from this callback.  If fatal
+    error occurred while doing something in this callback, application
+    should return :macro:`NGHTTP2_ERR_CALLBACK_FAILURE`.  In this case,
+    library will return immediately with return value
+    :macro:`NGHTTP2_ERR_CALLBACK_FAILURE`.  Currently, if nonzero value
+    is returned from this callback, they are treated as
+    :macro:`NGHTTP2_ERR_CALLBACK_FAILURE`, but application should not
+    rely on this details.
 .. type:: nghttp2_session_callbacks
 
     

@@ -22,6 +22,8 @@
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 SUBDIRS = includes
 
+EXTRA_DIST = CMakeLists.txt
+
 bin_PROGRAMS =
 check_PROGRAMS =
 TESTS =
@@ -129,7 +131,7 @@ NGHTTPX_SRCS = \
 	shrpx_process.h \
 	shrpx_signal.cc shrpx_signal.h \
 	shrpx_router.cc shrpx_router.h \
-	buffer.h memchunk.h template.h
+	buffer.h memchunk.h template.h allocator.h
 
 if HAVE_SPDYLAY
 NGHTTPX_SRCS += shrpx_spdy_upstream.cc shrpx_spdy_upstream.h
@@ -169,6 +171,7 @@ nghttpx_unittest_SOURCES = shrpx-unittest.cc \
 	shrpx_ssl_test.cc shrpx_ssl_test.h \
 	shrpx_downstream_test.cc shrpx_downstream_test.h \
 	shrpx_config_test.cc shrpx_config_test.h \
+	shrpx_worker_test.cc shrpx_worker_test.h \
 	shrpx_http_test.cc shrpx_http_test.h \
 	http2_test.cc http2_test.h \
 	util_test.cc util_test.h \

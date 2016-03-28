@@ -151,7 +151,6 @@ am__can_run_installinfo = \
     n|no|NO) false;; \
     *) (install-info --version) >/dev/null 2>&1;; \
   esac
-am__extra_recursive_targets = it-recursive itprep-recursive
 am__tagged_files = $(HEADERS) $(SOURCES) $(TAGS_FILES) $(LISP)
 am__DIST_COMMON = $(srcdir)/Makefile.in
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
@@ -334,7 +333,12 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 configfiles = nghttpx-init nghttpx.service nghttpx-upstart.conf
-EXTRA_DIST = $(configfiles:%=%.in) nghttpx-logrotate tlsticketupdate.go
+EXTRA_DIST = \
+	CMakeLists.txt \
+	$(configfiles:%=%.in) \
+	nghttpx-logrotate \
+	tlsticketupdate.go
+
 edit = sed -e 's|@bindir[@]|$(bindir)|g'
 all: all-am
 
@@ -374,8 +378,6 @@ mostlyclean-libtool:
 
 clean-libtool:
 	-rm -rf .libs _libs
-it-local: 
-itprep-local: 
 tags TAGS:
 
 ctags CTAGS:
@@ -495,14 +497,6 @@ install-ps-am:
 
 installcheck-am:
 
-it: it-am
-
-it-am: it-local
-
-itprep: itprep-am
-
-itprep-am: itprep-local
-
 maintainer-clean: maintainer-clean-am
 	-rm -f Makefile
 maintainer-clean-am: distclean-am maintainer-clean-generic
@@ -531,21 +525,24 @@ uninstall-am:
 	install-exec-am install-html install-html-am install-info \
 	install-info-am install-man install-pdf install-pdf-am \
 	install-ps install-ps-am install-strip installcheck \
-	installcheck-am installdirs it-am it-local itprep-am \
-	itprep-local maintainer-clean maintainer-clean-generic \
-	mostlyclean mostlyclean-generic mostlyclean-libtool pdf pdf-am \
-	ps ps-am tags-am uninstall uninstall-am
+	installcheck-am installdirs maintainer-clean \
+	maintainer-clean-generic mostlyclean mostlyclean-generic \
+	mostlyclean-libtool pdf pdf-am ps ps-am tags-am uninstall \
+	uninstall-am
 
 .PRECIOUS: Makefile
 
 
-nghttpx-init: %: $(srcdir)/%.in
+nghttpx-init: $(srcdir)/nghttpx-init.in
 	rm -f $@ $@.tmp
 	$(edit) $< > $@.tmp
 	chmod +x $@.tmp
 	mv $@.tmp $@
 
-nghttpx.service nghttpx-upstart.conf: %: $(srcdir)/%.in
+nghttpx.service: $(srcdir)/nghttpx.service.in
+	$(edit) $< > $@
+
+nghttpx-upstart.conf: $(srcdir)/nghttpx-upstart.conf.in
 	$(edit) $< > $@
 
 $(configfiles): Makefile
