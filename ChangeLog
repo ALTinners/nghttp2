@@ -1,55 +1,65 @@
-commit 0641d314a62fc2f9ede5cbb487895236da4ae4f4 (HEAD, tag: v1.9.1, origin/master, origin/HEAD, master)
+commit d8e908286d69a747dace72e73f5c6d108979e686 (HEAD, tag: v1.9.2, origin/v1.9.x, origin/HEAD, v1.9.x)
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-03-27
+AuthorDate: 2016-04-03
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-03-27
+CommitDate: 2016-04-03
+
+    Update authors
+
+commit 915e26b33d5214fb835221769aa8eac62d6b3b1d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-03
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-03
 
     Update man pages
 
-commit 2928afa51f5e341fc94718560fb1b19d51415b60
+commit 5ab05402e4991064fc2427c261bb883ee6bd9f74
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-03-27
+AuthorDate: 2016-04-03
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-03-27
+CommitDate: 2016-04-03
 
-    Bump up version number to 1.9.1
+    Bump up version number to 1.9.2
 
-commit 757bcf13101e80af1e13b0a78493f0d312a485ce
+commit 0af9629cc1e1608646a023b99fa8be99ad66b999
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-03-27
+AuthorDate: 2016-04-03
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-03-27
+CommitDate: 2016-04-03
 
-    nghttpx: Fix bug that backend tls keyword did not work with -s option
+    nghttpx: Fix crash with backend failure
 
-commit c9aba4ea0c49e4ae5c47d977c0e7f97f349d4b04
+commit 53989dc70c7070203076a073b5e563fc6f0e44b4
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-03-27
+AuthorDate: 2016-04-02
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-03-27
+CommitDate: 2016-04-03
 
-    nghttpx: Don't use data_prd.source.ptr
+    nghttpx: Better distribute load to backend h2 servers
 
-commit 2cee80acf03386ca4de8bba0e9e5aa771c3ade49
+commit 290a697bf9426d92334f838b33b278e8d6f13ede
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-03-27
+AuthorDate: 2016-03-29
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-03-27
+CommitDate: 2016-04-03
 
-    nghttpx: Fix handing stream after connection check was failed
+    Merge branch 'tsing-patch-1'
 
-commit d9a2ff278c4f3181fc092e0b4782a4bff41a916c
+commit b63c88aab7a732ab98a053cd036f33a1b12e3966
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-03-27
+AuthorDate: 2016-03-28
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-03-27
+CommitDate: 2016-04-03
 
-    src: Use len instead of n for clarity
+    nghttpx: Fix bug that logger wrote string which was not NULL-terminated
 
-commit 8a539420c2daaf68788542f1cefa1fdc746492b1
+commit 73e513601fa487911ed433720cc3e335b641f005
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-03-26
+AuthorDate: 2016-03-28
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-03-26
+CommitDate: 2016-04-03
 
-    Bump up version number to 1.10.0-DEV
+    nghttpx: Fix bug that proxy with HTTP/1.1 CONNECT did not work
+    
+    This was a regression in 5fbe4cc2257d95dfa51c5dd8969b3f5201e0f9db.
