@@ -97,9 +97,6 @@ int Http2DownstreamConnection::attach_downstream(Downstream *downstream) {
   http2session_->add_downstream_connection(this);
   if (http2session_->get_state() == Http2Session::DISCONNECTED) {
     http2session_->signal_write();
-    if (http2session_->get_state() == Http2Session::DISCONNECTED) {
-      return -1;
-    }
   }
 
   downstream_ = downstream;
@@ -108,7 +105,9 @@ int Http2DownstreamConnection::attach_downstream(Downstream *downstream) {
   auto &req = downstream_->request();
 
   // HTTP/2 disables HTTP Upgrade.
-  req.upgrade_request = false;
+  if (req.method != HTTP_CONNECT) {
+    req.upgrade_request = false;
+  }
 
   return 0;
 }
@@ -442,7 +441,8 @@ int Http2DownstreamConnection::push_request_headers() {
   if (LOG_ENABLED(INFO)) {
     std::stringstream ss;
     for (auto &nv : nva) {
-      ss << TTY_HTTP_HD << nv.name << TTY_RST << ": " << nv.value << "\n";
+      ss << TTY_HTTP_HD << StringRef{nv.name, nv.namelen} << TTY_RST << ": "
+         << StringRef{nv.value, nv.valuelen} << "\n";
     }
     DCLOG(INFO, this) << "HTTP request headers\n" << ss.str();
   }
