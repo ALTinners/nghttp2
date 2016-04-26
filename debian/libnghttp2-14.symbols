@@ -26,6 +26,7 @@ libnghttp2.so.14 libnghttp2-14 #MINVER#
  nghttp2_nv_compare_name@Base 1.3.0
  nghttp2_option_del@Base 1.3.0
  nghttp2_option_new@Base 1.3.0
+ nghttp2_option_set_builtin_recv_extension_type@Base 1.10.0
  nghttp2_option_set_max_reserved_remote_streams@Base 1.3.0
  nghttp2_option_set_no_auto_ping_ack@Base 1.9.1
  nghttp2_option_set_no_auto_window_update@Base 1.3.0
@@ -114,6 +115,7 @@ libnghttp2.so.14 libnghttp2-14 #MINVER#
  nghttp2_stream_get_sum_dependency_weight@Base 1.3.0
  nghttp2_stream_get_weight@Base 1.3.0
  nghttp2_strerror@Base 1.3.0
+ nghttp2_submit_altsvc@Base 1.10.0
  nghttp2_submit_data@Base 1.3.0
  nghttp2_submit_extension@Base 1.8.0
  nghttp2_submit_goaway@Base 1.3.0
