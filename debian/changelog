@@ -1,3 +1,11 @@
+nghttp2 (1.11.0-1) unstable; urgency=medium
+
+  * Imported upstream version 1.11.0
+  * d/control: bump std-ver to 3.9.8 (no changes needed)
+  * d/symbols: update symbol list
+
+ -- Tomasz Buchert <tomasz@debian.org>  Sun, 29 May 2016 14:49:29 +0200
+
 nghttp2 (1.10.0-1) unstable; urgency=medium
 
   * Imported upstream version 1.10.0
