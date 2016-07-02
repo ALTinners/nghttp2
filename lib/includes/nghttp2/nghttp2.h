@@ -81,7 +81,7 @@ extern "C" {
 /**
  * @macro
  *
- * The seriazlied form of ALPN protocol identifier this library
+ * The serialized form of ALPN protocol identifier this library
  * supports.  Notice that first byte is the length of following
  * protocol identifier.  This is the same wire format of `TLS ALPN
  * extension <https://tools.ietf.org/html/rfc7301>`_.  This is useful
@@ -2415,6 +2415,21 @@ NGHTTP2_EXTERN void nghttp2_option_set_no_auto_ping_ack(nghttp2_option *option,
 /**
  * @function
  *
+ * This option sets the maximum length of header block (a set of
+ * header fields per one HEADERS frame) to send.  The length of a
+ * given set of header fields is calculated using
+ * `nghttp2_hd_deflate_bound()`.  The default value is 64KiB.  If
+ * application attempts to send header fields larger than this limit,
+ * the transmission of the frame fails with error code
+ * :enum:`NGHTTP2_ERR_FRAME_SIZE_ERROR`.
+ */
+NGHTTP2_EXTERN void
+nghttp2_option_set_max_send_header_block_length(nghttp2_option *option,
+                                                size_t val);
+
+/**
+ * @function
+ *
  * Initializes |*session_ptr| for client use.  The all members of
  * |callbacks| are copied to |*session_ptr|.  Therefore |*session_ptr|
  * does not store |callbacks|.  The |user_data| is an arbitrary user
@@ -4071,14 +4086,17 @@ nghttp2_session_check_server_session(nghttp2_session *session);
  * that value as window_size_increment is queued.  If the
  * |window_size_increment| is larger than the received bytes from the
  * remote endpoint, the local window size is increased by that
- * difference.
+ * difference.  If the sole intention is to increase the local window
+ * size, consider to use `nghttp2_session_set_local_window_size()`.
  *
  * If the |window_size_increment| is negative, the local window size
  * is decreased by -|window_size_increment|.  If automatic
  * WINDOW_UPDATE is enabled
  * (`nghttp2_option_set_no_auto_window_update()`), and the library
  * decided that the WINDOW_UPDATE should be submitted, then
- * WINDOW_UPDATE is queued with the current received bytes count.
+ * WINDOW_UPDATE is queued with the current received bytes count.  If
+ * the sole intention is to decrease the local window size, consider
+ * to use `nghttp2_session_set_local_window_size()`.
  *
  * If the |window_size_increment| is 0, the function does nothing and
  * returns 0.
@@ -4095,6 +4113,44 @@ NGHTTP2_EXTERN int nghttp2_submit_window_update(nghttp2_session *session,
                                                 uint8_t flags,
                                                 int32_t stream_id,
                                                 int32_t window_size_increment);
+
+/**
+ * @function
+ *
+ * Set local window size (local endpoints's window size) to the given
+ * |window_size| for the given stream denoted by |stream_id|.  To
+ * change connection level window size, specify 0 to |stream_id|.  To
+ * increase window size, this function may submit WINDOW_UPDATE frame
+ * to transmission queue.
+ *
+ * The |flags| is currently ignored and should be
+ * :enum:`NGHTTP2_FLAG_NONE`.
+ *
+ * This sounds similar to `nghttp2_submit_window_update()`, but there
+ * are 2 differences.  The first difference is that this function
+ * takes the absolute value of window size to set, rather than the
+ * delta.  To change the window size, this may be easier to use since
+ * the application just declares the intended window size, rather than
+ * calculating delta.  The second difference is that
+ * `nghttp2_submit_window_update()` affects the received bytes count
+ * which has not acked yet.  By the specification of
+ * `nghttp2_submit_window_update()`, to strictly increase the local
+ * window size, we have to submit delta including all received bytes
+ * count, which might not be desirable in some cases.  On the other
+ * hand, this function does not affect the received bytes count.  It
+ * just sets the local window size to the given value.
+ *
+ * This function returns 0 if it succeeds, or one of the following
+ * negative error codes:
+ *
+ * :enum:`NGHTTP2_ERR_INVALID_ARGUMENT`
+ *     The |stream_id| is negative.
+ * :enum:`NGHTTP2_ERR_NOMEM`
+ *     Out of memory.
+ */
+NGHTTP2_EXTERN int
+nghttp2_session_set_local_window_size(nghttp2_session *session, uint8_t flags,
+                                      int32_t stream_id, int32_t window_size);
 
 /**
  * @function
