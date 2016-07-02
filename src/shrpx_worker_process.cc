@@ -394,7 +394,7 @@ int worker_process_event_loop(WorkerProcessConfig *wpconf) {
   }
 
 #ifdef HAVE_NEVERBLEED
-  if (ssl::upstream_tls_enabled() || ssl::downstream_tls_enabled()) {
+  {
     std::array<char, NEVERBLEED_ERRBUF_SIZE> errbuf;
     auto nb = make_unique<neverbleed_t>();
     if (neverbleed_init(nb.get(), errbuf.data()) != 0) {
@@ -531,12 +531,6 @@ int worker_process_event_loop(WorkerProcessConfig *wpconf) {
   ev_run(loop, 0);
 
   conn_handler.cancel_ocsp_update();
-
-#ifdef HAVE_NEVERBLEED
-  if (nb && nb->daemon_pid != -1) {
-    kill(nb->daemon_pid, SIGTERM);
-  }
-#endif // HAVE_NEVERBLEED
 
   return 0;
 }
