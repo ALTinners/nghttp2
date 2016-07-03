@@ -1,0 +1,20 @@
+From: Tomasz Buchert <tomasz@debian.org>
+Date: Sun, 3 Jul 2016 23:00:15 +0200
+Subject: Fix FTBFS on armel by explicitly including the <mutex> header.
+
+---
+ src/shrpx_connection_handler.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/shrpx_connection_handler.h b/src/shrpx_connection_handler.h
+index 1f9986a..c45c746 100644
+--- a/src/shrpx_connection_handler.h
++++ b/src/shrpx_connection_handler.h
+@@ -32,6 +32,7 @@
+ #include <sys/socket.h>
+ #endif // HAVE_SYS_SOCKET_H
+ 
++#include <mutex>
+ #include <memory>
+ #include <vector>
+ #include <random>
