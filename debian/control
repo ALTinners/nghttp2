@@ -19,7 +19,7 @@ Build-Depends: debhelper (>= 9.20141010),
                zlib1g-dev (>= 1.2.3)
 Build-Depends-Indep: python-sphinx
 Standards-Version: 3.9.8
-Homepage: http://tatsuhiro-t.github.io/nghttp2/
+Homepage: https://nghttp2.org/
 Vcs-Git: git://anonscm.debian.org/collab-maint/nghttp2.git
 Vcs-Browser: https://anonscm.debian.org/cgit/collab-maint/nghttp2.git
 
