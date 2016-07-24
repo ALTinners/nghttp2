@@ -1,2 +1,1 @@
 0001-Reformat-obfuscated-javascript-in-sphinx-theme.patch
-0002-Fix-FTBFS-on-armel-by-explicitly-including-the-mutex.patch
