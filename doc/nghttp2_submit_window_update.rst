@@ -22,7 +22,7 @@ Synopsis
     that value as window_size_increment is queued.  If the
     *window_size_increment* is larger than the received bytes from the
     remote endpoint, the local window size is increased by that
-    difference.  If the sole intention is to increase the local window
+    difference.  If the sole purpose is to increase the local window
     size, consider to use `nghttp2_session_set_local_window_size()`.
     
     If the *window_size_increment* is negative, the local window size
@@ -31,8 +31,8 @@ Synopsis
     (`nghttp2_option_set_no_auto_window_update()`), and the library
     decided that the WINDOW_UPDATE should be submitted, then
     WINDOW_UPDATE is queued with the current received bytes count.  If
-    the sole intention is to decrease the local window size, consider
-    to use `nghttp2_session_set_local_window_size()`.
+    the sole purpose is to decrease the local window size, consider to
+    use `nghttp2_session_set_local_window_size()`.
     
     If the *window_size_increment* is 0, the function does nothing and
     returns 0.
