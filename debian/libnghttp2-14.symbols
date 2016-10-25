@@ -118,6 +118,7 @@ libnghttp2.so.14 libnghttp2-14 #MINVER#
  nghttp2_session_upgrade@Base 1.3.0
  nghttp2_session_want_read@Base 1.3.0
  nghttp2_session_want_write@Base 1.3.0
+ nghttp2_set_debug_vprintf_callback@Base 1.16.0
  nghttp2_stream_get_first_child@Base 1.3.0
  nghttp2_stream_get_next_sibling@Base 1.3.0
  nghttp2_stream_get_parent@Base 1.3.0
