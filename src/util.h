@@ -129,15 +129,15 @@ std::string percent_decode(InputIt first, InputIt last) {
 StringRef percent_decode(BlockAllocator &balloc, const StringRef &src);
 
 // Percent encode |target| if character is not in token or '%'.
-std::string percent_encode_token(const std::string &target);
+StringRef percent_encode_token(BlockAllocator &balloc, const StringRef &target);
 
 // Returns quotedString version of |target|.  Currently, this function
 // just replace '"' with '\"'.
-std::string quote_string(const std::string &target);
+StringRef quote_string(BlockAllocator &balloc, const StringRef &target);
 
 std::string format_hex(const unsigned char *s, size_t len);
 
-template <size_t N> std::string format_hex(const unsigned char(&s)[N]) {
+template <size_t N> std::string format_hex(const unsigned char (&s)[N]) {
   return format_hex(s, N);
 }
 
@@ -145,15 +145,31 @@ template <size_t N> std::string format_hex(const std::array<uint8_t, N> &s) {
   return format_hex(s.data(), s.size());
 }
 
+StringRef format_hex(BlockAllocator &balloc, const StringRef &s);
+
+// Returns given time |t| from epoch in HTTP Date format (e.g., Mon,
+// 10 Oct 2016 10:25:58 GMT).
 std::string http_date(time_t t);
+// Writes given time |t| from epoch in HTTP Date format into the
+// buffer pointed by |res|.  The buffer must be at least 29 bytes
+// long.  This function returns the one beyond the last position.
+char *http_date(char *res, time_t t);
 
 // Returns given time |t| from epoch in Common Log format (e.g.,
 // 03/Jul/2014:00:19:38 +0900)
 std::string common_log_date(time_t t);
+// Writes given time |t| from epoch in Common Log format into the
+// buffer pointed by |res|.  The buffer must be at least 26 bytes
+// long.  This function returns the one beyond the last position.
+char *common_log_date(char *res, time_t t);
 
 // Returns given millisecond |ms| from epoch in ISO 8601 format (e.g.,
-// 2014-11-15T12:58:24.741Z)
+// 2014-11-15T12:58:24.741Z or 2014-11-15T12:58:24.741+09:00)
 std::string iso8601_date(int64_t ms);
+// Writes given time |t| from epoch in ISO 8601 format into the buffer
+// pointed by |res|.  The buffer must be at least 29 bytes long.  This
+// function returns the one beyond the last position.
+char *iso8601_date(char *res, int64_t ms);
 
 time_t parse_http_date(const StringRef &s);
 
@@ -216,7 +232,7 @@ template <typename S, typename T> bool istarts_with(const S &a, const T &b) {
 }
 
 template <typename T, typename CharT, size_t N>
-bool istarts_with_l(const T &a, const CharT(&b)[N]) {
+bool istarts_with_l(const T &a, const CharT (&b)[N]) {
   return istarts_with(a.begin(), a.end(), b, b + N - 1);
 }
 
@@ -234,7 +250,7 @@ template <typename T, typename S> bool ends_with(const T &a, const S &b) {
 }
 
 template <typename T, typename CharT, size_t N>
-bool ends_with_l(const T &a, const CharT(&b)[N]) {
+bool ends_with_l(const T &a, const CharT (&b)[N]) {
   return ends_with(a.begin(), a.end(), b, b + N - 1);
 }
 
@@ -252,7 +268,7 @@ template <typename T, typename S> bool iends_with(const T &a, const S &b) {
 }
 
 template <typename T, typename CharT, size_t N>
-bool iends_with_l(const T &a, const CharT(&b)[N]) {
+bool iends_with_l(const T &a, const CharT (&b)[N]) {
   return iends_with(a.begin(), a.end(), b, b + N - 1);
 }
 
@@ -270,12 +286,12 @@ template <typename T, typename S> bool strieq(const T &a, const S &b) {
 }
 
 template <typename CharT, typename InputIt, size_t N>
-bool strieq_l(const CharT(&a)[N], InputIt b, size_t blen) {
+bool strieq_l(const CharT (&a)[N], InputIt b, size_t blen) {
   return strieq(a, a + (N - 1), b, b + blen);
 }
 
 template <typename CharT, size_t N, typename T>
-bool strieq_l(const CharT(&a)[N], const T &b) {
+bool strieq_l(const CharT (&a)[N], const T &b) {
   return strieq(a, a + (N - 1), b.begin(), b.end());
 }
 
@@ -292,12 +308,12 @@ template <typename T, typename S> bool streq(const T &a, const S &b) {
 }
 
 template <typename CharT, typename InputIt, size_t N>
-bool streq_l(const CharT(&a)[N], InputIt b, size_t blen) {
+bool streq_l(const CharT (&a)[N], InputIt b, size_t blen) {
   return streq(a, a + (N - 1), b, b + blen);
 }
 
 template <typename CharT, size_t N, typename T>
-bool streq_l(const CharT(&a)[N], const T &b) {
+bool streq_l(const CharT (&a)[N], const T &b) {
   return streq(a, a + (N - 1), b.begin(), b.end());
 }
 
@@ -424,7 +440,8 @@ template <typename T> std::string utox(T n) {
 }
 
 void to_token68(std::string &base64str);
-void to_base64(std::string &token68str);
+
+StringRef to_base64(BlockAllocator &balloc, const StringRef &token68str);
 
 void show_candidates(const char *unkopt, option *options);
 
@@ -533,29 +550,55 @@ std::vector<std::string> parse_config_str_list(const StringRef &s,
 // treated as a part of substring.
 std::vector<StringRef> split_str(const StringRef &s, char delim);
 
-// Returns given time |tp| in Common Log format (e.g.,
-// 03/Jul/2014:00:19:38 +0900)
-// Expected type of |tp| is std::chrono::timepoint
-template <typename T> std::string format_common_log(const T &tp) {
+// Writes given time |tp| in Common Log format (e.g.,
+// 03/Jul/2014:00:19:38 +0900) in buffer pointed by |out|.  The buffer
+// must be at least 27 bytes, including terminal NULL byte.  Expected
+// type of |tp| is std::chrono::time_point.  This function returns
+// StringRef wrapping the buffer pointed by |out|, and this string is
+// terminated by NULL.
+template <typename T> StringRef format_common_log(char *out, const T &tp) {
   auto t =
       std::chrono::duration_cast<std::chrono::seconds>(tp.time_since_epoch());
-  return common_log_date(t.count());
+  auto p = common_log_date(out, t.count());
+  *p = '\0';
+  return StringRef{out, p};
 }
 
 // Returns given time |tp| in ISO 8601 format (e.g.,
-// 2014-11-15T12:58:24.741Z)
-// Expected type of |tp| is std::chrono::timepoint
+// 2014-11-15T12:58:24.741Z or 2014-11-15T12:58:24.741+09:00).
+// Expected type of |tp| is std::chrono::time_point
 template <typename T> std::string format_iso8601(const T &tp) {
   auto t = std::chrono::duration_cast<std::chrono::milliseconds>(
       tp.time_since_epoch());
   return iso8601_date(t.count());
 }
 
-// Returns given time |tp| in HTTP date format.
-template <typename T> std::string format_http_date(const T &tp) {
+// Writes given time |tp| in ISO 8601 format (e.g.,
+// 2014-11-15T12:58:24.741Z or 2014-11-15T12:58:24.741+09:00) in
+// buffer pointed by |out|.  The buffer must be at least 30 bytes,
+// including terminal NULL byte.  Expected type of |tp| is
+// std::chrono::time_point.  This function returns StringRef wrapping
+// the buffer pointed by |out|, and this string is terminated by NULL.
+template <typename T> StringRef format_iso8601(char *out, const T &tp) {
+  auto t = std::chrono::duration_cast<std::chrono::milliseconds>(
+      tp.time_since_epoch());
+  auto p = iso8601_date(out, t.count());
+  *p = '\0';
+  return StringRef{out, p};
+}
+
+// Writes given time |tp| in HTTP Date format (e.g., Mon, 10 Oct 2016
+// 10:25:58 GMT) in buffer pointed by |out|.  The buffer must be at
+// least 30 bytes, including terminal NULL byte.  Expected type of
+// |tp| is std::chrono::time_point.  This function returns StringRef
+// wrapping the buffer pointed by |out|, and this string is terminated
+// by NULL.
+template <typename T> StringRef format_http_date(char *out, const T &tp) {
   auto t =
       std::chrono::duration_cast<std::chrono::seconds>(tp.time_since_epoch());
-  return http_date(t.count());
+  auto p = http_date(out, t.count());
+  *p = '\0';
+  return StringRef{out, p};
 }
 
 // Return the system precision of the template parameter |Clock| as
@@ -630,11 +673,15 @@ std::string format_duration(double t);
 // Creates "host:port" string using given |host| and |port|.  If
 // |host| is numeric IPv6 address (e.g., ::1), it is enclosed by "["
 // and "]".  If |port| is 80 or 443, port part is omitted.
-std::string make_http_hostport(const StringRef &host, uint16_t port);
+StringRef make_http_hostport(BlockAllocator &balloc, const StringRef &host,
+                             uint16_t port);
 
 // Just like make_http_hostport(), but doesn't treat 80 and 443
 // specially.
 std::string make_hostport(const StringRef &host, uint16_t port);
+
+StringRef make_hostport(BlockAllocator &balloc, const StringRef &host,
+                        uint16_t port);
 
 // Dumps |src| of length |len| in the format similar to `hexdump -C`.
 void hexdump(FILE *out, const uint8_t *src, size_t len);
@@ -665,20 +712,23 @@ uint64_t get_uint64(const uint8_t *data);
 int read_mime_types(std::map<std::string, std::string> &res,
                     const char *filename);
 
-template <typename Generator>
-std::string random_alpha_digit(Generator &gen, size_t len) {
-  std::string res;
-  res.reserve(len);
+// Fills random alpha and digit byte to the range [|first|, |last|).
+// Returns the one beyond the |last|.
+template <typename OutputIt, typename Generator>
+OutputIt random_alpha_digit(OutputIt first, OutputIt last, Generator &gen) {
+  // If we use uint8_t instead char, gcc 6.2.0 complains by shouting
+  // char-array initialized from wide string.
+  constexpr char s[] =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   std::uniform_int_distribution<> dis(0, 26 * 2 + 10 - 1);
-  for (; len > 0; --len) {
-    res += "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"[dis(
-        gen)];
+  for (; first != last; ++first) {
+    *first = s[dis(gen)];
   }
-  return res;
+  return first;
 }
 
 template <typename OutputIterator, typename CharT, size_t N>
-OutputIterator copy_lit(OutputIterator it, CharT(&s)[N]) {
+OutputIterator copy_lit(OutputIterator it, CharT (&s)[N]) {
   return std::copy_n(s, N - 1, it);
 }
 

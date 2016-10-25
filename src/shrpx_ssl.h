@@ -63,6 +63,9 @@ struct TLSSessionCache {
 // This struct stores the additional information per SSL_CTX.  This is
 // attached to SSL_CTX using SSL_CTX_set_app_data().
 struct TLSContextData {
+  // SCT data formatted so that this can be directly sent as
+  // extension_data of signed_certificate_timestamp.
+  std::vector<uint8_t> sct_data;
 #ifndef HAVE_ATOMIC_STD_SHARED_PTR
   // Protects ocsp_data;
   std::mutex mu;
@@ -75,7 +78,9 @@ struct TLSContextData {
 };
 
 // Create server side SSL_CTX
-SSL_CTX *create_ssl_context(const char *private_key_file, const char *cert_file
+SSL_CTX *create_ssl_context(const char *private_key_file, const char *cert_file,
+                            const std::vector<uint8_t> &sct_data
+
 #ifdef HAVE_NEVERBLEED
                             ,
                             neverbleed_t *nb
@@ -100,11 +105,6 @@ ClientHandler *accept_connection(Worker *worker, int fd, sockaddr *addr,
 // Check peer's certificate against given |address| and |host|.
 int check_cert(SSL *ssl, const Address *addr, const StringRef &host);
 int check_cert(SSL *ssl, const DownstreamAddr *addr);
-
-// Retrieves DNS and IP address in subjectAltNames and commonName from
-// the |cert|.
-void get_altnames(X509 *cert, std::vector<std::string> &dns_names,
-                  std::vector<std::string> &ip_addrs, std::string &common_name);
 
 struct WildcardRevPrefix {
   WildcardRevPrefix(const StringRef &prefix, size_t idx)
@@ -172,7 +172,7 @@ int cert_lookup_tree_add_cert_from_x509(CertLookupTree *lt, size_t idx,
 
 // Returns true if |proto| is included in the
 // protocol list |protos|.
-bool in_proto_list(const std::vector<std::string> &protos,
+bool in_proto_list(const std::vector<StringRef> &protos,
                    const StringRef &proto);
 
 // Returns true if security requirement for HTTP/2 is fulfilled.
@@ -181,10 +181,10 @@ bool check_http2_requirement(SSL *ssl);
 // Returns SSL/TLS option mask to disable SSL/TLS protocol version not
 // included in |tls_proto_list|.  The returned mask can be directly
 // passed to SSL_CTX_set_options().
-long int create_tls_proto_mask(const std::vector<std::string> &tls_proto_list);
+long int create_tls_proto_mask(const std::vector<StringRef> &tls_proto_list);
 
 int set_alpn_prefs(std::vector<unsigned char> &out,
-                   const std::vector<std::string> &protos);
+                   const std::vector<StringRef> &protos);
 
 // Setups server side SSL_CTX.  This function inspects get_config()
 // and if upstream_no_tls is true, returns nullptr.  Otherwise

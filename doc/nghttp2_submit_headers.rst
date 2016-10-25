@@ -7,7 +7,7 @@ Synopsis
 
 *#include <nghttp2/nghttp2.h>*
 
-.. function:: int32_t nghttp2_submit_headers(nghttp2_session *session, uint8_t flags, int32_t stream_id, const nghttp2_priority_spec *pri_spec, const nghttp2_nv *nva, size_t nvlen, void *stream_user_data)
+.. function:: int32_t nghttp2_submit_headers( nghttp2_session *session, uint8_t flags, int32_t stream_id, const nghttp2_priority_spec *pri_spec, const nghttp2_nv *nva, size_t nvlen, void *stream_user_data)
 
     
     Submits HEADERS frame. The *flags* is bitwise OR of the

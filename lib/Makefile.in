@@ -164,7 +164,7 @@ am__objects_2 = nghttp2_pq.lo nghttp2_map.lo nghttp2_queue.lo \
 	nghttp2_hd_huffman.lo nghttp2_hd_huffman_data.lo \
 	nghttp2_version.lo nghttp2_priority_spec.lo nghttp2_option.lo \
 	nghttp2_callbacks.lo nghttp2_mem.lo nghttp2_http.lo \
-	nghttp2_rcbuf.lo
+	nghttp2_rcbuf.lo nghttp2_debug.lo
 am_libnghttp2_la_OBJECTS = $(am__objects_1) $(am__objects_2)
 libnghttp2_la_OBJECTS = $(am_libnghttp2_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
@@ -491,7 +491,8 @@ OBJECTS = nghttp2_pq.c nghttp2_map.c nghttp2_queue.c \
 	nghttp2_callbacks.c \
 	nghttp2_mem.c \
 	nghttp2_http.c \
-	nghttp2_rcbuf.c
+	nghttp2_rcbuf.c \
+	nghttp2_debug.c
 
 HFILES = nghttp2_pq.h nghttp2_int.h nghttp2_map.h nghttp2_queue.h \
 	nghttp2_frame.h \
@@ -506,7 +507,8 @@ HFILES = nghttp2_pq.h nghttp2_int.h nghttp2_map.h nghttp2_queue.h \
 	nghttp2_callbacks.h \
 	nghttp2_mem.h \
 	nghttp2_http.h \
-	nghttp2_rcbuf.h
+	nghttp2_rcbuf.h \
+	nghttp2_debug.h
 
 libnghttp2_la_SOURCES = $(HFILES) $(OBJECTS)
 libnghttp2_la_LDFLAGS = -no-undefined \
@@ -594,6 +596,7 @@ distclean-compile:
 
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_buf.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_callbacks.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_debug.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_frame.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_hd.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp2_hd_huffman.Plo@am__quote@

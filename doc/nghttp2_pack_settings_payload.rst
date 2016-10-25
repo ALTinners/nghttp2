@@ -7,7 +7,7 @@ Synopsis
 
 *#include <nghttp2/nghttp2.h>*
 
-.. function:: ssize_t nghttp2_pack_settings_payload(uint8_t *buf, size_t buflen, const nghttp2_settings_entry *iv, size_t niv)
+.. function:: ssize_t nghttp2_pack_settings_payload( uint8_t *buf, size_t buflen, const nghttp2_settings_entry *iv, size_t niv)
 
     
     Serializes the SETTINGS values *iv* in the *buf*.  The size of the

@@ -138,7 +138,7 @@ ConnectionHandler::ConnectionHandler(struct ev_loop *loop, std::mt19937 &gen)
   ocsp_.chldev.data = this;
 
   ocsp_.next = 0;
-  ocsp_.fd = -1;
+  ocsp_.proc.rfd = -1;
 
   reset_ocsp();
 }
@@ -215,8 +215,9 @@ int ConnectionHandler::create_single_worker() {
     all_ssl_ctx_.push_back(cl_ssl_ctx);
   }
 
-  auto &tlsconf = get_config()->tls;
-  auto &memcachedconf = get_config()->tls.session_cache.memcached;
+  auto config = get_config();
+  auto &tlsconf = config->tls;
+  auto &memcachedconf = config->tls.session_cache.memcached;
 
   SSL_CTX *session_cache_ssl_ctx = nullptr;
   if (memcachedconf.tls) {
@@ -224,14 +225,14 @@ int ConnectionHandler::create_single_worker() {
 #ifdef HAVE_NEVERBLEED
         nb_.get(),
 #endif // HAVE_NEVERBLEED
-        StringRef{tlsconf.cacert}, StringRef{memcachedconf.cert_file},
-        StringRef{memcachedconf.private_key_file}, nullptr);
+        tlsconf.cacert, memcachedconf.cert_file, memcachedconf.private_key_file,
+        nullptr);
     all_ssl_ctx_.push_back(session_cache_ssl_ctx);
   }
 
   single_worker_ = make_unique<Worker>(
       loop_, sv_ssl_ctx, cl_ssl_ctx, session_cache_ssl_ctx, cert_tree_.get(),
-      ticket_keys_, this, get_config()->conn.downstream);
+      ticket_keys_, this, config->conn.downstream);
 #ifdef HAVE_MRUBY
   if (single_worker_->create_mruby_context() != 0) {
     return -1;
@@ -262,9 +263,10 @@ int ConnectionHandler::create_worker_thread(size_t num) {
     all_ssl_ctx_.push_back(cl_ssl_ctx);
   }
 
-  auto &tlsconf = get_config()->tls;
-  auto &memcachedconf = get_config()->tls.session_cache.memcached;
-  auto &apiconf = get_config()->api;
+  auto config = get_config();
+  auto &tlsconf = config->tls;
+  auto &memcachedconf = config->tls.session_cache.memcached;
+  auto &apiconf = config->api;
 
   // We have dedicated worker for API request processing.
   if (apiconf.enabled) {
@@ -272,7 +274,7 @@ int ConnectionHandler::create_worker_thread(size_t num) {
   }
 
   for (size_t i = 0; i < num; ++i) {
-    auto loop = ev_loop_new(get_config()->ev_loop_flags);
+    auto loop = ev_loop_new(config->ev_loop_flags);
 
     SSL_CTX *session_cache_ssl_ctx = nullptr;
     if (memcachedconf.tls) {
@@ -280,13 +282,13 @@ int ConnectionHandler::create_worker_thread(size_t num) {
 #ifdef HAVE_NEVERBLEED
           nb_.get(),
 #endif // HAVE_NEVERBLEED
-          StringRef{tlsconf.cacert}, StringRef{memcachedconf.cert_file},
-          StringRef{memcachedconf.private_key_file}, nullptr);
+          tlsconf.cacert, memcachedconf.cert_file,
+          memcachedconf.private_key_file, nullptr);
       all_ssl_ctx_.push_back(session_cache_ssl_ctx);
     }
     auto worker = make_unique<Worker>(
         loop, sv_ssl_ctx, cl_ssl_ctx, session_cache_ssl_ctx, cert_tree_.get(),
-        ticket_keys_, this, get_config()->conn.downstream);
+        ticket_keys_, this, config->conn.downstream);
 #ifdef HAVE_MRUBY
     if (worker->create_mruby_context() != 0) {
       return -1;
@@ -362,8 +364,10 @@ int ConnectionHandler::handle_connection(int fd, sockaddr *addr, int addrlen,
                      << util::numeric_name(addr, addrlen) << ", fd=" << fd;
   }
 
-  if (get_config()->num_worker == 1) {
-    auto &upstreamconf = get_config()->conn.upstream;
+  auto config = get_config();
+
+  if (config->num_worker == 1) {
+    auto &upstreamconf = config->conn.upstream;
     if (single_worker_->get_worker_stat()->num_connections >=
         upstreamconf.worker_connections) {
 
@@ -404,7 +408,7 @@ int ConnectionHandler::handle_connection(int fd, sockaddr *addr, int addrlen,
     }
 
     if (++worker_round_robin_cnt_ == workers_.size()) {
-      auto &apiconf = get_config()->api;
+      auto &apiconf = config->api;
 
       if (apiconf.enabled) {
         worker_round_robin_cnt_ = 1;
@@ -491,18 +495,17 @@ bool ConnectionHandler::get_graceful_shutdown() const {
 }
 
 void ConnectionHandler::cancel_ocsp_update() {
-  if (ocsp_.pid == 0) {
+  if (ocsp_.proc.pid == 0) {
     return;
   }
 
-  kill(ocsp_.pid, SIGTERM);
+  kill(ocsp_.proc.pid, SIGTERM);
 }
 
 // inspired by h2o_read_command function from h2o project:
 // https://github.com/h2o/h2o
 int ConnectionHandler::start_ocsp_update(const char *cert_file) {
   int rv;
-  int pfd[2];
 
   if (LOG_ENABLED(INFO)) {
     LOG(INFO) << "Start ocsp update for " << cert_file;
@@ -516,96 +519,18 @@ int ConnectionHandler::start_ocsp_update(const char *cert_file) {
           get_config()->tls.ocsp.fetch_ocsp_response_file.c_str()),
       const_cast<char *>(cert_file), nullptr};
 
-#ifdef O_CLOEXEC
-  if (pipe2(pfd, O_CLOEXEC) == -1) {
-    return -1;
-  }
-#else  // !O_CLOEXEC
-  if (pipe(pfd) == -1) {
-    return -1;
-  }
-  util::make_socket_closeonexec(pfd[0]);
-  util::make_socket_closeonexec(pfd[1]);
-#endif // !O_CLOEXEC
-
-  auto closer = defer([&pfd]() {
-    if (pfd[0] != -1) {
-      close(pfd[0]);
-    }
-
-    if (pfd[1] != -1) {
-      close(pfd[1]);
-    }
-  });
-
-  sigset_t oldset;
-
-  rv = shrpx_signal_block_all(&oldset);
+  Process proc;
+  rv = exec_read_command(proc, argv);
   if (rv != 0) {
-    auto error = errno;
-    LOG(ERROR) << "Blocking all signals failed: " << strerror(error);
-
     return -1;
   }
 
-  auto pid = fork();
+  ocsp_.proc = proc;
 
-  if (pid == 0) {
-    // child process
-    shrpx_signal_unset_worker_proc_ign_handler();
-
-    rv = shrpx_signal_unblock_all();
-    if (rv != 0) {
-      auto error = errno;
-      LOG(FATAL) << "Unblocking all signals failed: " << strerror(error);
-
-      _Exit(EXIT_FAILURE);
-    }
-
-    dup2(pfd[1], 1);
-    close(pfd[0]);
-
-    rv = execv(argv[0], argv);
-    if (rv == -1) {
-      auto error = errno;
-      LOG(ERROR) << "Could not execute ocsp query command: " << argv[0]
-                 << ", execve() faild, errno=" << error;
-      _Exit(EXIT_FAILURE);
-    }
-    // unreachable
-  }
-
-  // parent process
-  if (pid == -1) {
-    auto error = errno;
-    LOG(ERROR) << "Could not execute ocsp query command for " << cert_file
-               << ": " << argv[0] << ", fork() failed, errno=" << error;
-  }
-
-  rv = shrpx_signal_set(&oldset);
-  if (rv != 0) {
-    auto error = errno;
-    LOG(FATAL) << "Restoring all signals failed: " << strerror(error);
-
-    _Exit(EXIT_FAILURE);
-  }
-
-  if (pid == -1) {
-    return -1;
-  }
-
-  close(pfd[1]);
-  pfd[1] = -1;
-
-  ocsp_.pid = pid;
-  ocsp_.fd = pfd[0];
-  pfd[0] = -1;
-
-  util::make_socket_nonblocking(ocsp_.fd);
-  ev_io_set(&ocsp_.rev, ocsp_.fd, EV_READ);
+  ev_io_set(&ocsp_.rev, ocsp_.proc.rfd, EV_READ);
   ev_io_start(loop_, &ocsp_.rev);
 
-  ev_child_set(&ocsp_.chldev, ocsp_.pid, 0);
+  ev_child_set(&ocsp_.chldev, ocsp_.proc.pid, 0);
   ev_child_start(loop_, &ocsp_.chldev);
 
   return 0;
@@ -615,7 +540,8 @@ void ConnectionHandler::read_ocsp_chunk() {
   std::array<uint8_t, 4_k> buf;
   for (;;) {
     ssize_t n;
-    while ((n = read(ocsp_.fd, buf.data(), buf.size())) == -1 && errno == EINTR)
+    while ((n = read(ocsp_.proc.rfd, buf.data(), buf.size())) == -1 &&
+           errno == EINTR)
       ;
 
     if (n == -1) {
@@ -687,12 +613,12 @@ void ConnectionHandler::handle_ocsp_complete() {
 }
 
 void ConnectionHandler::reset_ocsp() {
-  if (ocsp_.fd != -1) {
-    close(ocsp_.fd);
+  if (ocsp_.proc.rfd != -1) {
+    close(ocsp_.proc.rfd);
   }
 
-  ocsp_.fd = -1;
-  ocsp_.pid = 0;
+  ocsp_.proc.rfd = -1;
+  ocsp_.proc.pid = 0;
   ocsp_.error = 0;
   ocsp_.resp = std::vector<uint8_t>();
 }
@@ -828,15 +754,16 @@ void ConnectionHandler::schedule_next_tls_ticket_key_memcached_get(
 }
 
 SSL_CTX *ConnectionHandler::create_tls_ticket_key_memcached_ssl_ctx() {
-  auto &tlsconf = get_config()->tls;
-  auto &memcachedconf = get_config()->tls.ticket.memcached;
+  auto config = get_config();
+  auto &tlsconf = config->tls;
+  auto &memcachedconf = config->tls.ticket.memcached;
 
   auto ssl_ctx = ssl::create_ssl_client_context(
 #ifdef HAVE_NEVERBLEED
       nb_.get(),
 #endif // HAVE_NEVERBLEED
-      StringRef{tlsconf.cacert}, StringRef{memcachedconf.cert_file},
-      StringRef{memcachedconf.private_key_file}, nullptr);
+      tlsconf.cacert, memcachedconf.cert_file, memcachedconf.private_key_file,
+      nullptr);
 
   all_ssl_ctx_.push_back(ssl_ctx);
 

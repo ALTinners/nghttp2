@@ -136,7 +136,7 @@ void on_stream_close_callback(spdylay_session *session, int32_t stream_id,
 
   if (downstream->get_request_state() == Downstream::CONNECT_FAIL) {
     upstream->remove_downstream(downstream);
-    // downstrea was deleted
+    // downstream was deleted
 
     return;
   }
@@ -153,7 +153,7 @@ void on_stream_close_callback(spdylay_session *session, int32_t stream_id,
   // If shrpx_downstream::push_request_headers() failed, the
   // error is handled here.
   upstream->remove_downstream(downstream);
-  // downstrea was deleted
+  // downstream was deleted
 
   // How to test this case? Request sufficient large download
   // and make client send RST_STREAM after it gets first DATA
@@ -165,6 +165,7 @@ namespace {
 void on_ctrl_recv_callback(spdylay_session *session, spdylay_frame_type type,
                            spdylay_frame *frame, void *user_data) {
   auto upstream = static_cast<SpdyUpstream *>(user_data);
+  auto config = get_config();
 
   switch (type) {
   case SPDYLAY_SYN_STREAM: {
@@ -190,7 +191,8 @@ void on_ctrl_recv_callback(spdylay_session *session, spdylay_frame_type type,
         ss << TTY_HTTP_HD << nv[i] << TTY_RST << ": " << nv[i + 1] << "\n";
       }
       ULOG(INFO, upstream) << "HTTP request headers. stream_id="
-                           << downstream->get_stream_id() << "\n" << ss.str();
+                           << downstream->get_stream_id() << "\n"
+                           << ss.str();
     }
 
     size_t num_headers = 0;
@@ -202,7 +204,7 @@ void on_ctrl_recv_callback(spdylay_session *session, spdylay_frame_type type,
       header_buffer += strlen(nv[i]) + strlen(nv[i + 1]);
     }
 
-    auto &httpconf = get_config()->http;
+    auto &httpconf = config->http;
 
     // spdy does not define usage of trailer fields, and we ignores
     // them.
@@ -293,7 +295,7 @@ void on_ctrl_recv_callback(spdylay_session *session, spdylay_frame_type type,
       auto handler = upstream->get_client_handler();
       auto faddr = handler->get_upstream_addr();
 
-      if (get_config()->http2_proxy && !faddr->alt_mode) {
+      if (config->http2_proxy && !faddr->alt_mode) {
         req.path = path->value;
       } else if (method_token == HTTP_OPTIONS &&
                  path->value == StringRef::from_lit("*")) {
@@ -584,7 +586,8 @@ SpdyUpstream::SpdyUpstream(uint16_t version, ClientHandler *handler)
                                   &max_buffer, sizeof(max_buffer));
   assert(rv == 0);
 
-  auto &http2conf = get_config()->http2;
+  auto config = get_config();
+  auto &http2conf = config->http2;
 
   auto faddr = handler_->get_upstream_addr();
 
@@ -632,7 +635,7 @@ SpdyUpstream::SpdyUpstream(uint16_t version, ClientHandler *handler)
   }
 
   handler_->reset_upstream_read_timeout(
-      get_config()->conn.upstream.timeout.http2_read);
+      config->conn.upstream.timeout.http2_read);
 
   handler_->signal_write();
 }
@@ -870,8 +873,8 @@ ssize_t spdy_data_read_callback(spdylay_session *session, int32_t stream_id,
     } else {
       // For tunneling, issue RST_STREAM to finish the stream.
       if (LOG_ENABLED(INFO)) {
-        ULOG(INFO, upstream)
-            << "RST_STREAM to tunneled stream stream_id=" << stream_id;
+        ULOG(INFO, upstream) << "RST_STREAM to tunneled stream stream_id="
+                             << stream_id;
       }
       upstream->rst_stream(
           downstream, infer_upstream_rst_stream_status_code(
@@ -919,7 +922,8 @@ int SpdyUpstream::send_reply(Downstream *downstream, const uint8_t *body,
 
   const auto &headers = resp.fs.headers();
 
-  auto &httpconf = get_config()->http;
+  auto config = get_config();
+  auto &httpconf = config->http;
 
   auto nva = std::vector<const char *>();
   // 6 for :status, :version and server.  1 for last terminal nullptr.
@@ -948,7 +952,7 @@ int SpdyUpstream::send_reply(Downstream *downstream, const uint8_t *body,
 
   if (!resp.fs.header(http2::HD_SERVER)) {
     nva.push_back("server");
-    nva.push_back(get_config()->http.server_name.c_str());
+    nva.push_back(config->http.server_name.c_str());
   }
 
   for (auto &p : httpconf.add_response_headers) {
@@ -997,11 +1001,13 @@ int SpdyUpstream::error_reply(Downstream *downstream,
   auto content_length = util::make_string_ref_uint(balloc, html.size());
   auto status_string = http2::get_status_string(balloc, status_code);
 
-  const char *nv[] = {":status", status_string.c_str(), ":version", "http/1.1",
-                      "content-type", "text/html; charset=UTF-8", "server",
-                      get_config()->http.server_name.c_str(), "content-length",
-                      content_length.c_str(), "date",
-                      lgconf->time_http_str.c_str(), nullptr};
+  const char *nv[] = {":status",        status_string.c_str(),
+                      ":version",       "http/1.1",
+                      "content-type",   "text/html; charset=UTF-8",
+                      "server",         get_config()->http.server_name.c_str(),
+                      "content-length", content_length.c_str(),
+                      "date",           lgconf->time_http.c_str(),
+                      nullptr};
 
   rv = spdylay_submit_response(session_, downstream->get_stream_id(), nv,
                                &data_prd);
@@ -1084,9 +1090,10 @@ int SpdyUpstream::on_downstream_header_complete(Downstream *downstream) {
     DLOG(INFO, downstream) << "HTTP response header completed";
   }
 
-  auto &httpconf = get_config()->http;
+  auto config = get_config();
+  auto &httpconf = config->http;
 
-  if (!get_config()->http2_proxy && !httpconf.no_location_rewrite) {
+  if (!config->http2_proxy && !httpconf.no_location_rewrite) {
     downstream->rewrite_location_response_header(req.scheme);
   }
 
@@ -1162,7 +1169,8 @@ int SpdyUpstream::on_downstream_header_complete(Downstream *downstream) {
       ss << TTY_HTTP_HD << nv[i] << TTY_RST << ": " << nv[i + 1] << "\n";
     }
     ULOG(INFO, this) << "HTTP response headers. stream_id="
-                     << downstream->get_stream_id() << "\n" << ss.str();
+                     << downstream->get_stream_id() << "\n"
+                     << ss.str();
   }
   spdylay_data_provider data_prd;
   data_prd.source.ptr = downstream;

@@ -313,6 +313,8 @@ int Http2Session::initiate_connection() {
     }
   }
 
+  auto &downstreamconf = *get_config()->conn.downstream;
+
   const auto &proxy = get_config()->downstream_http_proxy;
   if (!proxy.host.empty() && state_ == DISCONNECTED) {
     if (LOG_ENABLED(INFO)) {
@@ -351,7 +353,7 @@ int Http2Session::initiate_connection() {
 
     conn_.wlimit.startw();
 
-    // TODO we should have timeout for connection establishment
+    conn_.wt.repeat = downstreamconf.timeout.connect;
     ev_timer_again(conn_.loop, &conn_.wt);
 
     write_ = &Http2Session::connected;
@@ -484,7 +486,8 @@ int Http2Session::initiate_connection() {
     if (state_ != CONNECTED) {
       state_ = CONNECTING;
       conn_.wlimit.startw();
-      // TODO we should have timeout for connection establishment
+
+      conn_.wt.repeat = downstreamconf.timeout.connect;
       ev_timer_again(conn_.loop, &conn_.wt);
     } else {
       conn_.rlimit.startw();
@@ -860,7 +863,7 @@ int on_header_callback2(nghttp2_session *session, const nghttp2_frame *frame,
         nghttp2_session_get_stream_user_data(session, promised_stream_id));
     if (!promised_sd || !promised_sd->dconn) {
       http2session->submit_rst_stream(promised_stream_id, NGHTTP2_CANCEL);
-      return 0;
+      return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
     }
 
     auto promised_downstream = promised_sd->dconn->get_downstream();
@@ -965,7 +968,7 @@ int on_begin_headers_callback(nghttp2_session *session,
         nghttp2_session_get_stream_user_data(session, frame->hd.stream_id));
     if (!sd || !sd->dconn) {
       http2session->submit_rst_stream(promised_stream_id, NGHTTP2_CANCEL);
-      return 0;
+      return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
     }
 
     auto downstream = sd->dconn->get_downstream();
@@ -976,6 +979,7 @@ int on_begin_headers_callback(nghttp2_session *session,
     if (http2session->handle_downstream_push_promise(downstream,
                                                      promised_stream_id) != 0) {
       http2session->submit_rst_stream(promised_stream_id, NGHTTP2_CANCEL);
+      return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
     }
 
     return 0;
@@ -1054,8 +1058,8 @@ int on_response_headers(Http2Session *http2session, Downstream *downstream,
     }
     downstream->set_request_state(Downstream::HEADER_COMPLETE);
     if (LOG_ENABLED(INFO)) {
-      SSLOG(INFO, http2session)
-          << "HTTP upgrade success. stream_id=" << frame->hd.stream_id;
+      SSLOG(INFO, http2session) << "HTTP upgrade success. stream_id="
+                                << frame->hd.stream_id;
     }
   } else {
     auto content_length = resp.fs.header(http2::HD_CONTENT_LENGTH);
@@ -1560,7 +1564,8 @@ int Http2Session::connection_made() {
     }
   }
 
-  auto &http2conf = get_config()->http2;
+  auto config = get_config();
+  auto &http2conf = config->http2;
 
   rv = nghttp2_session_client_new2(&session_, http2conf.downstream.callbacks,
                                    this, http2conf.downstream.option);
@@ -1577,7 +1582,7 @@ int Http2Session::connection_made() {
   entry[1].settings_id = NGHTTP2_SETTINGS_INITIAL_WINDOW_SIZE;
   entry[1].value = http2conf.downstream.window_size;
 
-  if (http2conf.no_server_push || get_config()->http2_proxy) {
+  if (http2conf.no_server_push || config->http2_proxy) {
     entry[nentry].settings_id = NGHTTP2_SETTINGS_ENABLE_PUSH;
     entry[nentry].value = 0;
     ++nentry;
@@ -1854,6 +1859,12 @@ int Http2Session::connected() {
   if (LOG_ENABLED(INFO)) {
     SSLOG(INFO, this) << "Connection established";
   }
+
+  auto &downstreamconf = *get_config()->conn.downstream;
+
+  // Reset timeout for write.  Previously, we set timeout for connect.
+  conn_.wt.repeat = downstreamconf.timeout.write;
+  ev_timer_again(conn_.loop, &conn_.wt);
 
   conn_.rlimit.startw();
 

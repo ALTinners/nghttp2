@@ -179,6 +179,9 @@
 /* Define to 1 if you have the <sys/types.h> header file. */
 #undef HAVE_SYS_TYPES_H
 
+/* Define to 1 if you have thread_local storage specifier. */
+#undef HAVE_THREAD_LOCAL
+
 /* Define to 1 if you have the `timegm' function. */
 #undef HAVE_TIMEGM
 

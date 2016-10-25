@@ -1,7 +1,7 @@
 /*
  * nghttp2 - HTTP/2 C Library
  *
- * Copyright (c) 2015 Tatsuhiro Tsujikawa
+ * Copyright (c) 2016 Tatsuhiro Tsujikawa
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -22,42 +22,29 @@
  * OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-#ifndef ASIO_CLIENT_SESSION_TCP_IMPL_H
-#define ASIO_CLIENT_SESSION_TCP_IMPL_H
+#include "xsi_strerror.h"
 
-#include "asio_client_session_impl.h"
+/* Make sure that we get XSI-compliant version of strerror_r */
+#ifdef _POSIX_C_SOURCE
+#undef _POSIX_C_SOURCE
+#endif /* _POSIX_C_SOURCE */
 
-#include <nghttp2/asio_http2_client.h>
+#ifdef _GNU_SOURCE
+#undef _GNU_SOURCE
+#endif /* _GNU_SOURCE */
 
-namespace nghttp2 {
-namespace asio_http2 {
-namespace client {
+#include <string.h>
 
-using boost::asio::ip::tcp;
+char *xsi_strerror(int errnum, char *buf, size_t buflen) {
+  int rv;
 
-class session_tcp_impl : public session_impl {
-public:
-  session_tcp_impl(boost::asio::io_service &io_service, const std::string &host,
-                   const std::string &service,
-                   const boost::posix_time::time_duration &connect_timeout);
-  virtual ~session_tcp_impl();
+  rv = strerror_r(errnum, buf, buflen);
 
-  virtual void start_connect(tcp::resolver::iterator endpoint_it);
-  virtual tcp::socket &socket();
-  virtual void read_socket(
-      std::function<void(const boost::system::error_code &ec, std::size_t n)>
-          h);
-  virtual void write_socket(
-      std::function<void(const boost::system::error_code &ec, std::size_t n)>
-          h);
-  virtual void shutdown_socket();
+  if (rv != 0) {
+    if (buflen > 0) {
+      buf[0] = '\0';
+    }
+  }
 
-private:
-  tcp::socket socket_;
-};
-
-} // namespace client
-} // namespace asio_http2
-} // namespace nghttp2
-
-#endif // ASIO_CLIENT_SESSION_TCP_IMPL_H
+  return buf;
+}

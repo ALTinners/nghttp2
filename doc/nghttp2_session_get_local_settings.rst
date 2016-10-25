@@ -7,7 +7,7 @@ Synopsis
 
 *#include <nghttp2/nghttp2.h>*
 
-.. function:: uint32_t nghttp2_session_get_local_settings(nghttp2_session *session, nghttp2_settings_id id)
+.. function:: uint32_t nghttp2_session_get_local_settings( nghttp2_session *session, nghttp2_settings_id id)
 
     
     Returns the value of SETTINGS *id* of local endpoint acknowledged

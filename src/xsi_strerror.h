@@ -1,7 +1,7 @@
 /*
  * nghttp2 - HTTP/2 C Library
  *
- * Copyright (c) 2015 Tatsuhiro Tsujikawa
+ * Copyright (c) 2016 Tatsuhiro Tsujikawa
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -22,42 +22,34 @@
  * OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-#ifndef ASIO_CLIENT_SESSION_TCP_IMPL_H
-#define ASIO_CLIENT_SESSION_TCP_IMPL_H
+#ifndef XSI_STRERROR_H
+#define XSI_STRERROR_H
 
-#include "asio_client_session_impl.h"
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif /* HAVE_CONFIG_H */
 
-#include <nghttp2/asio_http2_client.h>
+#include <stddef.h>
 
-namespace nghttp2 {
-namespace asio_http2 {
-namespace client {
+#ifdef __cplusplus
+extern "C" {
+#endif /* __cplusplus */
 
-using boost::asio::ip::tcp;
+/* Looks like error message is quite small, but we really don't know
+   how much longer they become. */
+#define STRERROR_BUFSIZE 256
 
-class session_tcp_impl : public session_impl {
-public:
-  session_tcp_impl(boost::asio::io_service &io_service, const std::string &host,
-                   const std::string &service,
-                   const boost::posix_time::time_duration &connect_timeout);
-  virtual ~session_tcp_impl();
+/*
+ * Returns description of error denoted by |errnum|.  The description
+ * is written in |buf| of length |buflen| including terminal NULL.  If
+ * there is an error, including the case that buffer space is not
+ * sufficient to include error message, and |buflen| > 0, empty string
+ * is written to |buf|.  This function returns |buf|.
+ */
+char *xsi_strerror(int errnum, char *buf, size_t buflen);
 
-  virtual void start_connect(tcp::resolver::iterator endpoint_it);
-  virtual tcp::socket &socket();
-  virtual void read_socket(
-      std::function<void(const boost::system::error_code &ec, std::size_t n)>
-          h);
-  virtual void write_socket(
-      std::function<void(const boost::system::error_code &ec, std::size_t n)>
-          h);
-  virtual void shutdown_socket();
+#ifdef __cplusplus
+}
+#endif /* __cplusplus */
 
-private:
-  tcp::socket socket_;
-};
-
-} // namespace client
-} // namespace asio_http2
-} // namespace nghttp2
-
-#endif // ASIO_CLIENT_SESSION_TCP_IMPL_H
+#endif /* XSI_STRERROR_H */
