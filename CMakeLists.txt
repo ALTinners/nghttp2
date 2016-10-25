@@ -24,15 +24,15 @@
 
 cmake_minimum_required(VERSION 3.0)
 # XXX using 1.8.90 instead of 1.9.0-DEV
-project(nghttp2 VERSION 1.15.0)
+project(nghttp2 VERSION 1.16.0)
 
 # See versioning rule:
 #  http://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
-set(LT_CURRENT  25)
+set(LT_CURRENT  26)
 set(LT_REVISION 0)
-set(LT_AGE      11)
+set(LT_AGE      12)
 
-set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(Version)
 
 math(EXPR LT_SOVERSION "${LT_CURRENT} - ${LT_AGE}")
@@ -408,10 +408,10 @@ configure_file(cmakeconfig.h.in config.h)
 # autotools-compatible names
 # Sphinx expects relative paths in the .rst files. Use the fact that the files
 # below are all one directory level deep.
-file(RELATIVE_PATH top_srcdir   "${CMAKE_BINARY_DIR}/dir" "${CMAKE_SOURCE_DIR}")
-file(RELATIVE_PATH top_builddir "${CMAKE_BINARY_DIR}/dir" "${CMAKE_BINARY_DIR}")
-set(abs_top_srcdir  "${CMAKE_SOURCE_DIR}")
-set(abs_top_builddir "${CMAKE_BINARY_DIR}")
+file(RELATIVE_PATH top_srcdir   "${CMAKE_CURRENT_BINARY_DIR}/dir" "${CMAKE_CURRENT_SOURCE_DIR}")
+file(RELATIVE_PATH top_builddir "${CMAKE_CURRENT_BINARY_DIR}/dir" "${CMAKE_CURRENT_BINARY_DIR}")
+set(abs_top_srcdir  "${CMAKE_CURRENT_SOURCE_DIR}")
+set(abs_top_builddir "${CMAKE_CURRENT_BINARY_DIR}")
 # libnghttp2.pc (pkg-config file)
 set(prefix          "${CMAKE_INSTALL_PREFIX}")
 set(exec_prefix     "${CMAKE_INSTALL_PREFIX}")
@@ -450,7 +450,7 @@ foreach(name
 endforeach()
 
 include_directories(
-  "${CMAKE_BINARY_DIR}" # for config.h
+  "${CMAKE_CURRENT_BINARY_DIR}" # for config.h
 )
 # For use in src/CMakeLists.txt
 set(PKGDATADIR "${CMAKE_INSTALL_FULL_DATADIR}/${CMAKE_PROJECT_NAME}")

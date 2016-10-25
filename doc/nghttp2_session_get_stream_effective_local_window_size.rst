@@ -7,7 +7,7 @@ Synopsis
 
 *#include <nghttp2/nghttp2.h>*
 
-.. function:: int32_t nghttp2_session_get_stream_effective_local_window_size(nghttp2_session *session, int32_t stream_id)
+.. function:: int32_t nghttp2_session_get_stream_effective_local_window_size( nghttp2_session *session, int32_t stream_id)
 
     
     Returns the local (receive) window size for the stream *stream_id*.

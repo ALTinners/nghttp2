@@ -7,7 +7,7 @@ Synopsis
 
 *#include <nghttp2/nghttp2.h>*
 
-.. function:: int32_t nghttp2_submit_request(nghttp2_session *session, const nghttp2_priority_spec *pri_spec, const nghttp2_nv *nva, size_t nvlen, const nghttp2_data_provider *data_prd, void *stream_user_data)
+.. function:: int32_t nghttp2_submit_request( nghttp2_session *session, const nghttp2_priority_spec *pri_spec, const nghttp2_nv *nva, size_t nvlen, const nghttp2_data_provider *data_prd, void *stream_user_data)
 
     
     Submits HEADERS frame and optionally one or more DATA frames.

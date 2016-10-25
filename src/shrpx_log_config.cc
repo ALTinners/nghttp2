@@ -33,12 +33,24 @@ LogConfig::LogConfig()
     : accesslog_fd(-1), errorlog_fd(-1), errorlog_tty(false) {}
 
 #ifndef NOTHREADS
-static pthread_key_t lckey;
-static pthread_once_t lckey_once = PTHREAD_ONCE_INIT;
+#ifdef HAVE_THREAD_LOCAL
+namespace {
+thread_local std::unique_ptr<LogConfig> config = make_unique<LogConfig>();
+} // namespace
 
-static void make_key(void) { pthread_key_create(&lckey, NULL); }
+LogConfig *log_config() { return config.get(); }
+void delete_log_config() {}
+#else  // !HAVE_THREAD_LOCAL
+namespace {
+pthread_key_t lckey;
+pthread_once_t lckey_once = PTHREAD_ONCE_INIT;
+} // namespace
 
-LogConfig *log_config(void) {
+namespace {
+void make_key() { pthread_key_create(&lckey, NULL); }
+} // namespace
+
+LogConfig *log_config() {
   pthread_once(&lckey_once, make_key);
   LogConfig *config = (LogConfig *)pthread_getspecific(lckey);
   if (!config) {
@@ -47,9 +59,17 @@ LogConfig *log_config(void) {
   }
   return config;
 }
-#else
-static LogConfig *config = new LogConfig();
-LogConfig *log_config(void) { return config; }
+
+void delete_log_config() { delete log_config(); }
+#endif // !HAVE_THREAD_LOCAL
+#else  // NOTHREADS
+namespace {
+std::unique_ptr<LogConfig> config = make_unique<LogConfig>();
+} // namespace
+
+LogConfig *log_config() { return config.get(); }
+
+void delete_log_config() {}
 #endif // NOTHREADS
 
 void LogConfig::update_tstamp(
@@ -62,9 +82,9 @@ void LogConfig::update_tstamp(
 
   time_str_updated_ = now;
 
-  time_local_str = util::format_common_log(now);
-  time_iso8601_str = util::format_iso8601(now);
-  time_http_str = util::format_http_date(now);
+  time_local = util::format_common_log(time_local_buf.data(), now);
+  time_iso8601 = util::format_iso8601(time_iso8601_buf.data(), now);
+  time_http = util::format_http_date(time_http_buf.data(), now);
 }
 
 } // namespace shrpx

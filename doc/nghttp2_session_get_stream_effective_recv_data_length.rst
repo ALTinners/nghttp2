@@ -7,7 +7,7 @@ Synopsis
 
 *#include <nghttp2/nghttp2.h>*
 
-.. function:: int32_t nghttp2_session_get_stream_effective_recv_data_length(nghttp2_session *session, int32_t stream_id)
+.. function:: int32_t nghttp2_session_get_stream_effective_recv_data_length( nghttp2_session *session, int32_t stream_id)
 
     
     Returns the number of DATA payload in bytes received without

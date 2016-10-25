@@ -1,7 +1,7 @@
 /*
  * nghttp2 - HTTP/2 C Library
  *
- * Copyright (c) 2015 Tatsuhiro Tsujikawa
+ * Copyright (c) 2016 Tatsuhiro Tsujikawa
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -22,42 +22,26 @@
  * OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-#ifndef ASIO_CLIENT_SESSION_TCP_IMPL_H
-#define ASIO_CLIENT_SESSION_TCP_IMPL_H
+#ifndef SHRPX_EXEC_H
+#define SHRPX_EXEC_H
 
-#include "asio_client_session_impl.h"
+#include "unistd.h"
 
-#include <nghttp2/asio_http2_client.h>
+namespace shrpx {
 
-namespace nghttp2 {
-namespace asio_http2 {
-namespace client {
-
-using boost::asio::ip::tcp;
-
-class session_tcp_impl : public session_impl {
-public:
-  session_tcp_impl(boost::asio::io_service &io_service, const std::string &host,
-                   const std::string &service,
-                   const boost::posix_time::time_duration &connect_timeout);
-  virtual ~session_tcp_impl();
-
-  virtual void start_connect(tcp::resolver::iterator endpoint_it);
-  virtual tcp::socket &socket();
-  virtual void read_socket(
-      std::function<void(const boost::system::error_code &ec, std::size_t n)>
-          h);
-  virtual void write_socket(
-      std::function<void(const boost::system::error_code &ec, std::size_t n)>
-          h);
-  virtual void shutdown_socket();
-
-private:
-  tcp::socket socket_;
+struct Process {
+  pid_t pid;
+  // fd to read from process
+  int rfd;
 };
 
-} // namespace client
-} // namespace asio_http2
-} // namespace nghttp2
+// Executes command |argv| after forking current process.  The command
+// should not expect to read from stdin.  Parent process can read the
+// stdout from command using proc.rfd.  On success, this function
+// returns 0, and process information is stored in |proc|.  Otherwise,
+// returns -1.
+int exec_read_command(Process &proc, char *const argv[]);
 
-#endif // ASIO_CLIENT_SESSION_TCP_IMPL_H
+} // namespace shrpx
+
+#endif // SHRPX_EXEC_H

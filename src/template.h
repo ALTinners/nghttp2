@@ -66,11 +66,11 @@ make_array(T &&... t) {
       sizeof...(T)>{{std::forward<T>(t)...}};
 }
 
-template <typename T, size_t N> constexpr size_t array_size(T(&)[N]) {
+template <typename T, size_t N> constexpr size_t array_size(T (&)[N]) {
   return N;
 }
 
-template <typename T, size_t N> constexpr size_t str_size(T(&)[N]) {
+template <typename T, size_t N> constexpr size_t str_size(T (&)[N]) {
   return N - 1;
 }
 
@@ -79,7 +79,7 @@ template <typename T, size_t N> constexpr size_t str_size(T(&)[N]) {
 template <typename F, typename... T> struct Defer {
   Defer(F &&f, T &&... t)
       : f(std::bind(std::forward<F>(f), std::forward<T>(t)...)) {}
-  Defer(Defer &&o) : f(std::move(o.f)) {}
+  Defer(Defer &&o) noexcept : f(std::move(o.f)) {}
   ~Defer() { f(); }
 
   using ResultType = typename std::result_of<typename std::decay<F>::type(
@@ -104,12 +104,13 @@ template <typename T> struct DList {
   DList(const DList &) = delete;
   DList &operator=(const DList &) = delete;
 
-  DList(DList &&other) : head(other.head), tail(other.tail), len(other.len) {
+  DList(DList &&other) noexcept
+      : head(other.head), tail(other.tail), len(other.len) {
     other.head = other.tail = nullptr;
     other.len = 0;
   }
 
-  DList &operator=(DList &&other) {
+  DList &operator=(DList &&other) noexcept {
     if (this == &other) {
       return *this;
     }
@@ -264,8 +265,8 @@ public:
       : len(std::distance(first, last)), base(copystr(first, last)) {}
   ImmutableString(const ImmutableString &other)
       : len(other.len), base(copystr(std::begin(other), std::end(other))) {}
-  ImmutableString(ImmutableString &&other) noexcept : len(other.len),
-                                                      base(other.base) {
+  ImmutableString(ImmutableString &&other) noexcept
+      : len(other.len), base(other.base) {
     other.len = 0;
     other.base = "";
   }
@@ -300,7 +301,7 @@ public:
     return *this;
   }
 
-  template <size_t N> static ImmutableString from_lit(const char(&s)[N]) {
+  template <size_t N> static ImmutableString from_lit(const char (&s)[N]) {
     return ImmutableString(s, N - 1);
   }
 
@@ -427,7 +428,7 @@ public:
       : base(reinterpret_cast<const char *>(first)),
         len(std::distance(first, last)) {}
   template <typename CharT, size_t N>
-  constexpr static StringRef from_lit(const CharT(&s)[N]) {
+  constexpr static StringRef from_lit(const CharT (&s)[N]) {
     return StringRef{s, N - 1};
   }
   static StringRef from_maybe_nullptr(const char *s) {

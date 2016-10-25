@@ -315,7 +315,7 @@ int HttpDownstreamConnection::attach_downstream(Downstream *downstream) {
       break;
     }
 
-    // TODO we should have timeout for connection establishment
+    conn_.wt.repeat = downstreamconf.timeout.connect;
     ev_timer_again(conn_.loop, &conn_.wt);
   } else {
     // we may set read timer cb to idle_timeoutcb.  Reset again.
@@ -342,7 +342,8 @@ int HttpDownstreamConnection::push_request_headers() {
 
   auto connect_method = req.method == HTTP_CONNECT;
 
-  auto &httpconf = get_config()->http;
+  auto config = get_config();
+  auto &httpconf = config->http;
 
   // Set request_sent to true because we write request into buffer
   // here.
@@ -352,7 +353,7 @@ int HttpDownstreamConnection::push_request_headers() {
   // case, we use backend server's host nonetheless.
   auto authority = StringRef(downstream_hostport);
   auto no_host_rewrite =
-      httpconf.no_host_rewrite || get_config()->http2_proxy || connect_method;
+      httpconf.no_host_rewrite || config->http2_proxy || connect_method;
 
   if (no_host_rewrite && !req.authority.empty()) {
     authority = req.authority;
@@ -369,7 +370,7 @@ int HttpDownstreamConnection::push_request_headers() {
 
   if (connect_method) {
     buf->append(authority);
-  } else if (get_config()->http2_proxy) {
+  } else if (config->http2_proxy) {
     // Construct absolute-form request target because we are going to
     // send a request to a HTTP/1 proxy.
     assert(!req.scheme.empty());
@@ -434,7 +435,7 @@ int HttpDownstreamConnection::push_request_headers() {
   if (fwdconf.params) {
     auto params = fwdconf.params;
 
-    if (get_config()->http2_proxy || connect_method) {
+    if (config->http2_proxy || connect_method) {
       params &= ~FORWARDED_PROTO;
     }
 
@@ -478,7 +479,7 @@ int HttpDownstreamConnection::push_request_headers() {
     buf->append((*xff).value);
     buf->append("\r\n");
   }
-  if (!get_config()->http2_proxy && !connect_method) {
+  if (!config->http2_proxy && !connect_method) {
     buf->append("X-Forwarded-Proto: ");
     assert(!req.scheme.empty());
     buf->append(req.scheme);
@@ -522,7 +523,8 @@ int HttpDownstreamConnection::push_request_headers() {
       nhdrs = http::colorizeHeaders(nhdrs.c_str());
     }
     DCLOG(INFO, this) << "HTTP request headers. stream_id="
-                      << downstream_->get_stream_id() << "\n" << nhdrs;
+                      << downstream_->get_stream_id() << "\n"
+                      << nhdrs;
   }
 
   // Don't call signal_write() if we anticipate request body.  We call
@@ -790,8 +792,8 @@ int ensure_max_header_fields(const Downstream *downstream,
 
   if (resp.fs.num_fields() >= httpconf.max_response_header_fields) {
     if (LOG_ENABLED(INFO)) {
-      DLOG(INFO, downstream)
-          << "Too many header field num=" << resp.fs.num_fields() + 1;
+      DLOG(INFO, downstream) << "Too many header field num="
+                             << resp.fs.num_fields() + 1;
     }
     return -1;
   }
@@ -1176,6 +1178,12 @@ int HttpDownstreamConnection::connected() {
   if (LOG_ENABLED(INFO)) {
     DCLOG(INFO, this) << "Connected to downstream host";
   }
+
+  auto &downstreamconf = *get_config()->conn.downstream;
+
+  // Reset timeout for write.  Previously, we set timeout for connect.
+  conn_.wt.repeat = downstreamconf.timeout.write;
+  ev_timer_again(conn_.loop, &conn_.wt);
 
   conn_.rlimit.startw();
 

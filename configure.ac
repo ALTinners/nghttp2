@@ -25,7 +25,7 @@ dnl Do not change user variables!
 dnl http://www.gnu.org/software/automake/manual/html_node/Flag-Variables-Ordering.html
 
 AC_PREREQ(2.61)
-AC_INIT([nghttp2], [1.15.0], [t-tujikawa@users.sourceforge.net])
+AC_INIT([nghttp2], [1.16.0], [t-tujikawa@users.sourceforge.net])
 AC_CONFIG_AUX_DIR([.])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_HEADERS([config.h])
@@ -44,9 +44,9 @@ m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
 dnl See versioning rule:
 dnl  http://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
-AC_SUBST(LT_CURRENT, 25)
+AC_SUBST(LT_CURRENT, 26)
 AC_SUBST(LT_REVISION, 0)
-AC_SUBST(LT_AGE, 11)
+AC_SUBST(LT_AGE, 12)
 
 major=`echo $PACKAGE_VERSION |cut -d. -f1 | sed -e "s/[^0-9]//g"`
 minor=`echo $PACKAGE_VERSION |cut -d. -f2 | sed -e "s/[^0-9]//g"`
@@ -252,6 +252,21 @@ std::atomic_store(&a, p);
      have_atomic_std_shared_ptr=yes
      AC_MSG_RESULT([yes])],
     [have_atomic_std_shared_ptr=no
+     AC_MSG_RESULT([no])])
+
+# Check that thread_local storage specifier is available
+AC_MSG_CHECKING([whether thread_local storage class specifier is available.])
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
+,
+[[
+thread_local int a = 0;
+(void)a;
+]])],
+    [AC_DEFINE([HAVE_THREAD_LOCAL], [1],
+               [Define to 1 if you have thread_local storage specifier.])
+     have_thread_local=yes
+     AC_MSG_RESULT([yes])],
+    [have_Thread_local=no
      AC_MSG_RESULT([no])])
 
 CXXFLAGS=$save_CXXFLAGS

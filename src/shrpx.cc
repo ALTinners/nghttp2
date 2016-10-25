@@ -86,6 +86,9 @@
 #include "app_helper.h"
 #include "ssl.h"
 #include "template.h"
+#include "allocator.h"
+#include "ssl_compat.h"
+#include "xsi_strerror.h"
 
 extern char **environ;
 
@@ -151,7 +154,7 @@ StartupConfig suconfig;
 
 struct InheritedAddr {
   // IP address if TCP socket.  Otherwise, UNIX domain socket path.
-  ImmutableString host;
+  StringRef host;
   uint16_t port;
   // true if UNIX domain socket path
   bool host_unix;
@@ -289,16 +292,20 @@ int worker_process_last_pid() {
 
 namespace {
 int chown_to_running_user(const char *path) {
-  return chown(path, get_config()->uid, get_config()->gid);
+  auto config = get_config();
+  return chown(path, config->uid, config->gid);
 }
 } // namespace
 
 namespace {
 int save_pid() {
-  constexpr auto SUFFIX = StringRef::from_lit(".XXXXXX");
-  auto &pid_file = get_config()->pid_file;
+  std::array<char, STRERROR_BUFSIZE> errbuf;
+  auto config = get_config();
 
-  auto len = get_config()->pid_file.size() + SUFFIX.size();
+  constexpr auto SUFFIX = StringRef::from_lit(".XXXXXX");
+  auto &pid_file = config->pid_file;
+
+  auto len = config->pid_file.size() + SUFFIX.size();
   auto buf = make_unique<char[]>(len + 1);
   auto p = buf.get();
 
@@ -312,23 +319,23 @@ int save_pid() {
   if (fd == -1) {
     auto error = errno;
     LOG(ERROR) << "Could not save PID to file " << pid_file << ": "
-               << strerror(error);
+               << xsi_strerror(error, errbuf.data(), errbuf.size());
     return -1;
   }
 
-  auto content = util::utos(get_config()->pid) + '\n';
+  auto content = util::utos(config->pid) + '\n';
 
   if (write(fd, content.c_str(), content.size()) == -1) {
     auto error = errno;
     LOG(ERROR) << "Could not save PID to file " << pid_file << ": "
-               << strerror(error);
+               << xsi_strerror(error, errbuf.data(), errbuf.size());
     return -1;
   }
 
   if (fsync(fd) == -1) {
     auto error = errno;
     LOG(ERROR) << "Could not save PID to file " << pid_file << ": "
-               << strerror(error);
+               << xsi_strerror(error, errbuf.data(), errbuf.size());
     return -1;
   }
 
@@ -337,18 +344,18 @@ int save_pid() {
   if (rename(temp_path, pid_file.c_str()) == -1) {
     auto error = errno;
     LOG(ERROR) << "Could not save PID to file " << pid_file << ": "
-               << strerror(error);
+               << xsi_strerror(error, errbuf.data(), errbuf.size());
 
     unlink(temp_path);
 
     return -1;
   }
 
-  if (get_config()->uid != 0) {
+  if (config->uid != 0) {
     if (chown_to_running_user(pid_file.c_str()) == -1) {
       auto error = errno;
-      LOG(WARN) << "Changing owner of pid file " << pid_file
-                << " failed: " << strerror(error);
+      LOG(WARN) << "Changing owner of pid file " << pid_file << " failed: "
+                << xsi_strerror(error, errbuf.data(), errbuf.size());
     }
   }
 
@@ -360,13 +367,15 @@ namespace {
 void exec_binary() {
   int rv;
   sigset_t oldset;
+  std::array<char, STRERROR_BUFSIZE> errbuf;
 
   LOG(NOTICE) << "Executing new binary";
 
   rv = shrpx_signal_block_all(&oldset);
   if (rv != 0) {
     auto error = errno;
-    LOG(ERROR) << "Blocking all signals failed: " << strerror(error);
+    LOG(ERROR) << "Blocking all signals failed: "
+               << xsi_strerror(error, errbuf.data(), errbuf.size());
 
     return;
   }
@@ -383,7 +392,8 @@ void exec_binary() {
 
     if (rv != 0) {
       auto error = errno;
-      LOG(FATAL) << "Restoring signal mask failed: " << strerror(error);
+      LOG(FATAL) << "Restoring signal mask failed: "
+                 << xsi_strerror(error, errbuf.data(), errbuf.size());
 
       exit(EXIT_FAILURE);
     }
@@ -398,7 +408,8 @@ void exec_binary() {
   rv = shrpx_signal_unblock_all();
   if (rv != 0) {
     auto error = errno;
-    LOG(ERROR) << "Unblocking all signals failed: " << strerror(error);
+    LOG(ERROR) << "Unblocking all signals failed: "
+               << xsi_strerror(error, errbuf.data(), errbuf.size());
 
     _Exit(EXIT_FAILURE);
   }
@@ -488,6 +499,7 @@ void exec_binary() {
 
 namespace {
 void ipc_send(WorkerProcess *wp, uint8_t ipc_event) {
+  std::array<char, STRERROR_BUFSIZE> errbuf;
   ssize_t nwrite;
   while ((nwrite = write(wp->ipc_fd, &ipc_event, 1)) == -1 && errno == EINTR)
     ;
@@ -495,7 +507,7 @@ void ipc_send(WorkerProcess *wp, uint8_t ipc_event) {
   if (nwrite < 0) {
     auto error = errno;
     LOG(ERROR) << "Could not send IPC event to worker process: "
-               << strerror(error);
+               << xsi_strerror(error, errbuf.data(), errbuf.size());
     return;
   }
 
@@ -564,6 +576,7 @@ void worker_process_child_cb(struct ev_loop *loop, ev_child *w, int revents) {
 namespace {
 int create_unix_domain_server_socket(UpstreamAddr &faddr,
                                      std::vector<InheritedAddr> &iaddrs) {
+  std::array<char, STRERROR_BUFSIZE> errbuf;
   auto found = std::find_if(
       std::begin(iaddrs), std::end(iaddrs), [&faddr](const InheritedAddr &ia) {
         return !ia.used && ia.host_unix && ia.host == faddr.host;
@@ -574,7 +587,7 @@ int create_unix_domain_server_socket(UpstreamAddr &faddr,
                 << (faddr.tls ? ", tls" : "");
     (*found).used = true;
     faddr.fd = (*found).fd;
-    faddr.hostport = ImmutableString::from_lit("localhost");
+    faddr.hostport = StringRef::from_lit("localhost");
 
     return 0;
   }
@@ -583,14 +596,16 @@ int create_unix_domain_server_socket(UpstreamAddr &faddr,
   auto fd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0);
   if (fd == -1) {
     auto error = errno;
-    LOG(WARN) << "socket() syscall failed: " << strerror(error);
+    LOG(WARN) << "socket() syscall failed: "
+              << xsi_strerror(error, errbuf.data(), errbuf.size());
     return -1;
   }
 #else  // !SOCK_NONBLOCK
   auto fd = socket(AF_UNIX, SOCK_STREAM, 0);
   if (fd == -1) {
     auto error = errno;
-    LOG(WARN) << "socket() syscall failed: " << strerror(error);
+    LOG(WARN) << "socket() syscall failed: "
+              << xsi_strerror(error, errbuf.data(), errbuf.size());
     return -1;
   }
   util::make_socket_nonblocking(fd);
@@ -600,7 +615,7 @@ int create_unix_domain_server_socket(UpstreamAddr &faddr,
                  static_cast<socklen_t>(sizeof(val))) == -1) {
     auto error = errno;
     LOG(WARN) << "Failed to set SO_REUSEADDR option to listener socket: "
-              << strerror(error);
+              << xsi_strerror(error, errbuf.data(), errbuf.size());
     close(fd);
     return -1;
   }
@@ -621,7 +636,8 @@ int create_unix_domain_server_socket(UpstreamAddr &faddr,
 
   if (bind(fd, &addr.sa, sizeof(addr.un)) != 0) {
     auto error = errno;
-    LOG(FATAL) << "Failed to bind UNIX domain socket: " << strerror(error);
+    LOG(FATAL) << "Failed to bind UNIX domain socket: "
+               << xsi_strerror(error, errbuf.data(), errbuf.size());
     close(fd);
     return -1;
   }
@@ -630,7 +646,8 @@ int create_unix_domain_server_socket(UpstreamAddr &faddr,
 
   if (listen(fd, listenerconf.backlog) != 0) {
     auto error = errno;
-    LOG(FATAL) << "Failed to listen to UNIX domain socket: " << strerror(error);
+    LOG(FATAL) << "Failed to listen to UNIX domain socket: "
+               << xsi_strerror(error, errbuf.data(), errbuf.size());
     close(fd);
     return -1;
   }
@@ -639,7 +656,7 @@ int create_unix_domain_server_socket(UpstreamAddr &faddr,
               << (faddr.tls ? ", tls" : "");
 
   faddr.fd = fd;
-  faddr.hostport = ImmutableString::from_lit("localhost");
+  faddr.hostport = StringRef::from_lit("localhost");
 
   return 0;
 }
@@ -648,6 +665,7 @@ int create_unix_domain_server_socket(UpstreamAddr &faddr,
 namespace {
 int create_tcp_server_socket(UpstreamAddr &faddr,
                              std::vector<InheritedAddr> &iaddrs) {
+  std::array<char, STRERROR_BUFSIZE> errbuf;
   int fd = -1;
   int rv;
 
@@ -708,14 +726,16 @@ int create_tcp_server_socket(UpstreamAddr &faddr,
         socket(rp->ai_family, rp->ai_socktype | SOCK_NONBLOCK, rp->ai_protocol);
     if (fd == -1) {
       auto error = errno;
-      LOG(WARN) << "socket() syscall failed: " << strerror(error);
+      LOG(WARN) << "socket() syscall failed: "
+                << xsi_strerror(error, errbuf.data(), errbuf.size());
       continue;
     }
 #else  // !SOCK_NONBLOCK
     fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
     if (fd == -1) {
       auto error = errno;
-      LOG(WARN) << "socket() syscall failed: " << strerror(error);
+      LOG(WARN) << "socket() syscall failed: "
+                << xsi_strerror(error, errbuf.data(), errbuf.size());
       continue;
     }
     util::make_socket_nonblocking(fd);
@@ -725,7 +745,7 @@ int create_tcp_server_socket(UpstreamAddr &faddr,
                    static_cast<socklen_t>(sizeof(val))) == -1) {
       auto error = errno;
       LOG(WARN) << "Failed to set SO_REUSEADDR option to listener socket: "
-                << strerror(error);
+                << xsi_strerror(error, errbuf.data(), errbuf.size());
       close(fd);
       continue;
     }
@@ -736,7 +756,7 @@ int create_tcp_server_socket(UpstreamAddr &faddr,
                      static_cast<socklen_t>(sizeof(val))) == -1) {
         auto error = errno;
         LOG(WARN) << "Failed to set IPV6_V6ONLY option to listener socket: "
-                  << strerror(error);
+                  << xsi_strerror(error, errbuf.data(), errbuf.size());
         close(fd);
         continue;
       }
@@ -749,7 +769,7 @@ int create_tcp_server_socket(UpstreamAddr &faddr,
                    static_cast<socklen_t>(sizeof(val))) == -1) {
       auto error = errno;
       LOG(WARN) << "Failed to set TCP_DEFER_ACCEPT option to listener socket: "
-                << strerror(error);
+                << xsi_strerror(error, errbuf.data(), errbuf.size());
     }
 #endif // TCP_DEFER_ACCEPT
 
@@ -758,7 +778,8 @@ int create_tcp_server_socket(UpstreamAddr &faddr,
     // ports will fail with permission denied error.
     if (bind(fd, rp->ai_addr, rp->ai_addrlen) == -1) {
       auto error = errno;
-      LOG(WARN) << "bind() syscall failed: " << strerror(error);
+      LOG(WARN) << "bind() syscall failed: "
+                << xsi_strerror(error, errbuf.data(), errbuf.size());
       close(fd);
       continue;
     }
@@ -769,13 +790,14 @@ int create_tcp_server_socket(UpstreamAddr &faddr,
                      static_cast<socklen_t>(sizeof(val))) == -1) {
         auto error = errno;
         LOG(WARN) << "Failed to set TCP_FASTOPEN option to listener socket: "
-                  << strerror(error);
+                  << xsi_strerror(error, errbuf.data(), errbuf.size());
       }
     }
 
     if (listen(fd, listenerconf.backlog) == -1) {
       auto error = errno;
-      LOG(WARN) << "listen() syscall failed: " << strerror(error);
+      LOG(WARN) << "listen() syscall failed: "
+                << xsi_strerror(error, errbuf.data(), errbuf.size());
       close(fd);
       continue;
     }
@@ -791,8 +813,8 @@ int create_tcp_server_socket(UpstreamAddr &faddr,
   }
 
   faddr.fd = fd;
-  faddr.hostport = ImmutableString{
-      util::make_http_hostport(StringRef{host.data()}, faddr.port)};
+  faddr.hostport = util::make_http_hostport(mod_config()->balloc,
+                                            StringRef{host.data()}, faddr.port);
 
   LOG(NOTICE) << "Listening on " << faddr.hostport
               << (faddr.tls ? ", tls" : "");
@@ -806,7 +828,8 @@ namespace {
 // function is intended to be used when reloading configuration, and
 // |config| is usually a current configuration.
 std::vector<InheritedAddr>
-get_inherited_addr_from_config(const Config *config) {
+get_inherited_addr_from_config(BlockAllocator &balloc, Config *config) {
+  std::array<char, STRERROR_BUFSIZE> errbuf;
   int rv;
 
   auto &listenerconf = config->conn.listener;
@@ -843,7 +866,7 @@ get_inherited_addr_from_config(const Config *config) {
     if (getsockname(addr.fd, &su.sa, &salen) != 0) {
       auto error = errno;
       LOG(WARN) << "getsockname() syscall failed (fd=" << addr.fd
-                << "): " << strerror(error);
+                << "): " << xsi_strerror(error, errbuf.data(), errbuf.size());
       continue;
     }
 
@@ -856,7 +879,7 @@ get_inherited_addr_from_config(const Config *config) {
       continue;
     }
 
-    iaddr.host = ImmutableString{host.data()};
+    iaddr.host = make_string_ref(balloc, StringRef{host.data()});
   }
 
   return iaddrs;
@@ -867,7 +890,8 @@ namespace {
 // Returns array of InheritedAddr constructed from environment
 // variables.  This function handles the old environment variable
 // names used in 1.7.0 or earlier.
-std::vector<InheritedAddr> get_inherited_addr_from_env() {
+std::vector<InheritedAddr> get_inherited_addr_from_env(Config *config) {
+  std::array<char, STRERROR_BUFSIZE> errbuf;
   int rv;
   std::vector<InheritedAddr> iaddrs;
 
@@ -888,15 +912,14 @@ std::vector<InheritedAddr> get_inherited_addr_from_env() {
         }
       }
     } else {
-      auto pathenv = getenv(ENV_UNIX_PATH.c_str());
-      auto fdenv = getenv(ENV_UNIX_FD.c_str());
-      if (pathenv && fdenv) {
+      // The return value of getenv may be allocated statically.
+      if (getenv(ENV_UNIX_PATH.c_str()) && getenv(ENV_UNIX_FD.c_str())) {
         auto name = ENV_ACCEPT_PREFIX.str();
         name += '1';
         std::string value = "unix,";
-        value += fdenv;
+        value += getenv(ENV_UNIX_FD.c_str());
         value += ',';
-        value += pathenv;
+        value += getenv(ENV_UNIX_PATH.c_str());
         setenv(name.c_str(), value.c_str(), 0);
       }
     }
@@ -948,7 +971,7 @@ std::vector<InheritedAddr> get_inherited_addr_from_env() {
       }
 
       InheritedAddr addr{};
-      addr.host = ImmutableString{path};
+      addr.host = make_string_ref(config->balloc, StringRef{path});
       addr.host_unix = true;
       addr.fd = static_cast<int>(fd);
       iaddrs.push_back(std::move(addr));
@@ -967,7 +990,7 @@ std::vector<InheritedAddr> get_inherited_addr_from_env() {
       if (getsockname(fd, &su.sa, &salen) != 0) {
         auto error = errno;
         LOG(WARN) << "getsockname() syscall failed (fd=" << fd
-                  << "): " << strerror(error);
+                  << "): " << xsi_strerror(error, errbuf.data(), errbuf.size());
         close(fd);
         continue;
       }
@@ -1002,7 +1025,7 @@ std::vector<InheritedAddr> get_inherited_addr_from_env() {
       }
 
       InheritedAddr addr{};
-      addr.host = ImmutableString{host.data()};
+      addr.host = make_string_ref(config->balloc, StringRef{host.data()});
       addr.port = static_cast<uint16_t>(port);
       addr.fd = static_cast<int>(fd);
       iaddrs.push_back(std::move(addr));
@@ -1029,6 +1052,7 @@ void close_unused_inherited_addr(const std::vector<InheritedAddr> &iaddrs) {
 
 namespace {
 int create_acceptor_socket(Config *config, std::vector<InheritedAddr> &iaddrs) {
+  std::array<char, STRERROR_BUFSIZE> errbuf;
   auto &listenerconf = config->conn.listener;
 
   for (auto &addr : listenerconf.addrs) {
@@ -1043,7 +1067,8 @@ int create_acceptor_socket(Config *config, std::vector<InheritedAddr> &iaddrs) {
         if (chown_to_running_user(addr.host.c_str()) == -1) {
           auto error = errno;
           LOG(WARN) << "Changing owner of UNIX domain socket " << addr.host
-                    << " failed: " << strerror(error);
+                    << " failed: "
+                    << xsi_strerror(error, errbuf.data(), errbuf.size());
         }
       }
       continue;
@@ -1074,13 +1099,14 @@ namespace {
 // messages to the worker process.  On success, ipc_fd[0] is for
 // reading, and ipc_fd[1] for writing, just like pipe(2).
 int create_ipc_socket(std::array<int, 2> &ipc_fd) {
+  std::array<char, STRERROR_BUFSIZE> errbuf;
   int rv;
 
   rv = pipe(ipc_fd.data());
   if (rv == -1) {
     auto error = errno;
     LOG(WARN) << "Failed to create pipe to communicate worker process: "
-              << strerror(error);
+              << xsi_strerror(error, errbuf.data(), errbuf.size());
     return -1;
   }
 
@@ -1102,6 +1128,7 @@ namespace {
 // used in the current configuration.
 pid_t fork_worker_process(int &main_ipc_fd,
                           const std::vector<InheritedAddr> &iaddrs) {
+  std::array<char, STRERROR_BUFSIZE> errbuf;
   int rv;
   sigset_t oldset;
 
@@ -1115,7 +1142,8 @@ pid_t fork_worker_process(int &main_ipc_fd,
   rv = shrpx_signal_block_all(&oldset);
   if (rv != 0) {
     auto error = errno;
-    LOG(ERROR) << "Blocking all signals failed: " << strerror(error);
+    LOG(ERROR) << "Blocking all signals failed: "
+               << xsi_strerror(error, errbuf.data(), errbuf.size());
 
     close(ipc_fd[0]);
     close(ipc_fd[1]);
@@ -1139,7 +1167,8 @@ pid_t fork_worker_process(int &main_ipc_fd,
     rv = shrpx_signal_unblock_all();
     if (rv != 0) {
       auto error = errno;
-      LOG(FATAL) << "Unblocking all signals failed: " << strerror(error);
+      LOG(FATAL) << "Unblocking all signals failed: "
+                 << xsi_strerror(error, errbuf.data(), errbuf.size());
 
       _Exit(EXIT_FAILURE);
     }
@@ -1162,13 +1191,15 @@ pid_t fork_worker_process(int &main_ipc_fd,
   // parent process
   if (pid == -1) {
     auto error = errno;
-    LOG(ERROR) << "Could not spawn worker process: " << strerror(error);
+    LOG(ERROR) << "Could not spawn worker process: "
+               << xsi_strerror(error, errbuf.data(), errbuf.size());
   }
 
   rv = shrpx_signal_set(&oldset);
   if (rv != 0) {
     auto error = errno;
-    LOG(FATAL) << "Restoring signal mask failed: " << strerror(error);
+    LOG(FATAL) << "Restoring signal mask failed: "
+               << xsi_strerror(error, errbuf.data(), errbuf.size());
 
     exit(EXIT_FAILURE);
   }
@@ -1192,12 +1223,17 @@ pid_t fork_worker_process(int &main_ipc_fd,
 
 namespace {
 int event_loop() {
+  std::array<char, STRERROR_BUFSIZE> errbuf;
+
   shrpx_signal_set_master_proc_ign_handler();
 
-  if (get_config()->daemon) {
+  auto config = mod_config();
+
+  if (config->daemon) {
     if (call_daemon() == -1) {
       auto error = errno;
-      LOG(FATAL) << "Failed to daemonize: " << strerror(error);
+      LOG(FATAL) << "Failed to daemonize: "
+                 << xsi_strerror(error, errbuf.data(), errbuf.size());
       return -1;
     }
 
@@ -1209,15 +1245,17 @@ int event_loop() {
     redirect_stderr_to_errorlog();
   }
 
-  auto iaddrs = get_inherited_addr_from_env();
+  {
+    auto iaddrs = get_inherited_addr_from_env(config);
 
-  if (create_acceptor_socket(mod_config(), iaddrs) != 0) {
-    return -1;
+    if (create_acceptor_socket(config, iaddrs) != 0) {
+      return -1;
+    }
+
+    close_unused_inherited_addr(iaddrs);
   }
 
-  close_unused_inherited_addr(iaddrs);
-
-  auto loop = ev_default_loop(get_config()->ev_loop_flags);
+  auto loop = ev_default_loop(config->ev_loop_flags);
 
   int ipc_fd;
 
@@ -1233,7 +1271,7 @@ int event_loop() {
   // This makes easier to write restart script for nghttpx.  Because
   // when we know that PID file is recreated, it means we can send
   // QUIT signal to the old process to make it shutdown gracefully.
-  if (!get_config()->pid_file.empty()) {
+  if (!config->pid_file.empty()) {
     save_pid();
   }
 
@@ -1274,7 +1312,7 @@ constexpr auto DEFAULT_ACCESSLOG_FORMAT = StringRef::from_lit(
 namespace {
 void fill_default_config(Config *config) {
   config->num_worker = 1;
-  config->conf_path = ImmutableString::from_lit("/etc/nghttpx/nghttpx.conf");
+  config->conf_path = StringRef::from_lit("/etc/nghttpx/nghttpx.conf");
   config->pid = getpid();
 
   if (ev_supported_backends() & ~ev_recommended_backends() & EVBACKEND_KQUEUE) {
@@ -1306,7 +1344,7 @@ void fill_default_config(Config *config) {
     // ocsp update interval = 14400 secs = 4 hours, borrowed from h2o
     ocspconf.update_interval = 4_h;
     ocspconf.fetch_ocsp_response_file =
-        ImmutableString::from_lit(PKGDATADIR "/fetch-ocsp-response");
+        StringRef::from_lit(PKGDATADIR "/fetch-ocsp-response");
   }
 
   {
@@ -1316,10 +1354,15 @@ void fill_default_config(Config *config) {
   }
 
   tlsconf.session_timeout = std::chrono::hours(12);
+#if OPENSSL_1_1_API
+  tlsconf.ecdh_curves = StringRef::from_lit("X25519:P-256:P-384:P-521");
+#else  // !OPENSSL_1_1_API
+  tlsconf.ecdh_curves = StringRef::from_lit("P-256:P-384:P-521");
+#endif // !OPENSSL_1_1_API
 
   auto &httpconf = config->http;
   httpconf.server_name =
-      ImmutableString::from_lit("nghttpx nghttp2/" NGHTTP2_VERSION);
+      StringRef::from_lit("nghttpx nghttp2/" NGHTTP2_VERSION);
   httpconf.no_host_rewrite = true;
   httpconf.request_header_field_buffer = 64_k;
   httpconf.max_request_header_fields = 100;
@@ -1387,10 +1430,11 @@ void fill_default_config(Config *config) {
   auto &loggingconf = config->logging;
   {
     auto &accessconf = loggingconf.access;
-    accessconf.format = parse_log_format(DEFAULT_ACCESSLOG_FORMAT);
+    accessconf.format =
+        parse_log_format(config->balloc, DEFAULT_ACCESSLOG_FORMAT);
 
     auto &errorconf = loggingconf.error;
-    errorconf.file = ImmutableString::from_lit("/dev/stderr");
+    errorconf.file = StringRef::from_lit("/dev/stderr");
   }
 
   loggingconf.syslog_facility = LOG_DAEMON;
@@ -1430,6 +1474,7 @@ void fill_default_config(Config *config) {
       timeoutconf.write = 30_s;
       // Timeout for pooled (idle) connections
       timeoutconf.idle_read = 2_s;
+      timeoutconf.connect = 30_s;
       timeoutconf.max_backoff = 120_s;
     }
 
@@ -1454,12 +1499,15 @@ void print_version(std::ostream &out) {
 namespace {
 void print_usage(std::ostream &out) {
   out << R"(Usage: nghttpx [OPTIONS]... [<PRIVATE_KEY> <CERT>]
-A reverse proxy for HTTP/2, HTTP/1 and SPDY.)" << std::endl;
+A reverse proxy for HTTP/2, HTTP/1 and SPDY.)"
+      << std::endl;
 }
 } // namespace
 
 namespace {
 void print_help(std::ostream &out) {
+  auto config = get_config();
+
   print_usage(out);
   out << R"(
   <PRIVATE_KEY>
@@ -1473,7 +1521,7 @@ Options:
   The options are categorized into several groups.
 
 Connections:
-  -b, --backend=(<HOST>,<PORT>|unix:<PATH>)[;[<PATTERN>[:...]][[;PARAM]...]
+  -b, --backend=(<HOST>,<PORT>|unix:<PATH>)[;[<PATTERN>[:...]][[;<PARAM>]...]
 
               Set  backend  host  and   port.   The  multiple  backend
               addresses are  accepted by repeating this  option.  UNIX
@@ -1598,9 +1646,9 @@ Connections:
               not  contain these  characters.  Since  ";" has  special
               meaning in shell, the option value must be quoted.
 
-              Default: )" << DEFAULT_DOWNSTREAM_HOST << ","
-      << DEFAULT_DOWNSTREAM_PORT << R"(
-  -f, --frontend=(<HOST>,<PORT>|unix:<PATH>)[[;PARAM]...]
+              Default: )"
+      << DEFAULT_DOWNSTREAM_HOST << "," << DEFAULT_DOWNSTREAM_PORT << R"(
+  -f, --frontend=(<HOST>,<PORT>|unix:<PATH>)[[;<PARAM>]...]
               Set  frontend  host and  port.   If  <HOST> is  '*',  it
               assumes  all addresses  including  both  IPv4 and  IPv6.
               UNIX domain  socket can  be specified by  prefixing path
@@ -1630,7 +1678,8 @@ Connections:
               Default: *,3000
   --backlog=<N>
               Set listen backlog size.
-              Default: )" << get_config()->conn.listener.backlog << R"(
+              Default: )"
+      << config->conn.listener.backlog << R"(
   --backend-address-family=(auto|IPv4|IPv6)
               Specify  address  family  of  backend  connections.   If
               "auto" is given, both IPv4  and IPv6 are considered.  If
@@ -1656,29 +1705,30 @@ Connections:
 Performance:
   -n, --workers=<N>
               Set the number of worker threads.
-              Default: )" << get_config()->num_worker << R"(
+              Default: )"
+      << config->num_worker << R"(
   --read-rate=<SIZE>
               Set maximum  average read  rate on  frontend connection.
               Setting 0 to this option means read rate is unlimited.
-              Default: )" << get_config()->conn.upstream.ratelimit.read.rate
-      << R"(
+              Default: )"
+      << config->conn.upstream.ratelimit.read.rate << R"(
   --read-burst=<SIZE>
               Set  maximum read  burst  size  on frontend  connection.
               Setting  0  to this  option  means  read burst  size  is
               unlimited.
-              Default: )" << get_config()->conn.upstream.ratelimit.read.burst
-      << R"(
+              Default: )"
+      << config->conn.upstream.ratelimit.read.burst << R"(
   --write-rate=<SIZE>
               Set maximum  average write rate on  frontend connection.
               Setting 0 to this option means write rate is unlimited.
-              Default: )" << get_config()->conn.upstream.ratelimit.write.rate
-      << R"(
+              Default: )"
+      << config->conn.upstream.ratelimit.write.rate << R"(
   --write-burst=<SIZE>
               Set  maximum write  burst size  on frontend  connection.
               Setting  0 to  this  option means  write  burst size  is
               unlimited.
-              Default: )" << get_config()->conn.upstream.ratelimit.write.burst
-      << R"(
+              Default: )"
+      << config->conn.upstream.ratelimit.write.burst << R"(
   --worker-read-rate=<SIZE>
               Set maximum average read rate on frontend connection per
               worker.  Setting  0 to  this option  means read  rate is
@@ -1702,8 +1752,8 @@ Performance:
   --worker-frontend-connections=<N>
               Set maximum number  of simultaneous connections frontend
               accepts.  Setting 0 means unlimited.
-              Default: )" << get_config()->conn.upstream.worker_connections
-      << R"(
+              Default: )"
+      << config->conn.upstream.worker_connections << R"(
   --backend-connections-per-host=<N>
               Set  maximum number  of  backend concurrent  connections
               (and/or  streams in  case  of HTTP/2)  per origin  host.
@@ -1713,8 +1763,8 @@ Performance:
               HTTP/2).   To  limit  the   number  of  connections  per
               frontend        for       default        mode,       use
               --backend-connections-per-frontend.
-              Default: )" << get_config()->conn.downstream->connections_per_host
-      << R"(
+              Default: )"
+      << config->conn.downstream->connections_per_host << R"(
   --backend-connections-per-frontend=<N>
               Set  maximum number  of  backend concurrent  connections
               (and/or streams  in case of HTTP/2)  per frontend.  This
@@ -1723,27 +1773,27 @@ Performance:
               with          --http2-proxy         option,          use
               --backend-connections-per-host.
               Default: )"
-      << get_config()->conn.downstream->connections_per_frontend << R"(
+      << config->conn.downstream->connections_per_frontend << R"(
   --rlimit-nofile=<N>
               Set maximum number of open files (RLIMIT_NOFILE) to <N>.
               If 0 is given, nghttpx does not set the limit.
-              Default: )" << get_config()->rlimit_nofile << R"(
+              Default: )"
+      << config->rlimit_nofile << R"(
   --backend-request-buffer=<SIZE>
               Set buffer size used to store backend request.
               Default: )"
-      << util::utos_unit(get_config()->conn.downstream->request_buffer_size)
-      << R"(
+      << util::utos_unit(config->conn.downstream->request_buffer_size) << R"(
   --backend-response-buffer=<SIZE>
               Set buffer size used to store backend response.
               Default: )"
-      << util::utos_unit(get_config()->conn.downstream->response_buffer_size)
-      << R"(
+      << util::utos_unit(config->conn.downstream->response_buffer_size) << R"(
   --fastopen=<N>
               Enables  "TCP Fast  Open" for  the listening  socket and
               limits the  maximum length for the  queue of connections
               that have not yet completed the three-way handshake.  If
               value is 0 then fast open is disabled.
-              Default: )" << get_config()->conn.listener.fastopen << R"(
+              Default: )"
+      << config->conn.listener.fastopen << R"(
   --no-kqueue Don't use  kqueue.  This  option is only  applicable for
               the platforms  which have kqueue.  For  other platforms,
               this option will be simply ignored.
@@ -1753,57 +1803,58 @@ Timeout:
               Specify  read  timeout  for  HTTP/2  and  SPDY  frontend
               connection.
               Default: )"
-      << util::duration_str(get_config()->conn.upstream.timeout.http2_read)
-      << R"(
+      << util::duration_str(config->conn.upstream.timeout.http2_read) << R"(
   --frontend-read-timeout=<DURATION>
               Specify read timeout for HTTP/1.1 frontend connection.
               Default: )"
-      << util::duration_str(get_config()->conn.upstream.timeout.read) << R"(
+      << util::duration_str(config->conn.upstream.timeout.read) << R"(
   --frontend-write-timeout=<DURATION>
               Specify write timeout for all frontend connections.
               Default: )"
-      << util::duration_str(get_config()->conn.upstream.timeout.write) << R"(
+      << util::duration_str(config->conn.upstream.timeout.write) << R"(
   --stream-read-timeout=<DURATION>
               Specify  read timeout  for HTTP/2  and SPDY  streams.  0
               means no timeout.
               Default: )"
-      << util::duration_str(get_config()->http2.timeout.stream_read) << R"(
+      << util::duration_str(config->http2.timeout.stream_read) << R"(
   --stream-write-timeout=<DURATION>
               Specify write  timeout for  HTTP/2 and SPDY  streams.  0
               means no timeout.
               Default: )"
-      << util::duration_str(get_config()->http2.timeout.stream_write) << R"(
+      << util::duration_str(config->http2.timeout.stream_write) << R"(
   --backend-read-timeout=<DURATION>
               Specify read timeout for backend connection.
               Default: )"
-      << util::duration_str(get_config()->conn.downstream->timeout.read) << R"(
+      << util::duration_str(config->conn.downstream->timeout.read) << R"(
   --backend-write-timeout=<DURATION>
               Specify write timeout for backend connection.
               Default: )"
-      << util::duration_str(get_config()->conn.downstream->timeout.write) << R"(
+      << util::duration_str(config->conn.downstream->timeout.write) << R"(
+  --backend-connect-timeout=<DURATION>
+              Specify  timeout before  establishing TCP  connection to
+              backend.
+              Default: )"
+      << util::duration_str(config->conn.downstream->timeout.connect) << R"(
   --backend-keep-alive-timeout=<DURATION>
               Specify keep-alive timeout for backend connection.
               Default: )"
-      << util::duration_str(get_config()->conn.downstream->timeout.idle_read)
-      << R"(
+      << util::duration_str(config->conn.downstream->timeout.idle_read) << R"(
   --listener-disable-timeout=<DURATION>
               After accepting  connection failed,  connection listener
               is disabled  for a given  amount of time.   Specifying 0
               disables this feature.
               Default: )"
-      << util::duration_str(get_config()->conn.listener.timeout.sleep) << R"(
+      << util::duration_str(config->conn.listener.timeout.sleep) << R"(
   --frontend-http2-setting-timeout=<DURATION>
               Specify  timeout before  SETTINGS ACK  is received  from
               client.
               Default: )"
-      << util::duration_str(get_config()->http2.upstream.timeout.settings)
-      << R"(
+      << util::duration_str(config->http2.upstream.timeout.settings) << R"(
   --backend-http2-settings-timeout=<DURATION>
               Specify  timeout before  SETTINGS ACK  is received  from
               backend server.
               Default: )"
-      << util::duration_str(get_config()->http2.downstream.timeout.settings)
-      << R"(
+      << util::duration_str(config->http2.downstream.timeout.settings) << R"(
   --backend-max-backoff=<DURATION>
               Specify  maximum backoff  interval.  This  is used  when
               doing health  check against offline backend  (see "fail"
@@ -1814,13 +1865,20 @@ Timeout:
               consecutive failed attempts increase the interval.  This
               option caps its maximum value.
               Default: )"
-      << util::duration_str(get_config()->conn.downstream->timeout.max_backoff)
-      << R"(
+      << util::duration_str(config->conn.downstream->timeout.max_backoff) << R"(
 
 SSL/TLS:
   --ciphers=<SUITE>
               Set allowed  cipher list.  The  format of the  string is
               described in OpenSSL ciphers(1).
+  --ecdh-curves=<LIST>
+              Set  supported  curve  list  for  frontend  connections.
+              <LIST> is a  colon separated list of curve  NID or names
+              in the preference order.  The supported curves depend on
+              the  linked  OpenSSL  library.  This  function  requires
+              OpenSSL >= 1.0.2.
+              Default: )"
+      << config->tls.ecdh_curves << R"(
   -k, --insecure
               Don't  verify backend  server's  certificate  if TLS  is
               enabled for backend connections.
@@ -1834,12 +1892,21 @@ SSL/TLS:
               Path  to file  that contains  password for  the server's
               private key.   If none is  given and the private  key is
               password protected it'll be requested interactively.
-  --subcert=<KEYPATH>:<CERTPATH>
+  --subcert=<KEYPATH>:<CERTPATH>[[;<PARAM>]...]
               Specify  additional certificate  and  private key  file.
               nghttpx will  choose certificates based on  the hostname
               indicated  by  client  using TLS  SNI  extension.   This
               option  can  be  used  multiple  times.   To  make  OCSP
               stapling work, <CERTPATH> must be absolute path.
+
+              Additional parameter  can be specified in  <PARAM>.  The
+              available <PARAM> is "sct-dir=<DIR>".
+
+              "sct-dir=<DIR>"  specifies the  path to  directory which
+              contains        *.sct        files        for        TLS
+              signed_certificate_timestamp extension (RFC 6962).  This
+              feature   requires   OpenSSL   >=   1.0.2.    See   also
+              --tls-sct-dir option.
   --dh-param-file=<PATH>
               Path to file that contains  DH parameters in PEM format.
               Without  this   option,  DHE   cipher  suites   are  not
@@ -1851,7 +1918,8 @@ SSL/TLS:
               NPN.  The parameter must be  delimited by a single comma
               only  and any  white spaces  are  treated as  a part  of
               protocol string.
-              Default: )" << DEFAULT_NPN_LIST << R"(
+              Default: )"
+      << DEFAULT_NPN_LIST << R"(
   --verify-client
               Require and verify client certificate.
   --verify-client-cacert=<PATH>
@@ -1874,7 +1942,8 @@ SSL/TLS:
               protocol list advertised by client does not overlap this
               list,  you  will  receive  the  error  message  "unknown
               protocol".
-              Default: )" << DEFAULT_TLS_PROTO_LIST << R"(
+              Default: )"
+      << DEFAULT_TLS_PROTO_LIST << R"(
   --tls-ticket-key-file=<PATH>
               Path to file that contains  random data to construct TLS
               session ticket  parameters.  If aes-128-cbc is  given in
@@ -1920,7 +1989,7 @@ SSL/TLS:
   --tls-ticket-key-memcached-interval=<DURATION>
               Set interval to get TLS ticket keys from memcached.
               Default: )"
-      << util::duration_str(get_config()->tls.ticket.memcached.interval) << R"(
+      << util::duration_str(config->tls.ticket.memcached.interval) << R"(
   --tls-ticket-key-memcached-max-retry=<N>
               Set  maximum   number  of  consecutive   retries  before
               abandoning TLS ticket key  retrieval.  If this number is
@@ -1928,11 +1997,13 @@ SSL/TLS:
               "failure" count  is incremented by 1,  which contributed
               to            the            value            controlled
               --tls-ticket-key-memcached-max-fail option.
-              Default: )" << get_config()->tls.ticket.memcached.max_retry << R"(
+              Default: )"
+      << config->tls.ticket.memcached.max_retry << R"(
   --tls-ticket-key-memcached-max-fail=<N>
               Set  maximum   number  of  consecutive   failure  before
               disabling TLS ticket until next scheduled key retrieval.
-              Default: )" << get_config()->tls.ticket.memcached.max_fail << R"(
+              Default: )"
+      << config->tls.ticket.memcached.max_fail << R"(
   --tls-ticket-key-cipher=<CIPHER>
               Specify cipher  to encrypt TLS session  ticket.  Specify
               either   aes-128-cbc   or  aes-256-cbc.    By   default,
@@ -1946,12 +2017,12 @@ SSL/TLS:
   --fetch-ocsp-response-file=<PATH>
               Path to  fetch-ocsp-response script file.  It  should be
               absolute path.
-              Default: )" << get_config()->tls.ocsp.fetch_ocsp_response_file
-      << R"(
+              Default: )"
+      << config->tls.ocsp.fetch_ocsp_response_file << R"(
   --ocsp-update-interval=<DURATION>
               Set interval to update OCSP response cache.
               Default: )"
-      << util::duration_str(get_config()->tls.ocsp.update_interval) << R"(
+      << util::duration_str(config->tls.ocsp.update_interval) << R"(
   --no-ocsp   Disable OCSP stapling.
   --tls-session-cache-memcached=<HOST>,<PORT>[;tls]
               Specify  address of  memcached server  to store  session
@@ -1984,51 +2055,62 @@ SSL/TLS:
               period.   This  behaviour  applies   to  all  TLS  based
               frontends, and TLS HTTP/2 backends.
               Default: )"
-      << util::utos_unit(get_config()->tls.dyn_rec.warmup_threshold) << R"(
+      << util::utos_unit(config->tls.dyn_rec.warmup_threshold) << R"(
   --tls-dyn-rec-idle-timeout=<DURATION>
               Specify TLS dynamic record  size behaviour timeout.  See
               --tls-dyn-rec-warmup-threshold  for   more  information.
               This behaviour  applies to all TLS  based frontends, and
               TLS HTTP/2 backends.
               Default: )"
-      << util::duration_str(get_config()->tls.dyn_rec.idle_timeout) << R"(
+      << util::duration_str(config->tls.dyn_rec.idle_timeout) << R"(
   --no-http2-cipher-black-list
               Allow black  listed cipher  suite on  HTTP/2 connection.
               See  https://tools.ietf.org/html/rfc7540#appendix-A  for
               the complete HTTP/2 cipher suites black list.
+  --tls-sct-dir=<DIR>
+              Specifies the  directory where  *.sct files  exist.  All
+              *.sct   files   in  <DIR>   are   read,   and  sent   as
+              extension_data of  TLS signed_certificate_timestamp (RFC
+              6962)  to  client.   These   *.sct  files  are  for  the
+              certificate   specified   in   positional   command-line
+              argument <CERT>, or  certificate option in configuration
+              file.   For   additional  certificates,   use  --subcert
+              option.  This option requires OpenSSL >= 1.0.2.
 
 HTTP/2 and SPDY:
   -c, --frontend-http2-max-concurrent-streams=<N>
               Set the maximum number of  the concurrent streams in one
               frontend HTTP/2 and SPDY session.
               Default:  )"
-      << get_config()->http2.upstream.max_concurrent_streams << R"(
+      << config->http2.upstream.max_concurrent_streams << R"(
   --backend-http2-max-concurrent-streams=<N>
               Set the maximum number of  the concurrent streams in one
               backend  HTTP/2 session.   This sets  maximum number  of
               concurrent opened pushed streams.  The maximum number of
               concurrent requests are set by a remote server.
               Default: )"
-      << get_config()->http2.downstream.max_concurrent_streams << R"(
+      << config->http2.downstream.max_concurrent_streams << R"(
   --frontend-http2-window-size=<SIZE>
               Sets the  per-stream initial  window size of  HTTP/2 and
               SPDY frontend connection.
-              Default: )" << get_config()->http2.upstream.window_size << R"(
+              Default: )"
+      << config->http2.upstream.window_size << R"(
   --frontend-http2-connection-window-size=<SIZE>
               Sets the  per-connection window size of  HTTP/2 and SPDY
               frontend  connection.  For  SPDY  connection, the  value
               less than 64KiB is rounded up to 64KiB.
-              Default: )" << get_config()->http2.upstream.connection_window_size
-      << R"(
+              Default: )"
+      << config->http2.upstream.connection_window_size << R"(
   --backend-http2-window-size=<SIZE>
               Sets  the   initial  window   size  of   HTTP/2  backend
               connection.
-              Default: )" << get_config()->http2.downstream.window_size << R"(
+              Default: )"
+      << config->http2.downstream.window_size << R"(
   --backend-http2-connection-window-size=<SIZE>
               Sets the  per-connection window  size of  HTTP/2 backend
               connection.
               Default: )"
-      << get_config()->http2.downstream.connection_window_size << R"(
+      << config->http2.downstream.connection_window_size << R"(
   --http2-no-cookie-crumbling
               Don't crumble cookie header field.
   --padding=<N>
@@ -2072,14 +2154,14 @@ HTTP/2 and SPDY:
               Then the negotiated dynamic table size is the minimum of
               this option value and the value which client specified.
               Default: )"
-      << util::utos_unit(
-             get_config()->http2.upstream.encoder_dynamic_table_size) << R"(
+      << util::utos_unit(config->http2.upstream.encoder_dynamic_table_size)
+      << R"(
   --frontend-http2-decoder-dynamic-table-size=<SIZE>
               Specify the maximum dynamic  table size of HPACK decoder
               in the frontend HTTP/2 connection.
               Default: )"
-      << util::utos_unit(
-             get_config()->http2.upstream.decoder_dynamic_table_size) << R"(
+      << util::utos_unit(config->http2.upstream.decoder_dynamic_table_size)
+      << R"(
   --backend-http2-encoder-dynamic-table-size=<SIZE>
               Specify the maximum dynamic  table size of HPACK encoder
               in the backend HTTP/2 connection.  The decoder (backend)
@@ -2087,14 +2169,14 @@ HTTP/2 and SPDY:
               Then the negotiated dynamic table size is the minimum of
               this option value and the value which backend specified.
               Default: )"
-      << util::utos_unit(
-             get_config()->http2.downstream.encoder_dynamic_table_size) << R"(
+      << util::utos_unit(config->http2.downstream.encoder_dynamic_table_size)
+      << R"(
   --backend-http2-decoder-dynamic-table-size=<SIZE>
               Specify the maximum dynamic  table size of HPACK decoder
               in the backend HTTP/2 connection.
               Default: )"
-      << util::utos_unit(
-             get_config()->http2.downstream.decoder_dynamic_table_size) << R"(
+      << util::utos_unit(config->http2.downstream.decoder_dynamic_table_size)
+      << R"(
 
 Mode:
   (default mode)
@@ -2153,19 +2235,21 @@ Logging:
               The  variable  can  be  enclosed  by  "{"  and  "}"  for
               disambiguation (e.g., ${remote_addr}).
 
-              Default: )" << DEFAULT_ACCESSLOG_FORMAT << R"(
+              Default: )"
+      << DEFAULT_ACCESSLOG_FORMAT << R"(
   --errorlog-file=<PATH>
               Set path to write error  log.  To reopen file, send USR1
               signal  to nghttpx.   stderr will  be redirected  to the
               error log file unless --errorlog-syslog is used.
-              Default: )" << get_config()->logging.error.file << R"(
+              Default: )"
+      << config->logging.error.file << R"(
   --errorlog-syslog
               Send  error log  to  syslog.  If  this  option is  used,
               --errorlog-file option is ignored.
   --syslog-facility=<FACILITY>
               Set syslog facility to <FACILITY>.
               Default: )"
-      << str_syslog_facility(get_config()->logging.syslog_facility) << R"(
+      << str_syslog_facility(config->logging.syslog_facility) << R"(
 
 HTTP:
   --add-x-forwarded-for
@@ -2242,25 +2326,26 @@ HTTP:
               bytes.   If  trailer  fields  exist,  they  are  counted
               towards this number.
               Default: )"
-      << util::utos_unit(get_config()->http.request_header_field_buffer) << R"(
+      << util::utos_unit(config->http.request_header_field_buffer) << R"(
   --max-request-header-fields=<N>
               Set  maximum  number  of incoming  HTTP  request  header
               fields.   If  trailer  fields exist,  they  are  counted
               towards this number.
-              Default: )" << get_config()->http.max_request_header_fields << R"(
+              Default: )"
+      << config->http.max_request_header_fields << R"(
   --response-header-field-buffer=<SIZE>
               Set  maximum  buffer  size for  incoming  HTTP  response
               header field list.   This is the sum of  header name and
               value  in  bytes.  If  trailer  fields  exist, they  are
               counted towards this number.
               Default: )"
-      << util::utos_unit(get_config()->http.response_header_field_buffer) << R"(
+      << util::utos_unit(config->http.response_header_field_buffer) << R"(
   --max-response-header-fields=<N>
               Set  maximum number  of  incoming  HTTP response  header
               fields.   If  trailer  fields exist,  they  are  counted
               towards this number.
-              Default: )" << get_config()->http.max_response_header_fields
-      << R"(
+              Default: )"
+      << config->http.max_response_header_fields << R"(
   --error-page=(<CODE>|*)=<PATH>
               Set file path  to custom error page  served when nghttpx
               originally  generates  HTTP  error status  code  <CODE>.
@@ -2270,7 +2355,8 @@ HTTP:
               backend server, the custom error pages are not used.
   --server-name=<NAME>
               Change server response header field value to <NAME>.
-              Default: )" << get_config()->http.server_name << R"(
+              Default: )"
+      << config->http.server_name << R"(
   --no-server-rewrite
               Don't rewrite server header field in default mode.  When
               --http2-proxy is used, these headers will not be altered
@@ -2279,8 +2365,8 @@ HTTP:
 API:
   --api-max-request-body=<SIZE>
               Set the maximum size of request body for API request.
-              Default: )" << util::utos_unit(get_config()->api.max_request_body)
-      << R"(
+              Default: )"
+      << util::utos_unit(config->api.max_request_body) << R"(
 
 Debug:
   --frontend-http2-dump-request-header=<PATH>
@@ -2317,7 +2403,8 @@ Scripting:
 Misc:
   --conf=<PATH>
               Load configuration from <PATH>.
-              Default: )" << get_config()->conf_path << R"(
+              Default: )"
+      << config->conf_path << R"(
   --include=<PATH>
               Load additional configurations from <PATH>.  File <PATH>
               is  read  when  configuration  parser  encountered  this
@@ -2335,13 +2422,15 @@ Misc:
   The <DURATION> argument is an integer and an optional unit (e.g., 1s
   is 1 second and 500ms is 500 milliseconds).  Units are h, m, s or ms
   (hours, minutes, seconds and milliseconds, respectively).  If a unit
-  is omitted, a second is used as unit.)" << std::endl;
+  is omitted, a second is used as unit.)"
+      << std::endl;
 }
 } // namespace
 
 namespace {
 int process_options(Config *config,
                     std::vector<std::pair<StringRef, StringRef>> &cmdcfgs) {
+  std::array<char, STRERROR_BUFSIZE> errbuf;
   if (conf_exists(config->conf_path.c_str())) {
     std::set<StringRef> include_set;
     if (load_config(config, config->conf_path.c_str(), include_set) == -1) {
@@ -2386,13 +2475,13 @@ int process_options(Config *config,
         fchown(log_config()->accesslog_fd, config->uid, config->gid) == -1) {
       auto error = errno;
       LOG(WARN) << "Changing owner of access log file failed: "
-                << strerror(error);
+                << xsi_strerror(error, errbuf.data(), errbuf.size());
     }
     if (log_config()->errorlog_fd != -1 &&
         fchown(log_config()->errorlog_fd, config->uid, config->gid) == -1) {
       auto error = errno;
       LOG(WARN) << "Changing owner of error log file failed: "
-                << strerror(error);
+                << xsi_strerror(error, errbuf.data(), errbuf.size());
     }
   }
 
@@ -2416,7 +2505,8 @@ int process_options(Config *config,
         if (chown_to_running_user(path) == -1) {
           auto error = errno;
           LOG(WARN) << "Changing owner of http2 upstream request header file "
-                    << path << " failed: " << strerror(error);
+                    << path << " failed: "
+                    << xsi_strerror(error, errbuf.data(), errbuf.size());
         }
       }
     }
@@ -2437,7 +2527,8 @@ int process_options(Config *config,
         if (chown_to_running_user(path) == -1) {
           auto error = errno;
           LOG(WARN) << "Changing owner of http2 upstream response header file"
-                    << " " << path << " failed: " << strerror(error);
+                    << " " << path << " failed: "
+                    << xsi_strerror(error, errbuf.data(), errbuf.size());
         }
       }
     }
@@ -2446,11 +2537,10 @@ int process_options(Config *config,
   auto &tlsconf = config->tls;
 
   if (tlsconf.npn_list.empty()) {
-    tlsconf.npn_list = util::parse_config_str_list(DEFAULT_NPN_LIST);
+    tlsconf.npn_list = util::split_str(DEFAULT_NPN_LIST, ',');
   }
   if (tlsconf.tls_proto_list.empty()) {
-    tlsconf.tls_proto_list =
-        util::parse_config_str_list(DEFAULT_TLS_PROTO_LIST);
+    tlsconf.tls_proto_list = util::split_str(DEFAULT_TLS_PROTO_LIST, ',');
   }
 
   tlsconf.tls_proto_mask = ssl::create_tls_proto_mask(tlsconf.tls_proto_list);
@@ -2466,7 +2556,7 @@ int process_options(Config *config,
 
   if (listenerconf.addrs.empty()) {
     UpstreamAddr addr{};
-    addr.host = ImmutableString::from_lit("*");
+    addr.host = StringRef::from_lit("*");
     addr.port = 3000;
     addr.tls = true;
     addr.family = AF_INET;
@@ -2559,7 +2649,8 @@ int process_options(Config *config,
                          static_cast<rlim_t>(config->rlimit_nofile)};
     if (setrlimit(RLIMIT_NOFILE, &lim) != 0) {
       auto error = errno;
-      LOG(WARN) << "Setting rlimit-nofile failed: " << strerror(error);
+      LOG(WARN) << "Setting rlimit-nofile failed: "
+                << xsi_strerror(error, errbuf.data(), errbuf.size());
     }
   }
 
@@ -2567,10 +2658,14 @@ int process_options(Config *config,
 
   if (fwdconf.by_node_type == FORWARDED_NODE_OBFUSCATED &&
       fwdconf.by_obfuscated.empty()) {
+    // 2 for '_' and terminal NULL
+    auto iov = make_byte_ref(config->balloc, SHRPX_OBFUSCATED_NODE_LENGTH + 2);
+    auto p = iov.base;
+    *p++ = '_';
     std::mt19937 gen(rd());
-    auto &dst = fwdconf.by_obfuscated;
-    dst = "_";
-    dst += util::random_alpha_digit(gen, SHRPX_OBFUSCATED_NODE_LENGTH);
+    p = util::random_alpha_digit(p, p + SHRPX_OBFUSCATED_NODE_LENGTH, gen);
+    *p = '\0';
+    fwdconf.by_obfuscated = StringRef{iov.base, p};
   }
 
   if (config->http2.upstream.debug.frame_debug) {
@@ -2616,12 +2711,13 @@ void reload_config(WorkerProcess *wp) {
 
   LOG(NOTICE) << "Reloading configuration";
 
-  auto cur_config = get_config();
+  auto cur_config = mod_config();
   auto new_config = make_unique<Config>();
 
   fill_default_config(new_config.get());
 
-  new_config->conf_path = cur_config->conf_path;
+  new_config->conf_path =
+      make_string_ref(new_config->balloc, cur_config->conf_path);
   // daemon option is ignored here.
   new_config->daemon = cur_config->daemon;
   // loop is reused, and ev_loop_flags gets ignored
@@ -2633,7 +2729,7 @@ void reload_config(WorkerProcess *wp) {
     return;
   }
 
-  auto iaddrs = get_inherited_addr_from_config(cur_config);
+  auto iaddrs = get_inherited_addr_from_config(new_config->balloc, cur_config);
 
   if (create_acceptor_socket(new_config.get(), iaddrs) != 0) {
     close_not_inherited_fd(new_config.get(), iaddrs);
@@ -2680,6 +2776,7 @@ void reload_config(WorkerProcess *wp) {
 
 int main(int argc, char **argv) {
   int rv;
+  std::array<char, STRERROR_BUFSIZE> errbuf;
 
   nghttp2::ssl::libssl_init();
 
@@ -2708,7 +2805,8 @@ int main(int argc, char **argv) {
     suconfig.argv[i] = strdup(argv[i]);
     if (suconfig.argv[i] == nullptr) {
       auto error = errno;
-      LOG(FATAL) << "failed to copy argv: " << strerror(error);
+      LOG(FATAL) << "failed to copy argv: "
+                 << xsi_strerror(error, errbuf.data(), errbuf.size());
       exit(EXIT_FAILURE);
     }
   }
@@ -2925,6 +3023,10 @@ int main(int argc, char **argv) {
          required_argument, &flag, 138},
         {SHRPX_OPT_BACKEND_HTTP2_DECODER_DYNAMIC_TABLE_SIZE.c_str(),
          required_argument, &flag, 139},
+        {SHRPX_OPT_ECDH_CURVES.c_str(), required_argument, &flag, 140},
+        {SHRPX_OPT_TLS_SCT_DIR.c_str(), required_argument, &flag, 141},
+        {SHRPX_OPT_BACKEND_CONNECT_TIMEOUT.c_str(), required_argument, &flag,
+         142},
         {nullptr, 0, nullptr, 0}};
 
     int option_index = 0;
@@ -3027,7 +3129,8 @@ int main(int argc, char **argv) {
         break;
       case 12:
         // --conf
-        mod_config()->conf_path = ImmutableString{optarg};
+        mod_config()->conf_path =
+            make_string_ref(mod_config()->balloc, StringRef{optarg});
         break;
       case 14:
         // --syslog-facility
@@ -3584,6 +3687,19 @@ int main(int argc, char **argv) {
         cmdcfgs.emplace_back(SHRPX_OPT_BACKEND_HTTP2_DECODER_DYNAMIC_TABLE_SIZE,
                              StringRef{optarg});
         break;
+      case 140:
+        // --ecdh-curves
+        cmdcfgs.emplace_back(SHRPX_OPT_ECDH_CURVES, StringRef{optarg});
+        break;
+      case 141:
+        // --tls-sct-dir
+        cmdcfgs.emplace_back(SHRPX_OPT_TLS_SCT_DIR, StringRef{optarg});
+        break;
+      case 142:
+        // --backend-connect-timeout
+        cmdcfgs.emplace_back(SHRPX_OPT_BACKEND_CONNECT_TIMEOUT,
+                             StringRef{optarg});
+        break;
       default:
         break;
       }
@@ -3609,7 +3725,7 @@ int main(int argc, char **argv) {
 
   LOG(NOTICE) << "Shutdown momentarily";
 
-  delete log_config();
+  delete_log_config();
 
   return 0;
 }

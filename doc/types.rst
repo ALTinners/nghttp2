@@ -1179,3 +1179,11 @@ Types (structs, unions and typedefs)
     structure are intentionally hidden from the public API.
 
 
+.. type:: typedef void (*nghttp2_debug_vprintf_callback)(const char *format, va_list args)
+
+    
+    Callback function invoked when the library outputs debug logging.
+    The function is called with arguments suitable for ``vfprintf(3)``
+    
+    The debug output is only enabled if the library is built with
+    ``DEBUGBUILD`` macro defined.

@@ -7,7 +7,7 @@ Synopsis
 
 *#include <nghttp2/nghttp2.h>*
 
-.. function:: int32_t nghttp2_submit_push_promise(nghttp2_session *session, uint8_t flags, int32_t stream_id, const nghttp2_nv *nva, size_t nvlen, void *promised_stream_user_data)
+.. function:: int32_t nghttp2_submit_push_promise( nghttp2_session *session, uint8_t flags, int32_t stream_id, const nghttp2_nv *nva, size_t nvlen, void *promised_stream_user_data)
 
     
     Submits PUSH_PROMISE frame.

@@ -1,652 +1,729 @@
-commit a6f487240d15257fb0287ba5820cfd87eff0da8a (HEAD, tag: v1.15.0, origin/master, origin/HEAD, master)
+commit 0344c962f8c73a6972c49a4d95195756c1caae23 (HEAD, tag: v1.16.0, origin/master, origin/HEAD, master)
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-25
+AuthorDate: 2016-10-24
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-25
+CommitDate: 2016-10-24
 
-    Add missing rst entry
+    Add missing nghttp2_set_debug_vprintf_callback.rst to APIDOCS
 
-commit da135416bb6f3ea24d4d7253821b498df2bed0ba
+commit 46d1e6bb559527433d3e878b9ab79217ba7da5aa
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-25
+AuthorDate: 2016-10-24
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-25
+CommitDate: 2016-10-24
+
+    nghttpx: Increase block size of connection wide allocator to 512
+
+commit 04606b9339d3db667eb6336556a6d2ef693e9150
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-24
 
     Update man pages
 
-commit 13eb881e5e912ee89a6be838f97b5554b2a76a77
+commit 7bb083e69e00a47cac03044213497dea00701f9c
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-25
+AuthorDate: 2016-10-24
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-25
+CommitDate: 2016-10-24
 
-    Bump up version number to 1.15.0, LT revision to 25:0:11
+    Bump up version number to 1.16.0, LT revision to 26:0:12
 
-commit 82c84d163b01fb6d6614d2d6bb509d764c793fed
+commit 3a831fa95c49ee98efe72036f8813a64d788d6f8
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-24
+AuthorDate: 2016-10-24
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-24
+CommitDate: 2016-10-24
 
-    doc: Add missing rst files to CMakeLists.txt
+    nghttpx: Fix file descriptor leak in read_tls_sct_from_dir
 
-commit a526183928b9283b39bb88b5bb92d6b07874a66a
+commit 5b9cacc2d72c4b7a53685f15876ecdf11f9f4d54
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-24
+AuthorDate: 2016-10-23
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-24
+CommitDate: 2016-10-23
 
-    doc: Sort rst files
+    nghttpx: Discard iaddrs early
 
-commit 60222ae7c3999ef390bd61d70af7bd20baa57af1
+commit 10a84f3e3d45d2254151be9d56c2e354a14141e0
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-24
+AuthorDate: 2016-10-23
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-24
+CommitDate: 2016-10-23
+
+    nghttpx: Rename errbuf for neverbleed as nb_errbuf for clarification
+
+commit c42715ed6acf6f4e60ea3a32498b8998d9e54247
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-23
+
+    nghttpx: Fix compile error with --disable-threads
+
+commit 177d51ddaba77692a6b170191c487a04c16b4f0b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-23
+
+    nghttpx: Use thread_local if it is available
+
+commit 6c882e1ece646bb31abcb744b938a5f05cdfb079
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-20
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-20
+
+    asio: Avoid repeated call of io_service::post
+
+commit f09c5c4bf9faa03122eeda119f8c0f45d41a5f32
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-19
+
+    xsi_strerror: Use stddef.h so that we can use size_t
+
+commit 08a9a2eca9ae71244065a960c7ff3f62bc9d0456
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-19
+
+    asio: Fix bug when end() is called outside nghttp2 callback
+
+commit 19f1785cdefeb22644a944be47b09608130e9c7c
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-18
+
+    nghttpx: Avoid extra allocation on look up host key
+
+commit 109de15c1fe6f6168b820367a21f7e127eb9bfb0
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-17
+
+    doc: Mention --no-location-rewrite in "Rewriting location header field" section
+
+commit 8b64e7b4e1a748026de4737578c6909f7ba19f20
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-16
+
+    src: Add XSI-compliant version strerror_r
+
+commit a5d66e71d073160942af564ad56e41f8982430d5
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-16
+
+    Update http-parser to feae95a3a69f111bc1897b9048d9acbc290992f9
+
+commit 3de265422308dd2f1e09c83d7ed649389d9d9bd5
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-15
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-15
+
+    src: Add noexcept to move constructor and assignment operator
+
+commit d49bd50908b118ed16b30f324a355314988dae52
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-15
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-15
+
+    Apply clang-format-diff only to lib, src, examples and tests
+
+commit 4130c68db151e1d2d51102b7160588a592026436
+Merge: a591001 ad3dac8
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-15
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-15
+
+    Merge branch 'clang-format-3.9'
+
+commit ad3dac81a21b002a7232510a9547bb0dcda6e461
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-15
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-15
 
     Update doc
 
-commit 2052a1a4bd64b10236f9bbba63679cc498e430ed
+commit 0cf6848646e427bae33e88f17ef7b8736b0171e5
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-23
+AuthorDate: 2016-10-15
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-23
+CommitDate: 2016-10-15
 
-    Document how libnghttp2 schedules HTTP/2 frames internally
+    clang-format-3.9
 
-commit 183be9cac9f71f86f83e5c14f4251c5d873085b3
+commit e9d562f9876723ae227ff441edc09b0cc19c0b24
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-23
+AuthorDate: 2016-10-15
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-23
+CommitDate: 2016-10-15
 
-    Fix typo
+    Update .clang-format for clang-format-3.9
 
-commit 69b53b9aaa85ab47a2fdef452d0960a75f886b21
+commit bc0f501dd342bf738f06d5b5f50dd91ff5524aff
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-22
+AuthorDate: 2016-10-15
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-22
+CommitDate: 2016-10-15
 
-    nghttpx: Handle graceful shutdown with client IP affinity enabled
+    Replace final with fin to make clang-format-3.9 happy
 
-commit 02b9fcd3321bf2e2e8ed0070bcf56d51fc6bfe06
+commit a591001e7b3d327b56ab1f3121edce796b73c4c8
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-22
+AuthorDate: 2016-10-15
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-22
+CommitDate: 2016-10-15
 
-    integration: Fix test failure with go1.7.1
+    Update doc
 
-commit 231d739b1095d850552de434eb4818cb33cfb10d
+commit eaa9229d727e82af67fcf4499f449d3273484e92
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-22
+AuthorDate: 2016-10-15
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-22
+CommitDate: 2016-10-15
 
-    nghttpx: Improve performance with h1 backend when request body is involved
+    Update doc
 
-commit e1dfff89296283f97e7b9141a5e2b5df5792c9c2
+commit 1d5cde1c6b9058d31672e03c00031539e342d59e
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-20
+AuthorDate: 2016-10-14
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-20
+CommitDate: 2016-10-14
 
-    Use std::atomic_* overloads for std::shared_ptr if available
+    Add missing nghttp2_debug.h
 
-commit db1716ae93149eb698236f733e22f636d3251368
+commit de03c41111d056017aa0e85d248e7a7f67d27a7c
+Merge: ee7c36c 19340da
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-19
+AuthorDate: 2016-10-14
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-19
+CommitDate: 2016-10-14
 
-    Fix -Wexpansion-to-defined warning with clang-3.9
+    Merge branch 'Andersbakken-set_nghttp2_debug_callback'
+
+commit 19340da8d41377a26fbb30d7c0072fb4c6991fc0
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-14
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-14
+
+    Re-format debug text output
+
+commit 5e99531b4df50cafd96f46dc48e3c70d001415b4
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-14
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-14
+
+    clang-format
+
+commit bef3d47c160e2eafffb2e2479f819238362c75d3
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-14
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-14
+
+    Rename functions and nghttp2_debug.h to move debug macro there
+
+commit b8f7b474b4a2eb5df8b685b57a0a06138dbe2018
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-14
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-14
+
+    Fix autotools build
+
+commit 1fb291d0e16156667952d5db052b1af52b5b53d3
+Merge: ee7c36c bc3dc6b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-14
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-14
+
+    Merge branch 'set_nghttp2_debug_callback' of https://github.com/Andersbakken/nghttp2 into Andersbakken-set_nghttp2_debug_callback
+
+commit bc3dc6b7652a1382e87b5b9722bc4b5885940b5f
+Author:     Anders Bakken <agbakken@gmail.com>
+AuthorDate: 2016-10-12
+Commit:     Anders Bakken <agbakken@gmail.com>
+CommitDate: 2016-10-13
+
+    Add set_nghttp2_debug_callback to take advantage of DEBUGF statements in
+    when building DEBUGBUILD.
+
+commit ee7c36c0228093f6378b76a0f63c80600212f9d4
+Merge: 3c3267e 857791d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-13
+Commit:     GitHub <noreply@github.com>
+CommitDate: 2016-10-13
+
+    Merge pull request #707 from Andersbakken/current
     
-    The error message was:
-    
-    warning: macro expansion producing 'defined' has undefined
-    behavior [-Wexpansion-to-defined]
-    
-    http://lists.llvm.org/pipermail/cfe-commits/Week-of-Mon-20160118/147239.html
+    Make it possible to include nghttp2/CMakeLists.txt in another project
 
-commit 4cdc74c95748d72b8bb608f38a886854ff7bb653
+commit 857791dbb968737f0be17a7a214285f3271e49b8
+Author:     Anders Bakken <agbakken@gmail.com>
+AuthorDate: 2016-10-12
+Commit:     Anders Bakken <agbakken@gmail.com>
+CommitDate: 2016-10-12
+
+    Make it possible to include nghttp2/CMakeLists.txt in another project
+    using add_subdirectory.
+    
+    CMAKE_SOURCE_DIR/CMAKE_BINARY_DIR points to the top level
+    CMakeLists.txt. This isn't necessarily nghttp2/CMakeLists.txt.
+
+commit 3c3267ea7d3bc3cb5baf228fe45331bee15324c7
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-18
+AuthorDate: 2016-10-11
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-18
+CommitDate: 2016-10-11
 
     Update bash_completion
 
-commit 2c17ec3df889c0f0b93f86a9216ad2787d0d93a4
+commit d654664fb2f5a4f6c38bb616431cdc148ecb3138
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-18
+AuthorDate: 2016-10-11
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-18
+CommitDate: 2016-10-11
 
     Update man pages
 
-commit e464b10fc3ecbc3a592d22bb6652799bcfd33c57
-Merge: 3e1cfa8 03ba399
+commit 1a37044d3cefd17dbeadc5c69b63aad6c7e85872
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-18
+AuthorDate: 2016-10-10
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-18
+CommitDate: 2016-10-11
 
-    Merge branch 'set-max-deflate-dynamic-table-size'
+    nghttpx: Use pre-allocated buffer for timestamp string
 
-commit 03ba399176c5436cb8d5ad8d41faf37a75c97333
+commit 00a8c378d4e34cff14a59ccbbb528884db40c5cb
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-17
+AuthorDate: 2016-10-10
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-17
+CommitDate: 2016-10-10
+
+    nghttpx: Add --backend-connect-timeout option
+
+commit 75493410817cc7641a63dd6c5a437df1064ae830
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-10
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-10
+
+    Fix typo
+
+commit 5db8473f12022a543a121a015abacf29e392d3cd
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-09
+
+    Fix build error with OpenSSL < 1.0.2 (again)
+
+commit 00b89f10bdd7626b6133d4698003f243fc9bc9c0
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-09
+
+    Fix build error with OpenSSL < 1.0.2
+
+commit 281df33f408d0f98bca54d25a8a147928ae7dccb
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-09
+
+    Update bash_completion
+
+commit e6ae681f077677753f2aac804407280d89a758ed
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-09
+
+    Update man pages
+
+commit 7e681dc98f0cde2f01e6e7fec03ecb86774d3298
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-09
+
+    help2rst.py: Fix * escape
+
+commit 412c8f9e679455209ce9e8bcc8ba1966e92cf128
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-09
+
+    nghttpx: Add TLS signed_certificate_timestamp extension support
+
+commit 2795da840c32438f532d9b867938c3b16807a1ab
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-09
+
+    nghttpx: Apply timeout for incoming header block
+
+commit 175c7886ea7518209f78f3be9ef55cdbe31d2518
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-09
 
     nghttpx: Update doc
 
-commit 751d66a3978beb869d6276694d04879b8454b10a
+commit 4a4b2cf5380f8ef51ca0a3176d97006fd3bbd734
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-17
+AuthorDate: 2016-10-08
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-17
+CommitDate: 2016-10-08
 
-    nghttpd: Check maximum value of -c option
+    nghttpx: Embed Process into OCSPUpdateContext
 
-commit 3ec71bf5a2f653c6a2259b18997e77145fc9bce7
+commit 2c2188c09d14bfcfb37c563a46bdc2e8a110c3d8
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-17
+AuthorDate: 2016-10-08
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-17
+CommitDate: 2016-10-08
 
-    nghttpd: Add --encoder-header-table-size option
-
-commit f19b0724a34bea3f011ece45a67e8d4b9cea4a4d
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-17
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-17
-
-    nghttp: Check maximum value of -c option
-
-commit a7e0a69f97119e929ea3bb6333e5c3786f309b01
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-17
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-17
-
-    nghttp: Add --encoder-header-table-size option
-
-commit e532e20491ef3961c7fd82a1a29e27c4091395c8
-Merge: f401664 3e1cfa8
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-17
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-17
-
-    Merge branch 'master' into set-max-deflate-dynamic-table-size
-
-commit 3e1cfa8e99d8764a62efc8f071d087c04d69de27
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-15
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-15
-
-    nghttpx: Don't check downstream existence since dconn is one-to-one with it
-
-commit a100df9caee9acffbb5cf8e5d08ebae3cb109129
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-15
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-15
-
-    nghttpx: Remove redundant check using get_downstream_stream_id
-
-commit 56284b1e15a37168296ad39725bb1d20aba0868e
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-15
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-15
-
-    nghttpx: Fix regression introduced in f267e400fa43cec27dc1e400ad661cbc27fc3d10
-
-commit f267e400fa43cec27dc1e400ad661cbc27fc3d10
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-15
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-15
-
-    nghttpx: Migrate backend stream to another h2 session on graceful shutdown
-
-commit 8bac5899cc169129c8b5a04647f116b80ecfdb50
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-14
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-14
-
-    nghttpx: Handle h2 backend error per Downstream
+    nghttpx: Refactor ocsp command execution
     
-    Previously we wrongly handles stream per connection when h2 backend
-    failed or closed.  If upstream is h2 or spdy, streams which are not
-    associated to the failed h2 backend are also handled, which is
-    unnecessary.
+    We have now generic read-only command execution in shrpx_exec.{h,cc}.
 
-commit f4016644a92a4cb439ca23bae2c4ff059488d020
+commit 1f07c24a2e449f8dcd860748aa6b47272bc69893
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-12
+AuthorDate: 2016-10-08
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-12
+CommitDate: 2016-10-08
 
-    nghttpx: Add option to specify HPACK encoder/decoder dynamic table size
+    Update bash_completion
 
-commit d9bc6d04f7f03fc1a867c7320784722df46e0efa
+commit e038625881d53b1269588bad51fbf734222278ed
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-11
+AuthorDate: 2016-10-08
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-11
-
-    nghttpx: Log client address
-
-commit 743fc4a3c3bedb4f3061fb61ef4129e7c46c53a0
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-11
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-11
-
-    Use the similar naming scheme for table size as 392256e542ad4202360fb94c87c155309473aa6e
-
-commit 392256e542ad4202360fb94c87c155309473aa6e
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-11
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-11
-
-    Add nghttp2_option_set_max_deflate_dynamic_table_size() API function
-    
-    nghttp2_option_set_max_deflate_dynamic_table_size function sets the
-    maximum dynamic table size for header block deflater.  The default
-    value is 4KiB.
-
-commit 905e16cb99dcb5aef15e191065d37a81774622be
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-11
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-11
-
-    Simplify session_after_frame_sent1
-
-commit 9d4e8eeb122ab03de4898c2ab727f503163544ed
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-11
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-11
-
-    Simplify code
-    
-    Move DATA frame handling code to switch-case of frame type.
-
-commit 8099dd95589b3b5bf7f19c2bdf9a7058f4d6ab7a
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-11
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-11
-
-    Mention --enable-lib-only configure option in README
-
-commit a3a6b91c5f9b6dabca4044b162a0bc0e38459e8e
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-11
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-11
-
-    src: Rename OPENSSL_101_API macro as OPENSSL_1_1_API
-
-commit d9bb3448bfe4cbdf18a6d912cd9dcf543a8553cf
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-10
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-10
+CommitDate: 2016-10-08
 
     Update man pages
 
-commit d508a0c72c8f8da93fc27608c6a5a713b01bc8f9
+commit cdb1d6b4628db0c8c4482ad466bd481d3fa6a65b
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-10
+AuthorDate: 2016-10-08
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-10
+CommitDate: 2016-10-08
 
-    nghttpx: Defer validation of request form after mruby handler
+    nghttpx: Add P-384 and P-521 to the default of --ecdh-curves option
 
-commit bc31146c1f369902fcf72ccc30aadc913571bea4
+commit 1b4ccd0d51285786ed2410a3a788174a2d3fec17
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-10
+AuthorDate: 2016-10-08
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-10
+CommitDate: 2016-10-08
 
-    nghttpx: Add tls_sni to mruby Nghttpx::Env class
+    nghttpx: Don't call get_config() repeatedly
+
+commit 8babaac8c30a5785ce72780aeabd8645bfe06a12
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-10-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-10-08
+
+    nghttpx: Add --ecdh-curves option to specify list of named curves
     
-    tls_sni returns TLS SNI value which client sent in this TLS
-    connection.
+    This option requires OpenSSL >= 1.0.2.  With OpenSSL 1.0.2, the
+    default value is "P-256".  With OpenSSL 1.1.0 or later, the default
+    value is "X25519:P-256".
 
-commit 1ad7d5e3664facb2a31dbe1abaec9aeaa1c83e42
+commit d1624d692932ba75c9f7ca1c5bc52fa209c5dd25
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-10
+AuthorDate: 2016-10-06
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-10
+CommitDate: 2016-10-06
 
-    nghttpx: Fix compile error gcc (again)
+    h2load: Format default value of header table size with unit
 
-commit 456038e3de829cdd867ad929ba165af04ffdaa18
+commit e4472b5aeccb60657b8f13e09782023f18aeba24
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-10
+AuthorDate: 2016-10-06
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-10
+CommitDate: 2016-10-06
 
-    nghttpx: Fix compile error with gcc
+    h2load: Add --header-table-size and --encoder-header-table-size options
 
-commit 9aa26970be09ebde42dd38f9b2d9828bd219b35f
+commit 9439ba75d3a29273c37a38195cb05c619622e64f
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-10
+AuthorDate: 2016-10-04
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-10
+CommitDate: 2016-10-04
 
-    nghttpx: Comment out TCP logging since it is too verbose
+    nghttpx: Fix heap-use-after-free when executing new binary
 
-commit 20c39fa8436ec973dba7fb4cc2c83637939d0c6d
+commit 9254c563ca0f3fc4a104499fe831b79b5666fa1b
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-10
+AuthorDate: 2016-10-03
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-10
+CommitDate: 2016-10-03
 
-    nghttpx: Use default connection window size with window size optimization
+    Fix compile error with gcc
 
-commit f5a2f1da255631ef496039720df724253cc6004e
+commit 35594e09df1a589b301cdb364a814e0175c3c0ac
+Merge: 68a6d8c 96ff3be
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-09
+AuthorDate: 2016-10-03
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-10
+CommitDate: 2016-10-03
 
-    nghttpx: Add --frontend-http2-window-size option, and its family
-    
-    We added --frontend-http2-window-size,
-    --frontend-http2-connection-window-size, --backend-http2-window-size,
-    and --backend-http2-connection-window-size option to replace existing
-    *-bits options.  The old options are not flexible because they only
-    specify number of bits.  Now we can specify integer value, with
-    possible g, m, and k unit.  The old options are still available for
-    backend compatibility, but are deprecated.
+    Merge branch 'nghttpx-more-block-allocator'
 
-commit 27b250ac8e478368f5356df061716ab333930d50
+commit 96ff3be5e6bffa660b141f8fc6634ab521ef21b6
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-08
+AuthorDate: 2016-10-03
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-10
+CommitDate: 2016-10-03
 
-    nghttpx: Add experimental TCP optimization for h2 frontend
+    nghttpx: Use allocator of new config since this may happen multiple times
 
-commit b14375ec63971cb9f5c78fb674187a51668a7638
+commit 3d5d76ba741fa474eeeedb062adff23908c06d6d
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-10
+AuthorDate: 2016-10-03
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-10
+CommitDate: 2016-10-03
 
-    Bump up LT revision to 24:1:10 due to v1.14.1 release
-    
-    This also fixes LT revision in CMakeLists.txt, which was not updated
-    in v1.14.0 release.
+    nghttpx: Update doc
 
-commit 6858cda366758e3bbaf1945a40e9198b4471d3f7
+commit 8c1e155f44d5238eaee373a0d794f1d511a6d122
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-09
+AuthorDate: 2016-10-03
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-09
+CommitDate: 2016-10-03
 
-    Fix GOAWAY race with new incoming stream on server side
-    
-    Revert part of 16c46114dc724278beaa6d59462f8396f35fa4a9 to fix race
-    condition that incoming stream after sending GOAWAY causes connection
-    error.  The strict stream handling introduced in the above commit does
-    not handle several cases well (e.g., GOAWAY race, and refusing streams
-    because of concurrency limit).
+    nghttpx: Make it simple to calculate length
 
-commit 8a703d21aeacc5b5522337cd9c428e59372092d9
+commit dba0d2791ce49f09bdccc7c7ca87e35dea4a1660
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-08
+AuthorDate: 2016-10-03
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-08
+CommitDate: 2016-10-03
 
-    Update neverbleed
+    nghttpx: Use emplace_back instead of push_back
 
-commit 1dabe43ff4c63c342f1341cba7ffa4ecb1a465d7
+commit f310e82fc80f3d8a9de5fb55d7601fe6fbd283ec
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-04
+AuthorDate: 2016-10-03
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-04
+CommitDate: 2016-10-03
 
-    nghttpx: Workaround for std::make_shared bug in Xcode7, 7.1, and 7.2
-    
-    std::make_shared in Xcode 7, 7.1, and 7.2 does not perform
-    value-initialization, and causes undefined behaviour if struct does
-    not have user defined default constructor.  This workaround explicitly
-    defines user defined default constructor, and initializes values.
+    nghttpx: Update doc
 
-commit 900aef10da0f1f5676493f2c8db7aa76525f5791
+commit 1240e55bb647ec43dadc23a63b70e43ef4b256ed
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-04
+AuthorDate: 2016-10-03
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-04
+CommitDate: 2016-10-03
 
-    Update neverbleed
+    nghttpx: Use const ref
 
-commit ded576f4234025d4a2b5a0e31ddb51926a5a3031
+commit 75039c573cf662611d9dcee40ac0f49f87b44493
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-09-04
+AuthorDate: 2016-10-03
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-09-04
+CommitDate: 2016-10-03
 
-    nghttpx: Fix bug that bytes are doubly counted for TLS connections
+    base64: Assert that input is multiple of 4
 
-commit 136aae725f8c8415ea5cd51c18011d7334ba1c22
+commit 4b5179a5448221d870223e920246717a2d00e805
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-08-31
+AuthorDate: 2016-10-02
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-08-31
+CommitDate: 2016-10-03
 
-    nghttpx: Add --no-server-rewrite option not to rewrite server header field
+    nghttpx: Fix bug in util::make_hostport
 
-commit a60c3f8939ac3976db64ddd24bf84305904f69d5
+commit 8efccddcf452b9f8c1bd6816c1d44e2b38fef66c
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-08-30
+AuthorDate: 2016-10-02
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-08-30
+CommitDate: 2016-10-03
 
-    Add -Wsometimes-uninitialized to warn flags
+    nghttpx: Use StringRef for HttpProxy
 
-commit 99dc31ff1a6ed5038dc41e15452e35937bd5f294
+commit 97843e387429c96624ec7f20fd3e573d11e1f640
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-08-30
+AuthorDate: 2016-10-02
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-08-30
+CommitDate: 2016-10-03
 
-    nghttpx: Retry if backend h1 connection cannot be established due to timeout
+    nghttpx: Use StringRef for tls_proto_list
 
-commit 76738483252247770695f912f6cd7d06594a4dbc
+commit 5dd27040511ca10f9dcf6385b16f4e728fbf7cfb
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-08-30
+AuthorDate: 2016-10-02
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-08-30
+CommitDate: 2016-10-03
 
-    Add -lsocket -lnsl to APPLDFLAGS for solaris build
-    
-    As suggested in GH-674
+    nghttpx: Use StringRef for tls.npn_list
 
-commit 0f8a5ffc234d161dd024c40d064fe33e4bc35805
-Merge: 72bf7d4 fddb019
+commit de7b7fd440d6b2b06c6dde32d5671136db2b5bf8
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-08-28
+AuthorDate: 2016-10-02
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-08-28
+CommitDate: 2016-10-03
 
-    Merge branch 'http2-debug-state-api'
+    nghttpx: Use StringRef for tls.subcerts
 
-commit fddb019bafb7f2979dd5efcd8f63fe4aee750256
-Merge: baa0f60 72bf7d4
+commit 1037d3ad26acde3be289d6b1725955568a2f7326
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-08-28
+AuthorDate: 2016-10-02
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-08-28
+CommitDate: 2016-10-03
 
-    Merge branch 'master' into http2-debug-state-api
+    nghttpx: Use StringRef for tls.ticket.files
 
-commit 72bf7d4af08818e1e374191d6848648d785b0ceb
-Merge: 1064e01 581e093
+commit c4368a9416f38587e5cc68bd6bdb5224addd9723
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-08-28
+AuthorDate: 2016-10-02
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-08-28
+CommitDate: 2016-10-03
 
-    Merge branch 'pause-from-data-source-read-callback'
+    nghttpx: Use StringRef for AltSvc fields
 
-commit 581e0938a927d21c676b7036696bdba47ae746bb
+commit fdc1eb526b2fdaf4f827cdbc67676e5d2023523b
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-08-28
+AuthorDate: 2016-10-02
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-08-28
+CommitDate: 2016-10-03
 
-    Allow NGHTTP2_ERR_PAUSE from nghttp2_data_source_read_callback
+    nghttpx: Use HeaderRefs for add_request_headers and add_response_headers
 
-commit 1064e017c674c6690efd2259d2f805caefb6515d
+commit 99a91e3172ef432b373e188810c4b645d3d3d048
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-08-28
+AuthorDate: 2016-10-02
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-08-28
+CommitDate: 2016-10-03
 
-    nghttpx: Reset stream if invalid header field is received in h2
+    nghttpx: Add BlockAllocator to Config object
 
-commit 79b07f0ce2e0d8ff80edb8222cff65ce095d1ea6
+commit 272cfa320ef1604d4effbe2b002ce766b0871284
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-08-28
+AuthorDate: 2016-10-02
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-08-28
+CommitDate: 2016-10-02
 
-    Update doc
+    nghttpx: Use BlockAllocator per DownstreamConfig
 
-commit cd471a989aff2bc06ec5901a02cda02eb52cedf5
+commit f5285d1f5aae2cc07996a9d3a62ba4e250a8177e
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-08-28
+AuthorDate: 2016-10-02
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-08-28
+CommitDate: 2016-10-02
 
-    python: Support ALPN, require Python 3.5
-    
-    This commit also fixes the bug that SETTINGS timer continues after
-    connection was closed.
+    nghttpx: Add BlockAllocator to SharedDownstreamAddr
 
-commit 0ea44072a34717abd88a73f55563496baa00d9cd
+commit ede610490030c12bbfba02494fade4ad875bcc2a
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-08-27
+AuthorDate: 2016-10-02
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-08-27
+CommitDate: 2016-10-02
 
-    Enable ASAN in travis autotools build
+    nghttpx: Increase block size for connection wide BlockAllocator
 
-commit 6ba1abac6c8a43c78be4420872f1dda423e522b5
+commit 5aec60fbebfd1f31df774d33b5d80aed9412d3aa
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-08-27
+AuthorDate: 2016-10-02
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-08-27
+CommitDate: 2016-10-02
 
-    src: Only consider openssl 1.1.0 final
+    nghtpx: Add BlockAllocator version of base64
 
-commit 0110d2f9f88d666f3951254de50789633cf57034
+commit e1a865c406661aad206b39301d168b728a6d2dda
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-08-26
+AuthorDate: 2016-10-02
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-08-27
+CommitDate: 2016-10-02
 
-    Fix compile error with openssl 1.1.0
+    nghttpx: Add BlockAllocator version of util::formax_hex
 
-commit baa0f60dc8c3201ebdbbfc03551d40e2704f2608
+commit 5e03b6a0db5c91d382794e68d485dd8896358013
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-08-26
+AuthorDate: 2016-10-02
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-08-26
+CommitDate: 2016-10-02
 
-    Add API to get current HPACK dynamic table size
+    nghttpx: Use BlockAllocator for util::quote_string
 
-commit 69aa70086a07ed71199b14d48978d3fd1706adfd
-Merge: e693f75 13d3f78
+commit b85924bf701430183725eda7548e692757ac4fe2
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-08-26
+AuthorDate: 2016-10-02
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-08-26
+CommitDate: 2016-10-02
 
-    Merge branch 'master' into http2-debug-state-api
+    nghttpx: Use BlockAllocator to encode alt-svc token
 
-commit 13d3f785bd370a4e65911deaf5cf54b31d650a13
+commit 19707aac550b95829ff5101008503293426e29fe
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-08-26
+AuthorDate: 2016-10-01
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-08-26
+CommitDate: 2016-10-01
 
-    Make ImmutableString(const std::string&) explicit
+    nghttpx: Use StringRef for sni_name_
 
-commit 39c068974dd0dba8dd05ef9ee951eebda4379ea5
+commit 9ad873fc06e8b5a4f50e8c88a6f69245594fb1d0
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-08-26
+AuthorDate: 2016-09-30
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-08-26
+CommitDate: 2016-10-01
 
-    Make ImmutableString(const char*) explicit
+    nghttpx: Remove unused function declaration
 
-commit 0d4d1a63d45fb880ada93c78df7aa52779640632
+commit 8a9810ed322bbd84dbb49d2bbbf7d19b6571a7be
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-08-26
+AuthorDate: 2016-09-30
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-08-26
+CommitDate: 2016-10-01
 
-    nghttpx: Add --server-name option to change server response header field
+    nghttpx: Add BlockAllocator to ClientHandler
 
-commit 833cd962a1d3f45cca054fa29f9fd24171af2166
+commit 68a6d8c50b8e1e61690880b417958e61e67355d9
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-08-25
+AuthorDate: 2016-10-01
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-08-25
+CommitDate: 2016-10-01
 
-    Bump up version number to 1.15.0-DEV
+    nghttpx: Realloc header buffer
 
-commit e693f75670fe7397928ca63126feeff37f4d0455
+commit 600605400c683968edbf52fbc5a998dd44212821
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-08-21
+AuthorDate: 2016-09-27
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-08-21
+CommitDate: 2016-09-27
 
-    Add nghttp2_session_get_local_settings() API function
+    nghttpx: Don't send RST_STREAM CANCEL to a pushed stream repeatedly
 
-commit 759f6c0b39416721b2d1ee68b0bea6100ce97562
+commit 97aa4dabc86f94b6ba74ba91b45117290e4a1fc3
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-08-21
+AuthorDate: 2016-09-25
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-08-21
+CommitDate: 2016-09-25
 
-    Update doc
-
-commit 3e0d73c01dcdadcc2cff555c6cf04bc82211eefc
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-08-21
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-08-21
-
-    Add missing document entries
-
-commit 5cf21ec187c9b7e99403c3999ca38a9e4f631265
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-08-21
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-08-21
-
-    Add APIs to return the number of data that remote endpoint can send
-    
-    2 APIs are added.  nghttp2_session_get_local_window_size() returns the
-    amount of data that the remote endpoint can send without receiving
-    connection level WINDOW_UPDATE.
-    nghttp2_session_get_stream_local_window_size() returns the amount of
-    data that the remote endpoint can send without receiving stream level
-    WINDOW_UPDATE.
+    Bump up version number to 1.16.0-DEV
