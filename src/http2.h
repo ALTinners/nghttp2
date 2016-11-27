@@ -94,9 +94,9 @@ using HeaderRefs = std::vector<HeaderRef>;
 
 namespace http2 {
 
-// Returns string version of |status code| followed by reason
-// string. (e.g., "404 Not Found").
-StringRef get_status_string(BlockAllocator &balloc, unsigned int status_code);
+// Returns reason-phrase for given |status code|.  If there is no
+// known reason-phrase for the given code, returns empty string.
+StringRef get_reason_phrase(unsigned int status_code);
 
 // Returns string version of |status_code|. (e.g., "404")
 StringRef stringify_status(BlockAllocator &balloc, unsigned int status_code);
@@ -383,6 +383,9 @@ int construct_push_component(BlockAllocator &balloc, StringRef &scheme,
 
 // Copies |src| and return its lower-cased version.
 StringRef copy_lower(BlockAllocator &balloc, const StringRef &src);
+
+// Returns true if te header field value |s| contains "trailers".
+bool contains_trailers(const StringRef &s);
 
 } // namespace http2
 

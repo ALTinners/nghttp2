@@ -48,6 +48,10 @@ void timeoutcb(struct ev_loop *loop, ev_timer *w, int revents) {
   auto conn = static_cast<Connection *>(w->data);
   auto dconn = static_cast<HttpDownstreamConnection *>(conn->data);
 
+  if (w == &conn->rt && !conn->expired_rt()) {
+    return;
+  }
+
   if (LOG_ENABLED(INFO)) {
     DCLOG(INFO, dconn) << "Time out";
   }
@@ -319,9 +323,13 @@ int HttpDownstreamConnection::attach_downstream(Downstream *downstream) {
     ev_timer_again(conn_.loop, &conn_.wt);
   } else {
     // we may set read timer cb to idle_timeoutcb.  Reset again.
-    conn_.rt.repeat = downstreamconf.timeout.read;
     ev_set_cb(&conn_.rt, timeoutcb);
-    ev_timer_stop(conn_.loop, &conn_.rt);
+    if (conn_.read_timeout < downstreamconf.timeout.read) {
+      conn_.read_timeout = downstreamconf.timeout.read;
+      conn_.last_read = ev_now(conn_.loop);
+    } else {
+      conn_.again_rt(downstreamconf.timeout.read);
+    }
 
     ev_set_cb(&conn_.rev, readcb);
   }
@@ -366,7 +374,7 @@ int HttpDownstreamConnection::push_request_headers() {
   // Assume that method and request path do not contain \r\n.
   auto meth = http2::to_method_string(req.method);
   buf->append(meth);
-  buf->append(" ");
+  buf->append(' ');
 
   if (connect_method) {
     buf->append(authority);
@@ -561,6 +569,8 @@ int HttpDownstreamConnection::push_upload_data_chunk(const uint8_t *data,
 }
 
 int HttpDownstreamConnection::end_upload_data() {
+  signal_write();
+
   if (!downstream_->get_chunked_request()) {
     return 0;
   }
@@ -576,8 +586,6 @@ int HttpDownstreamConnection::end_upload_data() {
     http2::build_http1_headers_from_headers(output, trailers);
     output->append("\r\n");
   }
-
-  signal_write();
 
   return 0;
 }
@@ -617,6 +625,9 @@ namespace {
 void idle_timeoutcb(struct ev_loop *loop, ev_timer *w, int revents) {
   auto conn = static_cast<Connection *>(w->data);
   auto dconn = static_cast<HttpDownstreamConnection *>(conn->data);
+
+  // We don't have to check conn->expired_rt() since we restart timer
+  // when connection gets idle.
   if (LOG_ENABLED(INFO)) {
     DCLOG(INFO, dconn) << "Idle connection timeout";
   }
@@ -637,9 +648,13 @@ void HttpDownstreamConnection::detach_downstream(Downstream *downstream) {
 
   auto &downstreamconf = *worker_->get_downstream_config();
 
-  conn_.rt.repeat = downstreamconf.timeout.idle_read;
   ev_set_cb(&conn_.rt, idle_timeoutcb);
-  ev_timer_again(conn_.loop, &conn_.rt);
+  if (conn_.read_timeout < downstreamconf.timeout.idle_read) {
+    conn_.read_timeout = downstreamconf.timeout.idle_read;
+    conn_.last_read = ev_now(conn_.loop);
+  } else {
+    conn_.again_rt(downstreamconf.timeout.idle_read);
+  }
 
   conn_.wlimit.stopw();
   ev_timer_stop(conn_.loop, &conn_.wt);
@@ -700,6 +715,18 @@ int htp_hdrs_completecb(http_parser *htp) {
 
   downstream->set_downstream_addr_group(dconn->get_downstream_addr_group());
   downstream->set_addr(dconn->get_addr());
+
+  // Server MUST NOT send Transfer-Encoding with a status code 1xx or
+  // 204.  Also server MUST NOT send Transfer-Encoding with a status
+  // code 200 to a CONNECT request.  Same holds true with
+  // Content-Length.
+  if (resp.http_status == 204 || resp.http_status / 100 == 1 ||
+      (resp.http_status == 200 && req.method == HTTP_CONNECT)) {
+    if (resp.fs.header(http2::HD_CONTENT_LENGTH) ||
+        resp.fs.header(http2::HD_TRANSFER_ENCODING)) {
+      return -1;
+    }
+  }
 
   if (resp.fs.parse_content_length() != 0) {
     downstream->set_response_state(Downstream::MSG_BAD_HEADER);
@@ -807,7 +834,6 @@ int htp_hdr_keycb(http_parser *htp, const char *data, size_t len) {
   auto downstream = static_cast<Downstream *>(htp->data);
   auto &resp = downstream->response();
   auto &httpconf = get_config()->http;
-  auto &balloc = downstream->get_block_allocator();
 
   if (ensure_header_field_buffer(downstream, httpconf, len) != 0) {
     return -1;
@@ -820,9 +846,7 @@ int htp_hdr_keycb(http_parser *htp, const char *data, size_t len) {
       if (ensure_max_header_fields(downstream, httpconf) != 0) {
         return -1;
       }
-      auto name = http2::copy_lower(balloc, StringRef{data, len});
-      auto token = http2::lookup_token(name);
-      resp.fs.add_header_token(name, StringRef{}, false, token);
+      resp.fs.alloc_add_header_name(StringRef{data, len});
     }
   } else {
     // trailer part
@@ -835,9 +859,7 @@ int htp_hdr_keycb(http_parser *htp, const char *data, size_t len) {
         // wrong place or crash if trailer fields are currently empty.
         return -1;
       }
-      auto name = http2::copy_lower(balloc, StringRef{data, len});
-      auto token = http2::lookup_token(name);
-      resp.fs.add_trailer_token(name, StringRef{}, false, token);
+      resp.fs.alloc_add_trailer_name(StringRef{data, len});
     }
   }
   return 0;
@@ -917,6 +939,8 @@ http_parser_settings htp_hooks = {
 } // namespace
 
 int HttpDownstreamConnection::read_clear() {
+  conn_.last_read = ev_now(conn_.loop);
+
   std::array<uint8_t, 16_k> buf;
   int rv;
 
@@ -942,6 +966,8 @@ int HttpDownstreamConnection::read_clear() {
 }
 
 int HttpDownstreamConnection::write_clear() {
+  conn_.last_read = ev_now(conn_.loop);
+
   auto upstream = downstream_->get_upstream();
   auto input = downstream_->get_request_buf();
 
@@ -979,7 +1005,7 @@ int HttpDownstreamConnection::write_clear() {
 int HttpDownstreamConnection::tls_handshake() {
   ERR_clear_error();
 
-  ev_timer_again(conn_.loop, &conn_.rt);
+  conn_.last_read = ev_now(conn_.loop);
 
   auto rv = conn_.tls_handshake();
   if (rv == SHRPX_ERR_INPROGRESS) {
@@ -1029,6 +1055,8 @@ int HttpDownstreamConnection::tls_handshake() {
 }
 
 int HttpDownstreamConnection::read_tls() {
+  conn_.last_read = ev_now(conn_.loop);
+
   ERR_clear_error();
 
   std::array<uint8_t, 16_k> buf;
@@ -1056,6 +1084,8 @@ int HttpDownstreamConnection::read_tls() {
 }
 
 int HttpDownstreamConnection::write_tls() {
+  conn_.last_read = ev_now(conn_.loop);
+
   ERR_clear_error();
 
   auto upstream = downstream_->get_upstream();
@@ -1186,6 +1216,7 @@ int HttpDownstreamConnection::connected() {
   ev_timer_again(conn_.loop, &conn_.wt);
 
   conn_.rlimit.startw();
+  conn_.again_rt();
 
   ev_set_cb(&conn_.wev, writecb);
 
