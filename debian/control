@@ -3,9 +3,7 @@ Maintainer: Dave Beckett <dajobe@debian.org>
 Uploaders: Tomasz Buchert <tomasz@debian.org>
 Section: httpd
 Priority: optional
-Build-Depends: debhelper (>= 9.20141010),
-               dh-autoreconf,
-               dh-systemd (>= 1.5),
+Build-Depends: debhelper (>= 10),
                dpkg-dev (>= 1.17.14),
                libcunit1-dev (>= 2.1) <!nocheck>,
                libev-dev (>= 1:4.15),
@@ -80,10 +78,10 @@ Architecture: any
 Multi-Arch: foreign
 Depends: libnghttp2-14 (= ${binary:Version}),
          lsb-base (>= 3.2-14),
+         openssl,
+         python,
          ${misc:Depends},
-         ${shlibs:Depends},
-	 openssl,
-	 python
+         ${shlibs:Depends}
 Replaces: nghttp2 (<< 1.3.4-2~)
 Breaks: nghttp2 (<< 1.3.4-2~)
 Description: reverse proxy implementing HTTP/2 protocol

@@ -60,4 +60,4 @@ custom_install_systemd:
 	install -p -m644 debian/nghttpx.service $(SYSTEMD)/nghttpx.service
 
 %:
-	dh $@ --parallel --with=autoreconf --with=systemd
+	dh $@
