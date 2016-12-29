@@ -41,9 +41,10 @@ AM_CPPFLAGS = \
 	-I$(top_srcdir)/src/includes \
 	-I$(top_srcdir)/third-party \
 	@LIBSPDYLAY_CFLAGS@ \
-	@XML_CPPFLAGS@	\
+	@LIBXML2_CFLAGS@ \
 	@LIBEV_CFLAGS@ \
 	@OPENSSL_CFLAGS@ \
+	@LIBCARES_CFLAGS@ \
 	@JANSSON_CFLAGS@ \
 	@ZLIB_CFLAGS@ \
 	@DEFS@
@@ -52,9 +53,10 @@ LDADD = $(top_builddir)/lib/libnghttp2.la \
 	$(top_builddir)/third-party/libhttp-parser.la \
 	@JEMALLOC_LIBS@ \
 	@LIBSPDYLAY_LIBS@ \
-	@XML_LIBS@ \
+	@LIBXML2_LIBS@ \
 	@LIBEV_LIBS@ \
 	@OPENSSL_LIBS@ \
+	@LIBCARES_LIBS@ \
 	@JANSSON_LIBS@ \
 	@ZLIB_LIBS@ \
 	@APPLDFLAGS@
@@ -139,6 +141,9 @@ NGHTTPX_SRCS = \
 	shrpx_health_monitor_downstream_connection.cc \
 	shrpx_health_monitor_downstream_connection.h \
 	shrpx_exec.cc shrpx_exec.h \
+	shrpx_dns_resolver.cc shrpx_dns_resolver.h \
+	shrpx_dual_dns_resolver.cc shrpx_dual_dns_resolver.h \
+	shrpx_dns_tracker.cc shrpx_dns_tracker.h \
 	buffer.h memchunk.h template.h allocator.h \
 	xsi_strerror.c xsi_strerror.h
 

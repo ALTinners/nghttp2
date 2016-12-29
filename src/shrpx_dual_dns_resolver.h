@@ -1,7 +1,7 @@
 /*
  * nghttp2 - HTTP/2 C Library
  *
- * Copyright (c) 2012 Tatsuhiro Tsujikawa
+ * Copyright (c) 2016 Tatsuhiro Tsujikawa
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -22,24 +22,42 @@
  * OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-#ifndef SHRPX_ERROR_H
-#define SHRPX_ERROR_H
+#ifndef SHRPX_DUAL_DNS_RESOLVER_H
+#define SHRPX_DUAL_DNS_RESOLVER_H
 
 #include "shrpx.h"
 
+#include <ev.h>
+
+#include "shrpx_dns_resolver.h"
+
+using namespace nghttp2;
+
 namespace shrpx {
 
-// Deprecated, do not use.
-enum ErrorCode {
-  SHRPX_ERR_SUCCESS = 0,
-  SHRPX_ERR_ERROR = -1,
-  SHRPX_ERR_NETWORK = -100,
-  SHRPX_ERR_EOF = -101,
-  SHRPX_ERR_INPROGRESS = -102,
-  SHRPX_ERR_DCONN_CANCELED = -103,
-  SHRPX_ERR_RETRY = -104,
+// DualDNSResolver performs name resolution for both A and AAAA
+// records at the same time.  The first successful return (or if we
+// have both successful results, prefer to AAAA) is chosen.  This is
+// wrapper around 2 DNSResolver inside.  resolve(), get_status(), and
+// how CompleteCb is called have the same semantics with DNSResolver.
+class DualDNSResolver {
+public:
+  DualDNSResolver(struct ev_loop *loop);
+
+  // Resolves |host|.  |host| must be NULL-terminated string.
+  int resolve(const StringRef &host);
+  CompleteCb get_complete_cb() const;
+  void set_complete_cb(CompleteCb cb);
+  int get_status(Address *result) const;
+
+private:
+  // For A record
+  DNSResolver resolv4_;
+  // For AAAA record
+  DNSResolver resolv6_;
+  CompleteCb complete_cb_;
 };
 
 } // namespace shrpx
 
-#endif // SHRPX_ERROR_H
+#endif // SHRPX_DUAL_DNS_RESOLVER_H

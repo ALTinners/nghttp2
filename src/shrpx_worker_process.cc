@@ -29,6 +29,7 @@
 #include <unistd.h>
 #endif // HAVE_UNISTD_H
 #include <sys/resource.h>
+#include <sys/wait.h>
 #include <grp.h>
 
 #include <cinttypes>
@@ -37,6 +38,8 @@
 #include <openssl/rand.h>
 
 #include <ev.h>
+
+#include <ares.h>
 
 #include "shrpx_config.h"
 #include "shrpx_connection_handler.h"
@@ -391,11 +394,18 @@ std::random_device rd;
 } // namespace
 
 int worker_process_event_loop(WorkerProcessConfig *wpconf) {
+  int rv;
   std::array<char, STRERROR_BUFSIZE> errbuf;
   (void)errbuf;
 
   if (reopen_log_files() != 0) {
     LOG(FATAL) << "Failed to open log file";
+    return -1;
+  }
+
+  rv = ares_library_init(ARES_LIB_INIT_ALL);
+  if (rv != 0) {
+    LOG(FATAL) << "ares_library_init failed: " << ares_strerror(rv);
     return -1;
   }
 
@@ -493,8 +503,6 @@ int worker_process_event_loop(WorkerProcessConfig *wpconf) {
     }
   }
 
-  int rv;
-
   if (config->num_worker == 1) {
     rv = conn_handler.create_single_worker();
     if (rv != 0) {
@@ -551,6 +559,30 @@ int worker_process_event_loop(WorkerProcessConfig *wpconf) {
   ev_run(loop, 0);
 
   conn_handler.cancel_ocsp_update();
+
+#ifdef HAVE_NEVERBLEED
+  if (nb) {
+    assert(nb->daemon_pid > 0);
+
+    rv = kill(nb->daemon_pid, SIGTERM);
+    if (rv != 0) {
+      auto error = errno;
+      LOG(ERROR) << "Could not send signal to neverbleed daemon: errno="
+                 << error;
+    }
+
+    while ((rv = waitpid(nb->daemon_pid, nullptr, 0)) == -1 && errno == EINTR)
+      ;
+    if (rv == -1) {
+      auto error = errno;
+      LOG(ERROR) << "Error occurred while we were waiting for the completion "
+                    "of neverbleed process: errno="
+                 << error;
+    }
+  }
+#endif // HAVE_NEVERBLEED
+
+  ares_library_cleanup();
 
   return 0;
 }

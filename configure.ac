@@ -25,7 +25,7 @@ dnl Do not change user variables!
 dnl http://www.gnu.org/software/automake/manual/html_node/Flag-Variables-Ordering.html
 
 AC_PREREQ(2.61)
-AC_INIT([nghttp2], [1.17.0], [t-tujikawa@users.sourceforge.net])
+AC_INIT([nghttp2], [1.18.0], [t-tujikawa@users.sourceforge.net])
 AC_CONFIG_AUX_DIR([.])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_HEADERS([config.h])
@@ -45,7 +45,7 @@ m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 dnl See versioning rule:
 dnl  http://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
 AC_SUBST(LT_CURRENT, 26)
-AC_SUBST(LT_REVISION, 2)
+AC_SUBST(LT_REVISION, 3)
 AC_SUBST(LT_AGE, 12)
 
 major=`echo $PACKAGE_VERSION |cut -d. -f1 | sed -e "s/[^0-9]//g"`
@@ -370,6 +370,13 @@ if test "x${have_openssl}" = "xno"; then
   AC_MSG_NOTICE($OPENSSL_PKG_ERRORS)
 fi
 
+# c-ares (for src)
+PKG_CHECK_MODULES([LIBCARES], [libcares >= 1.7.5], [have_libcares=yes],
+                  [have_libcares=no])
+if test "x${have_libcares}" = "xno"; then
+  AC_MSG_NOTICE($LIBCARES_PKG_ERRORS)
+fi
+
 # libevent_openssl (for examples)
 # 2.0.8 is required because we use evconnlistener_set_error_cb()
 PKG_CHECK_MODULES([LIBEVENT_OPENSSL], [libevent_openssl >= 2.0.8],
@@ -389,15 +396,12 @@ else
 fi
 
 # libxml2 (for src/nghttp)
-have_libxml2=no
-if test "x${request_libxml2}" != "xno"; then
-  m4_ifdef([AM_PATH_XML2],
-    [AM_PATH_XML2(2.7.7, [have_libxml2=yes], [have_libxml2=no])],
-    [AC_MSG_WARN([configure was created without libxml2 detection macro; libxml2 detection is disabled])])
-
-  if test "x${have_libxml2}" = "xyes"; then
-    AC_DEFINE([HAVE_LIBXML2], [1], [Define to 1 if you have `libxml2` library.])
-  fi
+PKG_CHECK_MODULES([LIBXML2], [libxml-2.0 >= 2.7.7],
+                  [have_libxml2=yes], [have_libxml2=no])
+if test "x${have_libxml2}" = "xyes"; then
+  AC_DEFINE([HAVE_LIBXML2], [1], [Define to 1 if you have `libxml2` library.])
+else
+  AC_MSG_NOTICE($LIBXML2_PKG_ERRORS)
 fi
 
 if test "x${request_libxml2}" = "xyes" &&
@@ -479,13 +483,14 @@ if test "x${request_asio_lib}" = "xyes"; then
   fi
 fi
 
-# The nghttp, nghttpd and nghttpx under src depend on zlib, OpenSSL
-# and libev
+# The nghttp, nghttpd and nghttpx under src depend on zlib, OpenSSL,
+# libev, and libc-ares.
 enable_app=no
 if test "x${request_app}" != "xno" &&
    test "x${have_zlib}" = "xyes" &&
    test "x${have_openssl}" = "xyes" &&
-   test "x${have_libev}" = "xyes"; then
+   test "x${have_libev}" = "xyes" &&
+   test "x${have_libcares}" = "xyes"; then
   enable_app=yes
 fi
 
@@ -640,6 +645,26 @@ AC_SYS_LARGEFILE
 AC_CHECK_MEMBER([struct tm.tm_gmtoff], [have_struct_tm_tm_gmtoff=yes],
                 [have_struct_tm_tm_gmtoff=no], [[#include <time.h>]])
 
+AC_CHECK_MEMBER([struct sockaddr_in.sin_len],
+                [AC_DEFINE([HAVE_SOCKADDR_IN_SIN_LEN],[1],
+                  [Define to 1 if struct sockaddr_in has sin_len member.])],
+                [],
+                [[
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+]])
+
+AC_CHECK_MEMBER([struct sockaddr_in6.sin6_len],
+                [AC_DEFINE([HAVE_SOCKADDR_IN6_SIN6_LEN],[1],
+                  [Define to 1 if struct sockaddr_in6 has sin6_len member.])],
+                [],
+                [[
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+]])
+
 if test "x$have_struct_tm_tm_gmtoff" = "xyes"; then
   AC_DEFINE([HAVE_STRUCT_TM_TM_GMTOFF], [1],
             [Define to 1 if you have `struct tm.tm_gmtoff` member.])
@@ -700,13 +725,6 @@ AC_CHECK_DECLS([initgroups], [], [], [[
   #endif
   #include <grp.h>
 ]])
-
-# Checks for epoll availability, primarily for examples/tiny-nghttpd
-AX_HAVE_EPOLL([have_epoll=yes], [have_epoll=no])
-
-AM_CONDITIONAL([ENABLE_TINY_NGHTTPD],
-               [ test "x${have_epoll}" = "xyes" &&
-                 test "x${have_timerfd_create}" = "xyes"])
 
 save_CFLAGS=$CFLAGS
 save_CXXFLAGS=$CXXFLAGS
@@ -888,8 +906,9 @@ AC_MSG_NOTICE([summary of build options:
       Failmalloc:     ${enable_failmalloc}
     Libs:
       OpenSSL:        ${have_openssl} (CFLAGS='${OPENSSL_CFLAGS}' LIBS='${OPENSSL_LIBS}')
-      Libxml2:        ${have_libxml2} (CFLAGS='${XML_CPPFLAGS}' LIBS='${XML_LIBS}')
+      Libxml2:        ${have_libxml2} (CFLAGS='${LIBXML2_CPPFLAGS}' LIBS='${LIBXML2_LIBS}')
       Libev:          ${have_libev} (CFLAGS='${LIBEV_CFLAGS}' LIBS='${LIBEV_LIBS}')
+      Libc-ares       ${have_libcares} (CFLAGS='${LIBCARES_CFLAGS}' LIBS='${LIBCARES_LIBS}')
       Libevent(SSL):  ${have_libevent_openssl} (CFLAGS='${LIBEVENT_OPENSSL_CFLAGS}' LIBS='${LIBEVENT_OPENSSL_LIBS}')
       Spdylay:        ${have_spdylay} (CFLAGS='${LIBSPDYLAY_CFLAGS}' LIBS='${LIBSPDYLAY_LIBS}')
       Jansson:        ${have_jansson} (CFLAGS='${JANSSON_CFLAGS}' LIBS='${JANSSON_LIBS}')
