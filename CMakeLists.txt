@@ -24,12 +24,12 @@
 
 cmake_minimum_required(VERSION 3.0)
 # XXX using 1.8.90 instead of 1.9.0-DEV
-project(nghttp2 VERSION 1.17.0)
+project(nghttp2 VERSION 1.18.0)
 
 # See versioning rule:
 #  http://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
 set(LT_CURRENT  26)
-set(LT_REVISION 2)
+set(LT_REVISION 3)
 set(LT_AGE      12)
 
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
@@ -59,6 +59,7 @@ find_package(PythonInterp)
 # Auto-detection of features that can be toggled
 find_package(OpenSSL 1.0.1)
 find_package(Libev 4.11)
+find_package(Libcares 1.7.5)
 find_package(ZLIB 1.2.3)
 if(OPENSSL_FOUND AND LIBEV_FOUND AND ZLIB_FOUND)
   set(ENABLE_APP_DEFAULT ON)
@@ -207,6 +208,14 @@ if(LIBEVENT_FOUND)
   # Must both link the core and openssl libraries.
   set(LIBEVENT_OPENSSL_LIBRARIES ${LIBEVENT_LIBRARIES})
 endif()
+# libc-ares (for src)
+set(HAVE_LIBCARES   ${LIBCARES_FOUND})
+if(LIBCARES_FOUND)
+  set(LIBCARES_INCLUDE_DIRS ${LIBCARES_INCLUDE_DIR})
+else()
+  set(LIBCARES_INCLUDE_DIRS "")
+  set(LIBCARES_LIBRARIES    "")
+endif()
 # jansson (for src/nghttp, src/deflatehd and src/inflatehd)
 set(HAVE_JANSSON    ${JANSSON_FOUND})
 # libxml2 (for src/nghttp)
@@ -304,7 +313,6 @@ include(CheckFunctionExists)
 check_function_exists(_Exit     HAVE__EXIT)
 check_function_exists(accept4   HAVE_ACCEPT4)
 
-# timerfd_create was added in linux kernel 2.6.25
 include(CheckSymbolExists)
 # XXX does this correctly detect initgroups (un)availability on cygwin?
 check_symbol_exists(initgroups grp.h HAVE_DECL_INITGROUPS)
@@ -314,13 +322,6 @@ if(NOT HAVE_DECL_INITGROUPS AND HAVE_UNISTD_H)
   if(HAVE_DECL_INITGROUPS2)
     set(HAVE_DECL_INITGROUPS 1)
   endif()
-endif()
-
-check_function_exists(timerfd_create HAVE_TIMERFD_CREATE)
-# Checks for epoll availability, primarily for examples/tiny-nghttpd
-check_symbol_exists(epoll_create sys/epoll.h HAVE_EPOLL)
-if(HAVE_EPOLL AND HAVE_TIMERFD_CREATE)
-  set(ENABLE_TINY_NGHTTPD 1)
 endif()
 
 set(WARNCFLAGS)
@@ -499,6 +500,7 @@ message(STATUS "summary of build options:
       OpenSSL:        ${HAVE_OPENSSL} (LIBS='${OPENSSL_LIBRARIES}')
       Libxml2:        ${HAVE_LIBXML2} (LIBS='${LIBXML2_LIBRARIES}')
       Libev:          ${HAVE_LIBEV} (LIBS='${LIBEV_LIBRARIES}')
+      Libc-ares:      ${HAVE_LIBCARES} (LIBS='${LIBCARES_LIBRARIES}')
       Libevent(SSL):  ${HAVE_LIBEVENT_OPENSSL} (LIBS='${LIBEVENT_OPENSSL_LIBRARIES}')
       Spdylay:        ${HAVE_SPDYLAY} (LIBS='${SPDYLAY_LIBRARIES}')
       Jansson:        ${HAVE_JANSSON} (LIBS='${JANSSON_LIBRARIES}')

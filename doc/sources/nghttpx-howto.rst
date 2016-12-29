@@ -343,10 +343,9 @@ requests, do this:
    backend=serv1,3000;/;proto=h2
    backend=serv1,3000;/ws/;proto=http/1.1
 
-Note that the backends share the same pattern must have the same
-backend protocol.  The default backend protocol is HTTP/1.1.
+The default backend protocol is HTTP/1.1.
 
-TLS can be enabed per pattern basis:
+TLS can be enabled per pattern basis:
 
 .. code-block:: text
 
@@ -355,6 +354,21 @@ TLS can be enabed per pattern basis:
 
 In the above case, connection to serv1 will be encrypted by TLS.  On
 the other hand, connection to serv2 will not be encrypted by TLS.
+
+Dynamic hostname lookup
+-----------------------
+
+By default, nghttpx performs backend hostname lookup at start up, or
+configuration reload, and keeps using them in its entire session.  To
+make nghttpx perform hostname lookup dynamically, use ``dns``
+parameter in :option:`--backend` option, like so:
+
+.. code-block:: text
+
+   backend=foo.example.com;;dns
+
+nghttpx will cache resolved addresses for certain period of time.  To
+change this cache period, use :option:`--dns-cache-timeout`.
 
 Migration from nghttpx v1.8.0 or earlier
 ----------------------------------------

@@ -115,10 +115,8 @@ target_triplet = @target@
 @ENABLE_EXAMPLES_TRUE@noinst_PROGRAMS = client$(EXEEXT) \
 @ENABLE_EXAMPLES_TRUE@	libevent-client$(EXEEXT) \
 @ENABLE_EXAMPLES_TRUE@	libevent-server$(EXEEXT) \
-@ENABLE_EXAMPLES_TRUE@	deflate$(EXEEXT) $(am__EXEEXT_1) \
-@ENABLE_EXAMPLES_TRUE@	$(am__EXEEXT_2)
-@ENABLE_EXAMPLES_TRUE@@ENABLE_TINY_NGHTTPD_TRUE@am__append_1 = tiny-nghttpd
-@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@am__append_2 = asio-sv asio-sv2 asio-cl asio-cl2
+@ENABLE_EXAMPLES_TRUE@	deflate$(EXEEXT) $(am__EXEEXT_1)
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@am__append_1 = asio-sv asio-sv2 asio-cl asio-cl2
 subdir = examples
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/ax_boost_asio.m4 \
@@ -127,12 +125,10 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/ax_boost_asio.m4 \
 	$(top_srcdir)/m4/ax_boost_thread.m4 \
 	$(top_srcdir)/m4/ax_check_compile_flag.m4 \
 	$(top_srcdir)/m4/ax_cxx_compile_stdcxx_11.m4 \
-	$(top_srcdir)/m4/ax_have_epoll.m4 \
 	$(top_srcdir)/m4/ax_python_devel.m4 \
-	$(top_srcdir)/m4/libtool.m4 $(top_srcdir)/m4/libxml2.m4 \
-	$(top_srcdir)/m4/ltoptions.m4 $(top_srcdir)/m4/ltsugar.m4 \
-	$(top_srcdir)/m4/ltversion.m4 $(top_srcdir)/m4/lt~obsolete.m4 \
-	$(top_srcdir)/configure.ac
+	$(top_srcdir)/m4/libtool.m4 $(top_srcdir)/m4/ltoptions.m4 \
+	$(top_srcdir)/m4/ltsugar.m4 $(top_srcdir)/m4/ltversion.m4 \
+	$(top_srcdir)/m4/lt~obsolete.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 DIST_COMMON = $(srcdir)/Makefile.am $(am__DIST_COMMON)
@@ -140,8 +136,7 @@ mkinstalldirs = $(install_sh) -d
 CONFIG_HEADER = $(top_builddir)/config.h
 CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
-@ENABLE_EXAMPLES_TRUE@@ENABLE_TINY_NGHTTPD_TRUE@am__EXEEXT_1 = tiny-nghttpd$(EXEEXT)
-@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@am__EXEEXT_2 =  \
+@ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@am__EXEEXT_1 =  \
 @ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@	asio-sv$(EXEEXT) \
 @ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@	asio-sv2$(EXEEXT) \
 @ENABLE_ASIO_LIB_TRUE@@ENABLE_EXAMPLES_TRUE@	asio-cl$(EXEEXT) \
@@ -205,13 +200,6 @@ libevent_server_LDADD = $(LDADD)
 @ENABLE_EXAMPLES_TRUE@libevent_server_DEPENDENCIES =  \
 @ENABLE_EXAMPLES_TRUE@	$(top_builddir)/lib/libnghttp2.la \
 @ENABLE_EXAMPLES_TRUE@	$(top_builddir)/third-party/libhttp-parser.la
-am__tiny_nghttpd_SOURCES_DIST = tiny-nghttpd.c
-@ENABLE_EXAMPLES_TRUE@@ENABLE_TINY_NGHTTPD_TRUE@am_tiny_nghttpd_OBJECTS = tiny-nghttpd.$(OBJEXT)
-tiny_nghttpd_OBJECTS = $(am_tiny_nghttpd_OBJECTS)
-tiny_nghttpd_LDADD = $(LDADD)
-@ENABLE_EXAMPLES_TRUE@tiny_nghttpd_DEPENDENCIES =  \
-@ENABLE_EXAMPLES_TRUE@	$(top_builddir)/lib/libnghttp2.la \
-@ENABLE_EXAMPLES_TRUE@	$(top_builddir)/third-party/libhttp-parser.la
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -266,15 +254,13 @@ am__v_CXXLD_0 = @echo "  CXXLD   " $@;
 am__v_CXXLD_1 = 
 SOURCES = $(asio_cl_SOURCES) $(asio_cl2_SOURCES) $(asio_sv_SOURCES) \
 	$(asio_sv2_SOURCES) $(client_SOURCES) $(deflate_SOURCES) \
-	$(libevent_client_SOURCES) $(libevent_server_SOURCES) \
-	$(tiny_nghttpd_SOURCES)
+	$(libevent_client_SOURCES) $(libevent_server_SOURCES)
 DIST_SOURCES = $(am__asio_cl_SOURCES_DIST) \
 	$(am__asio_cl2_SOURCES_DIST) $(am__asio_sv_SOURCES_DIST) \
 	$(am__asio_sv2_SOURCES_DIST) $(am__client_SOURCES_DIST) \
 	$(am__deflate_SOURCES_DIST) \
 	$(am__libevent_client_SOURCES_DIST) \
-	$(am__libevent_server_SOURCES_DIST) \
-	$(am__tiny_nghttpd_SOURCES_DIST)
+	$(am__libevent_server_SOURCES_DIST)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -353,6 +339,8 @@ JANSSON_LIBS = @JANSSON_LIBS@
 JEMALLOC_LIBS = @JEMALLOC_LIBS@
 LD = @LD@
 LDFLAGS = @LDFLAGS@
+LIBCARES_CFLAGS = @LIBCARES_CFLAGS@
+LIBCARES_LIBS = @LIBCARES_LIBS@
 LIBEVENT_OPENSSL_CFLAGS = @LIBEVENT_OPENSSL_CFLAGS@
 LIBEVENT_OPENSSL_LIBS = @LIBEVENT_OPENSSL_LIBS@
 LIBEV_CFLAGS = @LIBEV_CFLAGS@
@@ -364,6 +352,8 @@ LIBS = @LIBS@
 LIBSPDYLAY_CFLAGS = @LIBSPDYLAY_CFLAGS@
 LIBSPDYLAY_LIBS = @LIBSPDYLAY_LIBS@
 LIBTOOL = @LIBTOOL@
+LIBXML2_CFLAGS = @LIBXML2_CFLAGS@
+LIBXML2_LIBS = @LIBXML2_LIBS@
 LIPO = @LIPO@
 LN_S = @LN_S@
 LTLIBOBJS = @LTLIBOBJS@
@@ -413,9 +403,6 @@ TESTLDADD = @TESTLDADD@
 VERSION = @VERSION@
 WARNCFLAGS = @WARNCFLAGS@
 WARNCXXFLAGS = @WARNCXXFLAGS@
-XML2_CONFIG = @XML2_CONFIG@
-XML_CPPFLAGS = @XML_CPPFLAGS@
-XML_LIBS = @XML_LIBS@
 ZLIB_CFLAGS = @ZLIB_CFLAGS@
 ZLIB_LIBS = @ZLIB_LIBS@
 abs_builddir = @abs_builddir@
@@ -502,7 +489,6 @@ EXTRA_DIST = CMakeLists.txt
 @ENABLE_EXAMPLES_TRUE@libevent_client_SOURCES = libevent-client.c
 @ENABLE_EXAMPLES_TRUE@libevent_server_SOURCES = libevent-server.c
 @ENABLE_EXAMPLES_TRUE@deflate_SOURCES = deflate.c
-@ENABLE_EXAMPLES_TRUE@@ENABLE_TINY_NGHTTPD_TRUE@tiny_nghttpd_SOURCES = tiny-nghttpd.c
 
 # AM_CPPFLAGS must be placed first, so that header file (e.g.,
 # nghttp2/nghttp2.h) in this package is used rather than installed
@@ -605,10 +591,6 @@ libevent-server$(EXEEXT): $(libevent_server_OBJECTS) $(libevent_server_DEPENDENC
 	@rm -f libevent-server$(EXEEXT)
 	$(AM_V_CCLD)$(LINK) $(libevent_server_OBJECTS) $(libevent_server_LDADD) $(LIBS)
 
-tiny-nghttpd$(EXEEXT): $(tiny_nghttpd_OBJECTS) $(tiny_nghttpd_DEPENDENCIES) $(EXTRA_tiny_nghttpd_DEPENDENCIES) 
-	@rm -f tiny-nghttpd$(EXEEXT)
-	$(AM_V_CCLD)$(LINK) $(tiny_nghttpd_OBJECTS) $(tiny_nghttpd_LDADD) $(LIBS)
-
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
 
@@ -623,7 +605,6 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/deflate.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libevent-client.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libevent-server.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/tiny-nghttpd.Po@am__quote@
 
 .c.o:
 @am__fastdepCC_TRUE@	$(AM_V_CC)depbase=`echo $@ | sed 's|[^/]*$$|$(DEPDIR)/&|;s|\.o$$||'`;\

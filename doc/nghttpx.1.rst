@@ -104,13 +104,13 @@ Connections
     Several parameters <PARAM> are accepted after <PATTERN>.
     The  parameters are  delimited  by  ";".  The  available
     parameters       are:      "proto=<PROTO>",       "tls",
-    "sni=<SNI_HOST>",     "fall=<N>",    "rise=<N>",     and
-    "affinity=<METHOD>".  The parameter consists of keyword,
-    and optionally followed by  "=" and value.  For example,
-    the parameter "proto=h2" consists of the keyword "proto"
-    and  value "h2".   The parameter  "tls" consists  of the
-    keyword   "tls"  without   value.   Each   parameter  is
-    described as follows.
+    "sni=<SNI_HOST>",         "fall=<N>",        "rise=<N>",
+    "affinity=<METHOD>", and "dns".   The parameter consists
+    of keyword,  and optionally  followed by "="  and value.
+    For example,  the parameter  "proto=h2" consists  of the
+    keyword  "proto" and  value "h2".   The parameter  "tls"
+    consists  of  the  keyword "tls"  without  value.   Each
+    parameter is described as follows.
 
     The backend application protocol  can be specified using
     optional  "proto"   parameter,  and   in  the   form  of
@@ -158,6 +158,14 @@ Connections
     session affinity  is desired.  The session  affinity may
     break if one of the backend gets unreachable, or backend
     settings are reloaded or replaced by API.
+
+    By default, name resolution of backend host name is done
+    at  start  up,  or reloading  configuration.   If  "dns"
+    parameter   is  given,   name  resolution   takes  place
+    dynamically.  This is useful  if backend address changes
+    frequently.   If  "dns"  is given,  name  resolution  of
+    backend   host   name   at  start   up,   or   reloading
+    configuration is skipped.
 
     Since ";" and ":" are  used as delimiter, <PATTERN> must
     not  contain these  characters.  Since  ";" has  special
@@ -391,6 +399,13 @@ Timeout
 
     Default: ``30s``
 
+.. option:: --frontend-keep-alive-timeout=<DURATION>
+
+    Specify   keep-alive   timeout   for   frontend   HTTP/1
+    connection.
+
+    Default: ``1m``
+
 .. option:: --stream-read-timeout=<DURATION>
 
     Specify  read timeout  for HTTP/2  and SPDY  streams.  0
@@ -426,7 +441,8 @@ Timeout
 
 .. option:: --backend-keep-alive-timeout=<DURATION>
 
-    Specify keep-alive timeout for backend connection.
+    Specify   keep-alive   timeout    for   backend   HTTP/1
+    connection.
 
     Default: ``2s``
 
@@ -1118,7 +1134,7 @@ HTTP
 
     Change server response header field value to <NAME>.
 
-    Default: ``nghttpx nghttp2/1.17.0``
+    Default: ``nghttpx nghttp2/1.18.0``
 
 .. option:: --no-server-rewrite
 
@@ -1135,6 +1151,33 @@ API
     Set the maximum size of request body for API request.
 
     Default: ``16K``
+
+
+DNS
+~~~
+
+.. option:: --dns-cache-timeout=<DURATION>
+
+    Set duration that cached DNS results remain valid.  Note
+    that nghttpx caches the unsuccessful results as well.
+
+    Default: ``10s``
+
+.. option:: --dns-lookup-timeout=<DURATION>
+
+    Set timeout that  DNS server is given to  respond to the
+    initial  DNS  query.  For  the  2nd  and later  queries,
+    server is  given time based  on this timeout, and  it is
+    scaled linearly.
+
+    Default: ``5s``
+
+.. option:: --dns-max-try=<N>
+
+    Set the number of DNS query before nghttpx gives up name
+    lookup.
+
+    Default: ``2``
 
 
 Debug
@@ -1265,6 +1308,33 @@ FILES
 
   :option:`--conf` option cannot be used in the configuration file and
   will be ignored if specified.
+
+Error log
+  Error log is written to stderr by default.  It can be configured
+  using :option:`--errorlog-file`.  The format of log message is as
+  follows:
+
+  <datetime> <master-pid> <current-pid> <thread-id> <level> (<filename>:<line>) <msg>
+
+  <datetime>
+    It is a conbination of date and time when the log is written.  It
+    is in ISO 8601 format.
+
+  <master-pid>
+    It is a master process ID.
+
+  <current-pid>
+    It is a process ID which writes this log.
+
+  <thread-id>
+    It is a thread ID which writes this log.  It would be unique
+    within <current-pid>.
+
+  <filename> and <line>
+    They are source file name, and line number which produce this log.
+
+  <msg>
+    It is a log message body.
 
 SIGNALS
 -------
@@ -1768,9 +1838,9 @@ connections or requests.  It also avoids any process creation as is
 the case with hot swapping with signals.
 
 The one limitation is that only numeric IP address is allowd in
-:option:`backend <--backend>` in request body while non numeric
-hostname is allowed in command-line or configuration file is read
-using :option:`--conf`.
+:option:`backend <--backend>` in request body unless "dns" parameter
+is used while non numeric hostname is allowed in command-line or
+configuration file is read using :option:`--conf`.
 
 SEE ALSO
 --------

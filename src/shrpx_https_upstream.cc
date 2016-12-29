@@ -76,6 +76,11 @@ int htp_msg_begin(http_parser *htp) {
 
   upstream->attach_downstream(std::move(downstream));
 
+  auto conn = handler->get_connection();
+  auto &upstreamconf = get_config()->conn.upstream;
+
+  conn->rt.repeat = upstreamconf.timeout.read;
+
   handler->repeat_read_timer();
 
   return 0;
@@ -431,7 +436,7 @@ int htp_hdrs_completecb(http_parser *htp) {
       auto output = downstream->get_response_buf();
       constexpr auto res = StringRef::from_lit("HTTP/1.1 100 Continue\r\n\r\n");
       output->append(res);
-      handler->signal_write();
+      handler->signal_write_no_wait();
     }
   }
 
@@ -477,7 +482,7 @@ int htp_msg_completecb(http_parser *htp) {
       // in request phase hook.  We only delete and proceed to the
       // next request handling (if we don't close the connection).  We
       // first pause parser here just as we normally do, and call
-      // signal_write() to run on_write().
+      // signal_write_no_wait() to run on_write().
       http_parser_pause(htp, 1);
 
       return 0;
@@ -581,7 +586,7 @@ int HttpsUpstream::on_read() {
     if (downstream &&
         downstream->get_request_state() == Downstream::MSG_COMPLETE &&
         downstream->get_response_state() == Downstream::MSG_COMPLETE) {
-      handler_->signal_write();
+      handler_->signal_write_no_wait();
     }
     return 0;
   }
@@ -595,7 +600,7 @@ int HttpsUpstream::on_read() {
 
     if (downstream && downstream->get_response_state() != Downstream::INITIAL) {
       handler_->set_should_close_after_write(true);
-      handler_->signal_write();
+      handler_->signal_write_no_wait();
       return 0;
     }
 
@@ -621,7 +626,7 @@ int HttpsUpstream::on_read() {
 
     error_reply(status_code);
 
-    handler_->signal_write();
+    handler_->signal_write_no_wait();
 
     return 0;
   }
@@ -672,6 +677,11 @@ int HttpsUpstream::on_write() {
         return 0;
       }
 
+      auto conn = handler_->get_connection();
+      auto &upstreamconf = get_config()->conn.upstream;
+
+      conn->rt.repeat = upstreamconf.timeout.idle_read;
+
       handler_->repeat_read_timer();
 
       return resume_read(SHRPX_NO_BUFFER, nullptr, 0);
@@ -699,7 +709,10 @@ int HttpsUpstream::resume_read(IOCtrlReason reason, Downstream *downstream,
     // Process remaining data in input buffer here because these bytes
     // are not notified by readcb until new data arrive.
     http_parser_pause(&htp_, 0);
-    return on_read();
+
+    auto conn = handler_->get_connection();
+    ev_feed_event(conn->loop, &conn->rev, EV_READ);
+    return 0;
   }
 
   return 0;
@@ -740,7 +753,7 @@ int HttpsUpstream::downstream_read(DownstreamConnection *dconn) {
   }
 
 end:
-  handler_->signal_write();
+  handler_->signal_write_no_wait();
 
   return 0;
 }
@@ -753,7 +766,7 @@ int HttpsUpstream::downstream_write(DownstreamConnection *dconn) {
   }
 
   if (rv != 0) {
-    return -1;
+    return rv;
   }
 
   return 0;
@@ -797,7 +810,7 @@ int HttpsUpstream::downstream_eof(DownstreamConnection *dconn) {
   // drop connection.
   return -1;
 end:
-  handler_->signal_write();
+  handler_->signal_write_no_wait();
 
   return 0;
 }
@@ -825,7 +838,7 @@ int HttpsUpstream::downstream_error(DownstreamConnection *dconn, int events) {
 
   downstream->pop_downstream_connection();
 
-  handler_->signal_write();
+  handler_->signal_write_no_wait();
   return 0;
 }
 
@@ -1184,7 +1197,9 @@ int HttpsUpstream::on_downstream_body_complete(Downstream *downstream) {
     resp.connection_close = true;
   }
 
-  if (req.connection_close || resp.connection_close) {
+  if (req.connection_close || resp.connection_close ||
+      // To avoid to stall upload body
+      downstream->get_request_state() != Downstream::MSG_COMPLETE) {
     auto handler = get_client_handler();
     handler->set_should_close_after_write(true);
   }
@@ -1194,7 +1209,7 @@ int HttpsUpstream::on_downstream_body_complete(Downstream *downstream) {
 int HttpsUpstream::on_downstream_abort_request(Downstream *downstream,
                                                unsigned int status_code) {
   error_reply(status_code);
-  handler_->signal_write();
+  handler_->signal_write_no_wait();
   return 0;
 }
 
@@ -1221,12 +1236,22 @@ int HttpsUpstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
 
   assert(downstream == downstream_.get());
 
+  downstream_->pop_downstream_connection();
+
   if (!downstream_->request_submission_ready()) {
+    switch (downstream_->get_response_state()) {
+    case Downstream::MSG_COMPLETE:
+      // We have got all response body already.  Send it off.
+      return 0;
+    case Downstream::INITIAL:
+      if (on_downstream_abort_request(downstream_.get(), 503) != 0) {
+        return -1;
+      }
+      return 0;
+    }
     // Return error so that caller can delete handler
     return -1;
   }
-
-  downstream_->pop_downstream_connection();
 
   downstream_->add_retry();
 

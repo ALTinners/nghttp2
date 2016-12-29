@@ -1212,7 +1212,7 @@ int Http2Upstream::downstream_write(DownstreamConnection *dconn) {
     return downstream_error(dconn, Downstream::EVENT_ERROR);
   }
   if (rv != 0) {
-    return -1;
+    return rv;
   }
   return 0;
 }
@@ -1854,6 +1854,11 @@ int Http2Upstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
   }
 
   if (!downstream->request_submission_ready()) {
+    if (downstream->get_response_state() == Downstream::MSG_COMPLETE) {
+      // We have got all response body already.  Send it off.
+      downstream->pop_downstream_connection();
+      return 0;
+    }
     // pushed stream is handled here
     rst_stream(downstream, NGHTTP2_INTERNAL_ERROR);
     downstream->pop_downstream_connection();
