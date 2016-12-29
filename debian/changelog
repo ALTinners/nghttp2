@@ -1,3 +1,11 @@
+nghttp2 (1.18.0-1) unstable; urgency=medium
+
+  * Imported upstream version 1.18.0
+  * debian/*: use debhelper v10 and watch v4
+  * Add build dependency on libc-ares-dev
+
+ -- Tomasz Buchert <tomasz@debian.org>  Thu, 29 Dec 2016 09:34:38 +0100
+
 nghttp2 (1.17.0-1) unstable; urgency=medium
 
   * Imported upstream version 1.17.0
