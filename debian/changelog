@@ -1,3 +1,9 @@
+nghttp2 (1.18.1-1) unstable; urgency=medium
+
+  * Imported upstream version 1.18.1
+
+ -- Tomasz Buchert <tomasz@debian.org>  Sun, 08 Jan 2017 12:26:25 +0100
+
 nghttp2 (1.18.0-1) unstable; urgency=medium
 
   * Imported upstream version 1.18.0
