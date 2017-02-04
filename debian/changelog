@@ -1,3 +1,9 @@
+nghttp2 (1.19.0-2) unstable; urgency=medium
+
+  * Add h2load to nghttp2-client (Closes: #853860)
+
+ -- Tomasz Buchert <tomasz@debian.org>  Sat, 04 Feb 2017 11:39:34 +0100
+
 nghttp2 (1.19.0-1) unstable; urgency=medium
 
   * Imported upstream version 1.19.0
