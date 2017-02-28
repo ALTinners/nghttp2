@@ -13,7 +13,7 @@ Synopsis
     Serializes the SETTINGS values *iv* in the *buf*.  The size of the
     *buf* is specified by *buflen*.  The number of entries in the *iv*
     array is given by *niv*.  The required space in *buf* for the *niv*
-    entries is ``8*niv`` bytes and if the given buffer is too small, an
+    entries is ``6*niv`` bytes and if the given buffer is too small, an
     error is returned.  This function is used mainly for creating a
     SETTINGS payload to be sent with the ``HTTP2-Settings`` header
     field in an HTTP Upgrade request.  The data written in *buf* is NOT
