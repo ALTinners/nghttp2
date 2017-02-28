@@ -65,6 +65,9 @@
 /* Define to 1 if you have `libjansson` library. */
 #undef HAVE_JANSSON
 
+/* Define to 1 if you have `libsystemd` library. */
+#undef HAVE_LIBSYSTEMD
+
 /* Define to 1 if you have `libxml2` library. */
 #undef HAVE_LIBXML2
 
