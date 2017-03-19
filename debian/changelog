@@ -1,3 +1,11 @@
+nghttp2 (1.20.0-1) unstable; urgency=medium
+
+  * Import upstream version 1.20.0
+  * Revamp the systemd service
+  * Make sure spdylay is used
+
+ -- Tomasz Buchert <tomasz@debian.org>  Sun, 19 Mar 2017 14:32:34 +0100
+
 nghttp2 (1.19.0-2) unstable; urgency=medium
 
   * Add h2load to nghttp2-client (Closes: #853860)
