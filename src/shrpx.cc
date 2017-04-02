@@ -173,10 +173,6 @@ struct InheritedAddr {
 };
 
 namespace {
-std::random_device rd;
-} // namespace
-
-namespace {
 void signal_cb(struct ev_loop *loop, ev_signal *w, int revents);
 } // namespace
 
@@ -630,16 +626,16 @@ int create_unix_domain_server_socket(UpstreamAddr &faddr,
   auto fd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0);
   if (fd == -1) {
     auto error = errno;
-    LOG(WARN) << "socket() syscall failed: "
-              << xsi_strerror(error, errbuf.data(), errbuf.size());
+    LOG(FATAL) << "socket() syscall failed: "
+               << xsi_strerror(error, errbuf.data(), errbuf.size());
     return -1;
   }
 #else  // !SOCK_NONBLOCK
   auto fd = socket(AF_UNIX, SOCK_STREAM, 0);
   if (fd == -1) {
     auto error = errno;
-    LOG(WARN) << "socket() syscall failed: "
-              << xsi_strerror(error, errbuf.data(), errbuf.size());
+    LOG(FATAL) << "socket() syscall failed: "
+               << xsi_strerror(error, errbuf.data(), errbuf.size());
     return -1;
   }
   util::make_socket_nonblocking(fd);
@@ -648,8 +644,8 @@ int create_unix_domain_server_socket(UpstreamAddr &faddr,
   if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &val,
                  static_cast<socklen_t>(sizeof(val))) == -1) {
     auto error = errno;
-    LOG(WARN) << "Failed to set SO_REUSEADDR option to listener socket: "
-              << xsi_strerror(error, errbuf.data(), errbuf.size());
+    LOG(FATAL) << "Failed to set SO_REUSEADDR option to listener socket: "
+               << xsi_strerror(error, errbuf.data(), errbuf.size());
     close(fd);
     return -1;
   }
@@ -719,12 +715,17 @@ int create_tcp_server_socket(UpstreamAddr &faddr,
 
   addrinfo *res, *rp;
   rv = getaddrinfo(node, service.c_str(), &hints, &res);
+#ifdef AI_ADDRCONFIG
   if (rv != 0) {
-    if (LOG_ENABLED(INFO)) {
-      LOG(INFO) << "Unable to get IPv" << (faddr.family == AF_INET ? "4" : "6")
-                << " address for " << faddr.host << ", port " << faddr.port
-                << ": " << gai_strerror(rv);
-    }
+    // Retry without AI_ADDRCONFIG
+    hints.ai_flags &= ~AI_ADDRCONFIG;
+    rv = getaddrinfo(node, service.c_str(), &hints, &res);
+  }
+#endif // AI_ADDRCONFIG
+  if (rv != 0) {
+    LOG(FATAL) << "Unable to get IPv" << (faddr.family == AF_INET ? "4" : "6")
+               << " address for " << faddr.host << ", port " << faddr.port
+               << ": " << gai_strerror(rv);
     return -1;
   }
 
@@ -840,8 +841,8 @@ int create_tcp_server_socket(UpstreamAddr &faddr,
   }
 
   if (!rp) {
-    LOG(WARN) << "Listening " << (faddr.family == AF_INET ? "IPv4" : "IPv6")
-              << " socket failed";
+    LOG(FATAL) << "Listening " << (faddr.family == AF_INET ? "IPv4" : "IPv6")
+               << " socket failed";
 
     return -1;
   }
@@ -1209,6 +1210,12 @@ pid_t fork_worker_process(int &main_ipc_fd,
   if (pid == 0) {
     ev_loop_fork(EV_DEFAULT);
 
+    auto config = get_config();
+
+    for (auto &addr : config->conn.listener.addrs) {
+      util::make_socket_closeonexec(addr.fd);
+    }
+
     // Remove all WorkerProcesses to stop any registered watcher on
     // default loop.
     worker_process_remove_all();
@@ -1437,11 +1444,11 @@ void fill_default_config(Config *config) {
       ssl::proto_version_from_string(DEFAULT_TLS_MIN_PROTO_VERSION);
   tlsconf.max_proto_version =
       ssl::proto_version_from_string(DEFAULT_TLS_MAX_PROTO_VERSION);
-#if OPENSSL_1_1_API
+#if OPENSSL_1_1_API || defined(OPENSSL_IS_BORINGSSL)
   tlsconf.ecdh_curves = StringRef::from_lit("X25519:P-256:P-384:P-521");
-#else  // !OPENSSL_1_1_API
+#else  // !OPENSSL_1_1_API && !defined(OPENSSL_IS_BORINGSSL)
   tlsconf.ecdh_curves = StringRef::from_lit("P-256:P-384:P-521");
-#endif // !OPENSSL_1_1_API
+#endif // !OPENSSL_1_1_API && !defined(OPENSSL_IS_BORINGSSL)
 
   auto &httpconf = config->http;
   httpconf.server_name = StringRef::from_lit("nghttpx");
@@ -1589,7 +1596,7 @@ void fill_default_config(Config *config) {
 
 namespace {
 void print_version(std::ostream &out) {
-  out << get_config()->http.server_name.c_str() << std::endl;
+  out << "nghttpx nghttp2/" NGHTTP2_VERSION << std::endl;
 }
 } // namespace
 
@@ -1626,8 +1633,7 @@ Connections:
               with "unix:" (e.g., unix:/var/run/backend.sock).
 
               Optionally, if <PATTERN>s are given, the backend address
-              is  only  used  if  request  matches  the  pattern.   If
-              --http2-proxy  is  used,  <PATTERN>s are  ignored.   The
+              is  only  used  if  request matches  the  pattern.   The
               pattern  matching is  closely  designed  to ServeMux  in
               net/http package of  Go programming language.  <PATTERN>
               consists of  path, host +  path or just host.   The path
@@ -1642,7 +1648,10 @@ Connections:
               request host.  If  host alone is given,  "/" is appended
               to it,  so that it  matches all request paths  under the
               host   (e.g.,   specifying   "nghttp2.org"   equals   to
-              "nghttp2.org/").
+              "nghttp2.org/").  CONNECT  method is  treated specially.
+              It does  not have path,  and we don't allow  empty path.
+              To workaround  this, we  assume that CONNECT  method has
+              "/" as path.
 
               Patterns with  host take  precedence over  patterns with
               just path.   Then, longer patterns take  precedence over
@@ -2906,7 +2915,7 @@ int process_options(Config *config,
     auto iov = make_byte_ref(config->balloc, SHRPX_OBFUSCATED_NODE_LENGTH + 2);
     auto p = iov.base;
     *p++ = '_';
-    std::mt19937 gen(rd());
+    auto gen = util::make_mt19937();
     p = util::random_alpha_digit(p, p + SHRPX_OBFUSCATED_NODE_LENGTH, gen);
     *p = '\0';
     fwdconf.by_obfuscated = StringRef{iov.base, p};
