@@ -154,21 +154,15 @@ struct Connection {
   // used in this object at the moment.  The rest of the program may
   // use this value when it is useful.
   shrpx_proto proto;
-  // The point of time when last read is observed.  Note: sinde we use
+  // The point of time when last read is observed.  Note: since we use
   // |rt| as idle timer, the activity is not limited to read.
   ev_tstamp last_read;
   // Timeout for read timer |rt|.
   ev_tstamp read_timeout;
 };
 
-// Creates BIO_method shared by all SSL objects.  If nghttp2 is built
-// with OpenSSL < 1.1.0, this returns statically allocated object.
-// Otherwise, it returns new BIO_METHOD object every time.
+// Creates BIO_method shared by all SSL objects.
 BIO_METHOD *create_bio_method();
-
-// Deletes given |bio_method|.  If nghttp2 is built with OpenSSL <
-// 1.1.0, this function is noop.
-void delete_bio_method(BIO_METHOD *bio_method);
 
 } // namespace shrpx
 

@@ -63,21 +63,22 @@
 namespace shrpx {
 
 namespace {
-std::unique_ptr<Config> config;
+Config *config;
 } // namespace
 
 constexpr auto SHRPX_UNIX_PATH_PREFIX = StringRef::from_lit("unix:");
 
-const Config *get_config() { return config.get(); }
+const Config *get_config() { return config; }
 
-Config *mod_config() { return config.get(); }
+Config *mod_config() { return config; }
 
 std::unique_ptr<Config> replace_config(std::unique_ptr<Config> another) {
-  config.swap(another);
-  return another;
+  auto p = config;
+  config = another.release();
+  return std::unique_ptr<Config>(p);
 }
 
-void create_config() { config = make_unique<Config>(); }
+void create_config() { config = new Config(); }
 
 Config::~Config() {
   auto &upstreamconf = http2.upstream;
@@ -3610,19 +3611,6 @@ int configure_downstream_group(Config *config, bool http2_proxy,
     g.addrs.push_back(std::move(addr));
     router.add_route(g.pattern, addr_groups.size());
     addr_groups.push_back(std::move(g));
-  } else if (http2_proxy) {
-    // We don't support host mapping in these cases.  Move all
-    // non-catch-all patterns to catch-all pattern.
-    DownstreamAddrGroupConfig catch_all(StringRef::from_lit("/"));
-    for (auto &g : addr_groups) {
-      std::move(std::begin(g.addrs), std::end(g.addrs),
-                std::back_inserter(catch_all.addrs));
-    }
-    std::vector<DownstreamAddrGroupConfig>().swap(addr_groups);
-    // maybe not necessary?
-    routerconf = RouterConfig{};
-    router.add_route(catch_all.pattern, addr_groups.size());
-    addr_groups.push_back(std::move(catch_all));
   }
 
   // backward compatibility: override all SNI fields with the option
@@ -3773,6 +3761,13 @@ int resolve_hostname(Address *addr, const char *hostname, uint16_t port,
   addrinfo *res;
 
   rv = getaddrinfo(hostname, service.c_str(), &hints, &res);
+#ifdef AI_ADDRCONFIG
+  if (rv != 0) {
+    // Retry without AI_ADDRCONFIG
+    hints.ai_flags &= ~AI_ADDRCONFIG;
+    rv = getaddrinfo(hostname, service.c_str(), &hints, &res);
+  }
+#endif // AI_ADDRCONFIG
   if (rv != 0) {
     LOG(FATAL) << "Unable to resolve address for " << hostname << ": "
                << gai_strerror(rv);

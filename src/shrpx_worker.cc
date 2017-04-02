@@ -109,17 +109,13 @@ bool match_shared_downstream_addr(
 }
 } // namespace
 
-namespace {
-std::random_device rd;
-} // namespace
-
 Worker::Worker(struct ev_loop *loop, SSL_CTX *sv_ssl_ctx, SSL_CTX *cl_ssl_ctx,
                SSL_CTX *tls_session_cache_memcached_ssl_ctx,
                ssl::CertLookupTree *cert_tree,
                const std::shared_ptr<TicketKeys> &ticket_keys,
                ConnectionHandler *conn_handler,
                std::shared_ptr<DownstreamConfig> downstreamconf)
-    : randgen_(rd()),
+    : randgen_(util::make_mt19937()),
       worker_stat_{},
       dns_tracker_(loop),
       loop_(loop),

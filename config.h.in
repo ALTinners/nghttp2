@@ -333,9 +333,6 @@
    #define below would cause a syntax error. */
 #undef _UINT8_T
 
-/* Hint to the compiler that a function parameter is not used */
-#undef _U_
-
 /* Define to `int' if <sys/types.h> doesn't define. */
 #undef gid_t
 

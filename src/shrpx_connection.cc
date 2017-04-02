@@ -288,21 +288,17 @@ BIO_METHOD *create_bio_method() {
   return meth;
 }
 
-void delete_bio_method(BIO_METHOD *bio_method) { BIO_meth_free(bio_method); }
-
 #else // !OPENSSL_1_1_API
 
 BIO_METHOD *create_bio_method() {
-  static BIO_METHOD shrpx_bio_method = {
+  static auto meth = new BIO_METHOD{
       BIO_TYPE_FD,    "nghttpx-bio",    shrpx_bio_write,
       shrpx_bio_read, shrpx_bio_puts,   shrpx_bio_gets,
       shrpx_bio_ctrl, shrpx_bio_create, shrpx_bio_destroy,
   };
 
-  return &shrpx_bio_method;
+  return meth;
 }
-
-void delete_bio_method(BIO_METHOD *bio_method) {}
 
 #endif // !OPENSSL_1_1_API
 
@@ -319,7 +315,7 @@ void Connection::set_ssl(SSL *ssl) {
 namespace {
 // We should buffer at least full encrypted TLS record here.
 // Theoretically, peer can send client hello in several TLS records,
-// which could exeed this limit, but it is not portable, and we don't
+// which could exceed this limit, but it is not portable, and we don't
 // have to handle such exotic behaviour.
 bool read_buffer_full(DefaultPeekMemchunks &rbuf) {
   return rbuf.rleft_buffered() >= 20_k;
@@ -561,7 +557,7 @@ int Connection::check_http2_requirement() {
 }
 
 namespace {
-const size_t SHRPX_SMALL_WRITE_LIMIT = 1300;
+constexpr size_t SHRPX_SMALL_WRITE_LIMIT = 1300;
 } // namespace
 
 size_t Connection::get_tls_write_limit() {
@@ -721,6 +717,10 @@ ssize_t Connection::write_clear(const void *data, size_t len) {
 
   wlimit.drain(nwrite);
 
+  if (ev_is_active(&wt)) {
+    ev_timer_again(loop, &wt);
+  }
+
   return nwrite;
 }
 
@@ -743,6 +743,10 @@ ssize_t Connection::writev_clear(struct iovec *iov, int iovcnt) {
   }
 
   wlimit.drain(nwrite);
+
+  if (ev_is_active(&wt)) {
+    ev_timer_again(loop, &wt);
+  }
 
   return nwrite;
 }

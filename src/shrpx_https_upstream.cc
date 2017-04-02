@@ -207,7 +207,7 @@ int htp_hdr_valcb(http_parser *htp, const char *data, size_t len) {
 namespace {
 void rewrite_request_host_path_from_uri(BlockAllocator &balloc, Request &req,
                                         const StringRef &uri,
-                                        http_parser_url &u, bool http2_proxy) {
+                                        http_parser_url &u) {
   assert(u.field_set & (1 << UF_HOST));
 
   // As per https://tools.ietf.org/html/rfc7230#section-5.4, we
@@ -276,11 +276,7 @@ void rewrite_request_host_path_from_uri(BlockAllocator &balloc, Request &req,
     }
   }
 
-  if (http2_proxy) {
-    req.path = path;
-  } else {
-    req.path = http2::rewrite_clean_path(balloc, path);
-  }
+  req.path = http2::rewrite_clean_path(balloc, path);
 }
 } // namespace
 
@@ -395,8 +391,7 @@ int htp_hdrs_completecb(http_parser *htp) {
         req.scheme = StringRef::from_lit("http");
       }
     } else {
-      rewrite_request_host_path_from_uri(
-          balloc, req, req.path, u, config->http2_proxy && !faddr->alt_mode);
+      rewrite_request_host_path_from_uri(balloc, req, req.path, u);
     }
   }
 
@@ -459,7 +454,7 @@ int htp_hdrs_completecb(http_parser *htp) {
       auto output = downstream->get_response_buf();
       constexpr auto res = StringRef::from_lit("HTTP/1.1 100 Continue\r\n\r\n");
       output->append(res);
-      handler->signal_write_no_wait();
+      handler->signal_write();
     }
   }
 
@@ -505,7 +500,7 @@ int htp_msg_completecb(http_parser *htp) {
       // in request phase hook.  We only delete and proceed to the
       // next request handling (if we don't close the connection).  We
       // first pause parser here just as we normally do, and call
-      // signal_write_no_wait() to run on_write().
+      // signal_write() to run on_write().
       http_parser_pause(htp, 1);
 
       return 0;
@@ -547,7 +542,7 @@ int HttpsUpstream::on_read() {
   auto rlimit = handler_->get_rlimit();
   auto downstream = get_downstream();
 
-  if (rb->rleft() == 0) {
+  if (rb->rleft() == 0 || handler_->get_should_close_after_write()) {
     return 0;
   }
 
@@ -610,7 +605,7 @@ int HttpsUpstream::on_read() {
     if (downstream &&
         downstream->get_request_state() == Downstream::MSG_COMPLETE &&
         downstream->get_response_state() == Downstream::MSG_COMPLETE) {
-      handler_->signal_write_no_wait();
+      handler_->signal_write();
     }
     return 0;
   }
@@ -624,7 +619,7 @@ int HttpsUpstream::on_read() {
 
     if (downstream && downstream->get_response_state() != Downstream::INITIAL) {
       handler_->set_should_close_after_write(true);
-      handler_->signal_write_no_wait();
+      handler_->signal_write();
       return 0;
     }
 
@@ -650,7 +645,7 @@ int HttpsUpstream::on_read() {
 
     error_reply(status_code);
 
-    handler_->signal_write_no_wait();
+    handler_->signal_write();
 
     return 0;
   }
@@ -777,7 +772,7 @@ int HttpsUpstream::downstream_read(DownstreamConnection *dconn) {
   }
 
 end:
-  handler_->signal_write_no_wait();
+  handler_->signal_write();
 
   return 0;
 }
@@ -834,7 +829,7 @@ int HttpsUpstream::downstream_eof(DownstreamConnection *dconn) {
   // drop connection.
   return -1;
 end:
-  handler_->signal_write_no_wait();
+  handler_->signal_write();
 
   return 0;
 }
@@ -862,7 +857,7 @@ int HttpsUpstream::downstream_error(DownstreamConnection *dconn, int events) {
 
   downstream->pop_downstream_connection();
 
-  handler_->signal_write_no_wait();
+  handler_->signal_write();
   return 0;
 }
 
@@ -1234,14 +1229,14 @@ int HttpsUpstream::on_downstream_body_complete(Downstream *downstream) {
 int HttpsUpstream::on_downstream_abort_request(Downstream *downstream,
                                                unsigned int status_code) {
   error_reply(status_code);
-  handler_->signal_write_no_wait();
+  handler_->signal_write();
   return 0;
 }
 
 int HttpsUpstream::on_downstream_abort_request_with_https_redirect(
     Downstream *downstream) {
   redirect_to_https(downstream);
-  handler_->signal_write_no_wait();
+  handler_->signal_write();
   return 0;
 }
 
