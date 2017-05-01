@@ -166,8 +166,8 @@ am__v_AR_1 =
 libnghttpx_a_AR = $(AR) $(ARFLAGS)
 libnghttpx_a_LIBADD =
 am__libnghttpx_a_SOURCES_DIST = util.cc util.h http2.cc http2.h \
-	timegm.c timegm.h base64.h app_helper.cc app_helper.h ssl.cc \
-	ssl.h shrpx_config.cc shrpx_config.h shrpx_error.h \
+	timegm.c timegm.h base64.h app_helper.cc app_helper.h tls.cc \
+	tls.h shrpx_config.cc shrpx_config.h shrpx_error.h \
 	shrpx_accept_handler.cc shrpx_accept_handler.h \
 	shrpx_connection_handler.cc shrpx_connection_handler.h \
 	shrpx_client_handler.cc shrpx_client_handler.h \
@@ -182,7 +182,7 @@ am__libnghttpx_a_SOURCES_DIST = util.cc util.h http2.cc http2.h \
 	shrpx_http2_session.h shrpx_downstream_queue.cc \
 	shrpx_downstream_queue.h shrpx_log.cc shrpx_log.h \
 	shrpx_http.cc shrpx_http.h shrpx_io_control.cc \
-	shrpx_io_control.h shrpx_ssl.cc shrpx_ssl.h shrpx_worker.cc \
+	shrpx_io_control.h shrpx_tls.cc shrpx_tls.h shrpx_worker.cc \
 	shrpx_worker.h shrpx_log_config.cc shrpx_log_config.h \
 	shrpx_connect_blocker.cc shrpx_connect_blocker.h \
 	shrpx_live_check.cc shrpx_live_check.h \
@@ -217,7 +217,7 @@ am__libnghttpx_a_SOURCES_DIST = util.cc util.h http2.cc http2.h \
 @ENABLE_APP_TRUE@	libnghttpx_a-http2.$(OBJEXT) \
 @ENABLE_APP_TRUE@	libnghttpx_a-timegm.$(OBJEXT) \
 @ENABLE_APP_TRUE@	libnghttpx_a-app_helper.$(OBJEXT) \
-@ENABLE_APP_TRUE@	libnghttpx_a-ssl.$(OBJEXT) \
+@ENABLE_APP_TRUE@	libnghttpx_a-tls.$(OBJEXT) \
 @ENABLE_APP_TRUE@	libnghttpx_a-shrpx_config.$(OBJEXT) \
 @ENABLE_APP_TRUE@	libnghttpx_a-shrpx_accept_handler.$(OBJEXT) \
 @ENABLE_APP_TRUE@	libnghttpx_a-shrpx_connection_handler.$(OBJEXT) \
@@ -233,7 +233,7 @@ am__libnghttpx_a_SOURCES_DIST = util.cc util.h http2.cc http2.h \
 @ENABLE_APP_TRUE@	libnghttpx_a-shrpx_log.$(OBJEXT) \
 @ENABLE_APP_TRUE@	libnghttpx_a-shrpx_http.$(OBJEXT) \
 @ENABLE_APP_TRUE@	libnghttpx_a-shrpx_io_control.$(OBJEXT) \
-@ENABLE_APP_TRUE@	libnghttpx_a-shrpx_ssl.$(OBJEXT) \
+@ENABLE_APP_TRUE@	libnghttpx_a-shrpx_tls.$(OBJEXT) \
 @ENABLE_APP_TRUE@	libnghttpx_a-shrpx_worker.$(OBJEXT) \
 @ENABLE_APP_TRUE@	libnghttpx_a-shrpx_log_config.$(OBJEXT) \
 @ENABLE_APP_TRUE@	libnghttpx_a-shrpx_connect_blocker.$(OBJEXT) \
@@ -295,7 +295,7 @@ am__DEPENDENCIES_1 =
 @ENABLE_ASIO_LIB_TRUE@	$(am__DEPENDENCIES_1) \
 @ENABLE_ASIO_LIB_TRUE@	$(am__DEPENDENCIES_1)
 am__libnghttp2_asio_la_SOURCES_DIST = util.cc util.h http2.cc http2.h \
-	ssl.cc ssl.h ssl_compat.h timegm.c timegm.h asio_common.cc \
+	tls.cc tls.h ssl_compat.h timegm.c timegm.h asio_common.cc \
 	asio_common.h asio_io_service_pool.cc asio_io_service_pool.h \
 	asio_server_http2.cc asio_server_http2_impl.cc \
 	asio_server_http2_impl.h asio_server.cc asio_server.h \
@@ -319,7 +319,7 @@ am__libnghttp2_asio_la_SOURCES_DIST = util.cc util.h http2.cc http2.h \
 @ENABLE_ASIO_LIB_TRUE@am_libnghttp2_asio_la_OBJECTS =  \
 @ENABLE_ASIO_LIB_TRUE@	libnghttp2_asio_la-util.lo \
 @ENABLE_ASIO_LIB_TRUE@	libnghttp2_asio_la-http2.lo \
-@ENABLE_ASIO_LIB_TRUE@	libnghttp2_asio_la-ssl.lo \
+@ENABLE_ASIO_LIB_TRUE@	libnghttp2_asio_la-tls.lo \
 @ENABLE_ASIO_LIB_TRUE@	libnghttp2_asio_la-timegm.lo \
 @ENABLE_ASIO_LIB_TRUE@	libnghttp2_asio_la-asio_common.lo \
 @ENABLE_ASIO_LIB_TRUE@	libnghttp2_asio_la-asio_io_service_pool.lo \
@@ -371,14 +371,14 @@ deflatehd_LDADD = $(LDADD)
 deflatehd_DEPENDENCIES = $(top_builddir)/lib/libnghttp2.la \
 	$(top_builddir)/third-party/libhttp-parser.la
 am__h2load_SOURCES_DIST = util.cc util.h http2.cc http2.h h2load.cc \
-	h2load.h timegm.c timegm.h ssl.cc ssl.h h2load_session.h \
+	h2load.h timegm.c timegm.h tls.cc tls.h h2load_session.h \
 	h2load_http2_session.cc h2load_http2_session.h \
 	h2load_http1_session.cc h2load_http1_session.h \
 	h2load_spdy_session.cc h2load_spdy_session.h
 @ENABLE_APP_TRUE@@HAVE_SPDYLAY_TRUE@am__objects_5 = h2load_spdy_session.$(OBJEXT)
 @ENABLE_APP_TRUE@am_h2load_OBJECTS = util.$(OBJEXT) http2.$(OBJEXT) \
 @ENABLE_APP_TRUE@	h2load.$(OBJEXT) timegm.$(OBJEXT) \
-@ENABLE_APP_TRUE@	ssl.$(OBJEXT) h2load_http2_session.$(OBJEXT) \
+@ENABLE_APP_TRUE@	tls.$(OBJEXT) h2load_http2_session.$(OBJEXT) \
 @ENABLE_APP_TRUE@	h2load_http1_session.$(OBJEXT) \
 @ENABLE_APP_TRUE@	$(am__objects_5)
 h2load_OBJECTS = $(am_h2load_OBJECTS)
@@ -395,7 +395,7 @@ inflatehd_DEPENDENCIES = $(top_builddir)/lib/libnghttp2.la \
 am__nghttp_SOURCES_DIST = util.cc http2.cc timegm.c app_helper.cc \
 	nghttp2_gzip.c util.h http2.h timegm.h app_helper.h \
 	nghttp2_config.h nghttp2_gzip.h network.h nghttp.cc nghttp.h \
-	HtmlParser.cc HtmlParser.h ssl.cc ssl.h
+	HtmlParser.cc HtmlParser.h tls.cc tls.h
 @ENABLE_APP_TRUE@am__objects_6 = util.$(OBJEXT) http2.$(OBJEXT) \
 @ENABLE_APP_TRUE@	timegm.$(OBJEXT) app_helper.$(OBJEXT) \
 @ENABLE_APP_TRUE@	nghttp2_gzip.$(OBJEXT)
@@ -405,18 +405,18 @@ am__objects_7 =
 @ENABLE_APP_TRUE@am__objects_9 = $(am__objects_8)
 @ENABLE_APP_TRUE@am_nghttp_OBJECTS = $(am__objects_6) $(am__objects_7) \
 @ENABLE_APP_TRUE@	nghttp.$(OBJEXT) $(am__objects_9) \
-@ENABLE_APP_TRUE@	$(am__objects_7) ssl.$(OBJEXT)
+@ENABLE_APP_TRUE@	$(am__objects_7) tls.$(OBJEXT)
 nghttp_OBJECTS = $(am_nghttp_OBJECTS)
 nghttp_LDADD = $(LDADD)
 nghttp_DEPENDENCIES = $(top_builddir)/lib/libnghttp2.la \
 	$(top_builddir)/third-party/libhttp-parser.la
 am__nghttpd_SOURCES_DIST = util.cc http2.cc timegm.c app_helper.cc \
 	nghttp2_gzip.c util.h http2.h timegm.h app_helper.h \
-	nghttp2_config.h nghttp2_gzip.h network.h nghttpd.cc ssl.cc \
-	ssl.h HttpServer.cc HttpServer.h
+	nghttp2_config.h nghttp2_gzip.h network.h nghttpd.cc tls.cc \
+	tls.h HttpServer.cc HttpServer.h
 @ENABLE_APP_TRUE@am_nghttpd_OBJECTS = $(am__objects_6) \
 @ENABLE_APP_TRUE@	$(am__objects_7) nghttpd.$(OBJEXT) \
-@ENABLE_APP_TRUE@	ssl.$(OBJEXT) HttpServer.$(OBJEXT)
+@ENABLE_APP_TRUE@	tls.$(OBJEXT) HttpServer.$(OBJEXT)
 nghttpd_OBJECTS = $(am_nghttpd_OBJECTS)
 nghttpd_LDADD = $(LDADD)
 nghttpd_DEPENDENCIES = $(top_builddir)/lib/libnghttp2.la \
@@ -430,7 +430,7 @@ am__DEPENDENCIES_2 = $(top_builddir)/lib/libnghttp2.la \
 @ENABLE_APP_TRUE@	$(am__DEPENDENCIES_2) $(am__DEPENDENCIES_1) \
 @ENABLE_APP_TRUE@	$(am__append_9)
 am__nghttpx_unittest_SOURCES_DIST = shrpx-unittest.cc \
-	shrpx_ssl_test.cc shrpx_ssl_test.h shrpx_downstream_test.cc \
+	shrpx_tls_test.cc shrpx_tls_test.h shrpx_downstream_test.cc \
 	shrpx_downstream_test.h shrpx_config_test.cc \
 	shrpx_config_test.h shrpx_worker_test.cc shrpx_worker_test.h \
 	shrpx_http_test.cc shrpx_http_test.h shrpx_router_test.cc \
@@ -440,7 +440,7 @@ am__nghttpx_unittest_SOURCES_DIST = shrpx-unittest.cc \
 	memchunk_test.cc memchunk_test.h template_test.cc \
 	template_test.h base64_test.cc base64_test.h
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@am_nghttpx_unittest_OBJECTS = nghttpx_unittest-shrpx-unittest.$(OBJEXT) \
-@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	nghttpx_unittest-shrpx_ssl_test.$(OBJEXT) \
+@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	nghttpx_unittest-shrpx_tls_test.$(OBJEXT) \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	nghttpx_unittest-shrpx_downstream_test.$(OBJEXT) \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	nghttpx_unittest-shrpx_config_test.$(OBJEXT) \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	nghttpx_unittest-shrpx_worker_test.$(OBJEXT) \
@@ -1007,22 +1007,22 @@ LDADD = $(top_builddir)/lib/libnghttp2.la \
 @ENABLE_APP_TRUE@HTML_PARSER_HFILES = HtmlParser.h
 @ENABLE_APP_TRUE@nghttp_SOURCES = ${HELPER_OBJECTS} ${HELPER_HFILES} nghttp.cc nghttp.h \
 @ENABLE_APP_TRUE@	${HTML_PARSER_OBJECTS} ${HTML_PARSER_HFILES} \
-@ENABLE_APP_TRUE@	ssl.cc ssl.h
+@ENABLE_APP_TRUE@	tls.cc tls.h
 
 @ENABLE_APP_TRUE@nghttpd_SOURCES = ${HELPER_OBJECTS} ${HELPER_HFILES} nghttpd.cc \
-@ENABLE_APP_TRUE@	ssl.cc ssl.h \
+@ENABLE_APP_TRUE@	tls.cc tls.h \
 @ENABLE_APP_TRUE@	HttpServer.cc HttpServer.h
 
 @ENABLE_APP_TRUE@h2load_SOURCES = util.cc util.h http2.cc http2.h \
-@ENABLE_APP_TRUE@	h2load.cc h2load.h timegm.c timegm.h ssl.cc \
-@ENABLE_APP_TRUE@	ssl.h h2load_session.h \
+@ENABLE_APP_TRUE@	h2load.cc h2load.h timegm.c timegm.h tls.cc \
+@ENABLE_APP_TRUE@	tls.h h2load_session.h \
 @ENABLE_APP_TRUE@	h2load_http2_session.cc \
 @ENABLE_APP_TRUE@	h2load_http2_session.h \
 @ENABLE_APP_TRUE@	h2load_http1_session.cc \
 @ENABLE_APP_TRUE@	h2load_http1_session.h $(am__append_3)
 @ENABLE_APP_TRUE@NGHTTPX_SRCS = util.cc util.h http2.cc http2.h \
 @ENABLE_APP_TRUE@	timegm.c timegm.h base64.h app_helper.cc \
-@ENABLE_APP_TRUE@	app_helper.h ssl.cc ssl.h shrpx_config.cc \
+@ENABLE_APP_TRUE@	app_helper.h tls.cc tls.h shrpx_config.cc \
 @ENABLE_APP_TRUE@	shrpx_config.h shrpx_error.h \
 @ENABLE_APP_TRUE@	shrpx_accept_handler.cc \
 @ENABLE_APP_TRUE@	shrpx_accept_handler.h \
@@ -1046,7 +1046,7 @@ LDADD = $(top_builddir)/lib/libnghttp2.la \
 @ENABLE_APP_TRUE@	shrpx_downstream_queue.h shrpx_log.cc \
 @ENABLE_APP_TRUE@	shrpx_log.h shrpx_http.cc shrpx_http.h \
 @ENABLE_APP_TRUE@	shrpx_io_control.cc shrpx_io_control.h \
-@ENABLE_APP_TRUE@	shrpx_ssl.cc shrpx_ssl.h shrpx_worker.cc \
+@ENABLE_APP_TRUE@	shrpx_tls.cc shrpx_tls.h shrpx_worker.cc \
 @ENABLE_APP_TRUE@	shrpx_worker.h shrpx_log_config.cc \
 @ENABLE_APP_TRUE@	shrpx_log_config.h shrpx_connect_blocker.cc \
 @ENABLE_APP_TRUE@	shrpx_connect_blocker.h shrpx_live_check.cc \
@@ -1086,7 +1086,7 @@ LDADD = $(top_builddir)/lib/libnghttp2.la \
 @ENABLE_APP_TRUE@nghttpx_LDADD = libnghttpx.a ${LDADD} $(am__append_7) \
 @ENABLE_APP_TRUE@	$(am__append_9)
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@nghttpx_unittest_SOURCES = shrpx-unittest.cc \
-@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	shrpx_ssl_test.cc shrpx_ssl_test.h \
+@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	shrpx_tls_test.cc shrpx_tls_test.h \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	shrpx_downstream_test.cc shrpx_downstream_test.h \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	shrpx_config_test.cc shrpx_config_test.h \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	shrpx_worker_test.cc shrpx_worker_test.h \
@@ -1120,7 +1120,7 @@ LDADD = $(top_builddir)/lib/libnghttp2.la \
 @ENABLE_ASIO_LIB_TRUE@lib_LTLIBRARIES = libnghttp2_asio.la
 @ENABLE_ASIO_LIB_TRUE@libnghttp2_asio_la_SOURCES = \
 @ENABLE_ASIO_LIB_TRUE@	util.cc util.h http2.cc http2.h \
-@ENABLE_ASIO_LIB_TRUE@	ssl.cc ssl.h \
+@ENABLE_ASIO_LIB_TRUE@	tls.cc tls.h \
 @ENABLE_ASIO_LIB_TRUE@	ssl_compat.h \
 @ENABLE_ASIO_LIB_TRUE@	timegm.c timegm.h \
 @ENABLE_ASIO_LIB_TRUE@	asio_common.cc asio_common.h \
@@ -1370,8 +1370,8 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttp2_asio_la-asio_server_stream.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttp2_asio_la-asio_server_tls_context.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttp2_asio_la-http2.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttp2_asio_la-ssl.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttp2_asio_la-timegm.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttp2_asio_la-tls.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttp2_asio_la-util.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttpx_a-app_helper.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttpx_a-http2.Po@am__quote@
@@ -1412,11 +1412,11 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttpx_a-shrpx_router.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttpx_a-shrpx_signal.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttpx_a-shrpx_spdy_upstream.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttpx_a-shrpx_ssl.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttpx_a-shrpx_tls.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttpx_a-shrpx_worker.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttpx_a-shrpx_worker_process.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttpx_a-ssl.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttpx_a-timegm.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttpx_a-tls.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttpx_a-util.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttpx_a-xsi_strerror.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttp.Po@am__quote@
@@ -1434,12 +1434,12 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttpx_unittest-shrpx_downstream_test.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttpx_unittest-shrpx_http_test.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttpx_unittest-shrpx_router_test.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttpx_unittest-shrpx_ssl_test.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttpx_unittest-shrpx_tls_test.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttpx_unittest-shrpx_worker_test.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttpx_unittest-template_test.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nghttpx_unittest-util_test.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ssl.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/timegm.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/tls.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/util.Po@am__quote@
 
 .c.o:
@@ -1595,19 +1595,19 @@ libnghttpx_a-app_helper.obj: app_helper.cc
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libnghttpx_a-app_helper.obj `if test -f 'app_helper.cc'; then $(CYGPATH_W) 'app_helper.cc'; else $(CYGPATH_W) '$(srcdir)/app_helper.cc'; fi`
 
-libnghttpx_a-ssl.o: ssl.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libnghttpx_a-ssl.o -MD -MP -MF $(DEPDIR)/libnghttpx_a-ssl.Tpo -c -o libnghttpx_a-ssl.o `test -f 'ssl.cc' || echo '$(srcdir)/'`ssl.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libnghttpx_a-ssl.Tpo $(DEPDIR)/libnghttpx_a-ssl.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='ssl.cc' object='libnghttpx_a-ssl.o' libtool=no @AMDEPBACKSLASH@
+libnghttpx_a-tls.o: tls.cc
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libnghttpx_a-tls.o -MD -MP -MF $(DEPDIR)/libnghttpx_a-tls.Tpo -c -o libnghttpx_a-tls.o `test -f 'tls.cc' || echo '$(srcdir)/'`tls.cc
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libnghttpx_a-tls.Tpo $(DEPDIR)/libnghttpx_a-tls.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='tls.cc' object='libnghttpx_a-tls.o' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libnghttpx_a-ssl.o `test -f 'ssl.cc' || echo '$(srcdir)/'`ssl.cc
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libnghttpx_a-tls.o `test -f 'tls.cc' || echo '$(srcdir)/'`tls.cc
 
-libnghttpx_a-ssl.obj: ssl.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libnghttpx_a-ssl.obj -MD -MP -MF $(DEPDIR)/libnghttpx_a-ssl.Tpo -c -o libnghttpx_a-ssl.obj `if test -f 'ssl.cc'; then $(CYGPATH_W) 'ssl.cc'; else $(CYGPATH_W) '$(srcdir)/ssl.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libnghttpx_a-ssl.Tpo $(DEPDIR)/libnghttpx_a-ssl.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='ssl.cc' object='libnghttpx_a-ssl.obj' libtool=no @AMDEPBACKSLASH@
+libnghttpx_a-tls.obj: tls.cc
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libnghttpx_a-tls.obj -MD -MP -MF $(DEPDIR)/libnghttpx_a-tls.Tpo -c -o libnghttpx_a-tls.obj `if test -f 'tls.cc'; then $(CYGPATH_W) 'tls.cc'; else $(CYGPATH_W) '$(srcdir)/tls.cc'; fi`
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libnghttpx_a-tls.Tpo $(DEPDIR)/libnghttpx_a-tls.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='tls.cc' object='libnghttpx_a-tls.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libnghttpx_a-ssl.obj `if test -f 'ssl.cc'; then $(CYGPATH_W) 'ssl.cc'; else $(CYGPATH_W) '$(srcdir)/ssl.cc'; fi`
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libnghttpx_a-tls.obj `if test -f 'tls.cc'; then $(CYGPATH_W) 'tls.cc'; else $(CYGPATH_W) '$(srcdir)/tls.cc'; fi`
 
 libnghttpx_a-shrpx_config.o: shrpx_config.cc
 @am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libnghttpx_a-shrpx_config.o -MD -MP -MF $(DEPDIR)/libnghttpx_a-shrpx_config.Tpo -c -o libnghttpx_a-shrpx_config.o `test -f 'shrpx_config.cc' || echo '$(srcdir)/'`shrpx_config.cc
@@ -1819,19 +1819,19 @@ libnghttpx_a-shrpx_io_control.obj: shrpx_io_control.cc
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libnghttpx_a-shrpx_io_control.obj `if test -f 'shrpx_io_control.cc'; then $(CYGPATH_W) 'shrpx_io_control.cc'; else $(CYGPATH_W) '$(srcdir)/shrpx_io_control.cc'; fi`
 
-libnghttpx_a-shrpx_ssl.o: shrpx_ssl.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libnghttpx_a-shrpx_ssl.o -MD -MP -MF $(DEPDIR)/libnghttpx_a-shrpx_ssl.Tpo -c -o libnghttpx_a-shrpx_ssl.o `test -f 'shrpx_ssl.cc' || echo '$(srcdir)/'`shrpx_ssl.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libnghttpx_a-shrpx_ssl.Tpo $(DEPDIR)/libnghttpx_a-shrpx_ssl.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='shrpx_ssl.cc' object='libnghttpx_a-shrpx_ssl.o' libtool=no @AMDEPBACKSLASH@
+libnghttpx_a-shrpx_tls.o: shrpx_tls.cc
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libnghttpx_a-shrpx_tls.o -MD -MP -MF $(DEPDIR)/libnghttpx_a-shrpx_tls.Tpo -c -o libnghttpx_a-shrpx_tls.o `test -f 'shrpx_tls.cc' || echo '$(srcdir)/'`shrpx_tls.cc
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libnghttpx_a-shrpx_tls.Tpo $(DEPDIR)/libnghttpx_a-shrpx_tls.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='shrpx_tls.cc' object='libnghttpx_a-shrpx_tls.o' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libnghttpx_a-shrpx_ssl.o `test -f 'shrpx_ssl.cc' || echo '$(srcdir)/'`shrpx_ssl.cc
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libnghttpx_a-shrpx_tls.o `test -f 'shrpx_tls.cc' || echo '$(srcdir)/'`shrpx_tls.cc
 
-libnghttpx_a-shrpx_ssl.obj: shrpx_ssl.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libnghttpx_a-shrpx_ssl.obj -MD -MP -MF $(DEPDIR)/libnghttpx_a-shrpx_ssl.Tpo -c -o libnghttpx_a-shrpx_ssl.obj `if test -f 'shrpx_ssl.cc'; then $(CYGPATH_W) 'shrpx_ssl.cc'; else $(CYGPATH_W) '$(srcdir)/shrpx_ssl.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libnghttpx_a-shrpx_ssl.Tpo $(DEPDIR)/libnghttpx_a-shrpx_ssl.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='shrpx_ssl.cc' object='libnghttpx_a-shrpx_ssl.obj' libtool=no @AMDEPBACKSLASH@
+libnghttpx_a-shrpx_tls.obj: shrpx_tls.cc
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libnghttpx_a-shrpx_tls.obj -MD -MP -MF $(DEPDIR)/libnghttpx_a-shrpx_tls.Tpo -c -o libnghttpx_a-shrpx_tls.obj `if test -f 'shrpx_tls.cc'; then $(CYGPATH_W) 'shrpx_tls.cc'; else $(CYGPATH_W) '$(srcdir)/shrpx_tls.cc'; fi`
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libnghttpx_a-shrpx_tls.Tpo $(DEPDIR)/libnghttpx_a-shrpx_tls.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='shrpx_tls.cc' object='libnghttpx_a-shrpx_tls.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libnghttpx_a-shrpx_ssl.obj `if test -f 'shrpx_ssl.cc'; then $(CYGPATH_W) 'shrpx_ssl.cc'; else $(CYGPATH_W) '$(srcdir)/shrpx_ssl.cc'; fi`
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libnghttpx_a-shrpx_tls.obj `if test -f 'shrpx_tls.cc'; then $(CYGPATH_W) 'shrpx_tls.cc'; else $(CYGPATH_W) '$(srcdir)/shrpx_tls.cc'; fi`
 
 libnghttpx_a-shrpx_worker.o: shrpx_worker.cc
 @am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libnghttpx_a-shrpx_worker.o -MD -MP -MF $(DEPDIR)/libnghttpx_a-shrpx_worker.Tpo -c -o libnghttpx_a-shrpx_worker.o `test -f 'shrpx_worker.cc' || echo '$(srcdir)/'`shrpx_worker.cc
@@ -2183,12 +2183,12 @@ libnghttp2_asio_la-http2.lo: http2.cc
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttp2_asio_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libnghttp2_asio_la-http2.lo `test -f 'http2.cc' || echo '$(srcdir)/'`http2.cc
 
-libnghttp2_asio_la-ssl.lo: ssl.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttp2_asio_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libnghttp2_asio_la-ssl.lo -MD -MP -MF $(DEPDIR)/libnghttp2_asio_la-ssl.Tpo -c -o libnghttp2_asio_la-ssl.lo `test -f 'ssl.cc' || echo '$(srcdir)/'`ssl.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libnghttp2_asio_la-ssl.Tpo $(DEPDIR)/libnghttp2_asio_la-ssl.Plo
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='ssl.cc' object='libnghttp2_asio_la-ssl.lo' libtool=yes @AMDEPBACKSLASH@
+libnghttp2_asio_la-tls.lo: tls.cc
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttp2_asio_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libnghttp2_asio_la-tls.lo -MD -MP -MF $(DEPDIR)/libnghttp2_asio_la-tls.Tpo -c -o libnghttp2_asio_la-tls.lo `test -f 'tls.cc' || echo '$(srcdir)/'`tls.cc
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libnghttp2_asio_la-tls.Tpo $(DEPDIR)/libnghttp2_asio_la-tls.Plo
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='tls.cc' object='libnghttp2_asio_la-tls.lo' libtool=yes @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttp2_asio_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libnghttp2_asio_la-ssl.lo `test -f 'ssl.cc' || echo '$(srcdir)/'`ssl.cc
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttp2_asio_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libnghttp2_asio_la-tls.lo `test -f 'tls.cc' || echo '$(srcdir)/'`tls.cc
 
 libnghttp2_asio_la-asio_common.lo: asio_common.cc
 @am__fastdepCXX_TRUE@	$(AM_V_CXX)$(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttp2_asio_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libnghttp2_asio_la-asio_common.lo -MD -MP -MF $(DEPDIR)/libnghttp2_asio_la-asio_common.Tpo -c -o libnghttp2_asio_la-asio_common.lo `test -f 'asio_common.cc' || echo '$(srcdir)/'`asio_common.cc
@@ -2386,19 +2386,19 @@ nghttpx_unittest-shrpx-unittest.obj: shrpx-unittest.cc
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(nghttpx_unittest_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o nghttpx_unittest-shrpx-unittest.obj `if test -f 'shrpx-unittest.cc'; then $(CYGPATH_W) 'shrpx-unittest.cc'; else $(CYGPATH_W) '$(srcdir)/shrpx-unittest.cc'; fi`
 
-nghttpx_unittest-shrpx_ssl_test.o: shrpx_ssl_test.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(nghttpx_unittest_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT nghttpx_unittest-shrpx_ssl_test.o -MD -MP -MF $(DEPDIR)/nghttpx_unittest-shrpx_ssl_test.Tpo -c -o nghttpx_unittest-shrpx_ssl_test.o `test -f 'shrpx_ssl_test.cc' || echo '$(srcdir)/'`shrpx_ssl_test.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/nghttpx_unittest-shrpx_ssl_test.Tpo $(DEPDIR)/nghttpx_unittest-shrpx_ssl_test.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='shrpx_ssl_test.cc' object='nghttpx_unittest-shrpx_ssl_test.o' libtool=no @AMDEPBACKSLASH@
+nghttpx_unittest-shrpx_tls_test.o: shrpx_tls_test.cc
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(nghttpx_unittest_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT nghttpx_unittest-shrpx_tls_test.o -MD -MP -MF $(DEPDIR)/nghttpx_unittest-shrpx_tls_test.Tpo -c -o nghttpx_unittest-shrpx_tls_test.o `test -f 'shrpx_tls_test.cc' || echo '$(srcdir)/'`shrpx_tls_test.cc
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/nghttpx_unittest-shrpx_tls_test.Tpo $(DEPDIR)/nghttpx_unittest-shrpx_tls_test.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='shrpx_tls_test.cc' object='nghttpx_unittest-shrpx_tls_test.o' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(nghttpx_unittest_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o nghttpx_unittest-shrpx_ssl_test.o `test -f 'shrpx_ssl_test.cc' || echo '$(srcdir)/'`shrpx_ssl_test.cc
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(nghttpx_unittest_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o nghttpx_unittest-shrpx_tls_test.o `test -f 'shrpx_tls_test.cc' || echo '$(srcdir)/'`shrpx_tls_test.cc
 
-nghttpx_unittest-shrpx_ssl_test.obj: shrpx_ssl_test.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(nghttpx_unittest_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT nghttpx_unittest-shrpx_ssl_test.obj -MD -MP -MF $(DEPDIR)/nghttpx_unittest-shrpx_ssl_test.Tpo -c -o nghttpx_unittest-shrpx_ssl_test.obj `if test -f 'shrpx_ssl_test.cc'; then $(CYGPATH_W) 'shrpx_ssl_test.cc'; else $(CYGPATH_W) '$(srcdir)/shrpx_ssl_test.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/nghttpx_unittest-shrpx_ssl_test.Tpo $(DEPDIR)/nghttpx_unittest-shrpx_ssl_test.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='shrpx_ssl_test.cc' object='nghttpx_unittest-shrpx_ssl_test.obj' libtool=no @AMDEPBACKSLASH@
+nghttpx_unittest-shrpx_tls_test.obj: shrpx_tls_test.cc
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(nghttpx_unittest_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT nghttpx_unittest-shrpx_tls_test.obj -MD -MP -MF $(DEPDIR)/nghttpx_unittest-shrpx_tls_test.Tpo -c -o nghttpx_unittest-shrpx_tls_test.obj `if test -f 'shrpx_tls_test.cc'; then $(CYGPATH_W) 'shrpx_tls_test.cc'; else $(CYGPATH_W) '$(srcdir)/shrpx_tls_test.cc'; fi`
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/nghttpx_unittest-shrpx_tls_test.Tpo $(DEPDIR)/nghttpx_unittest-shrpx_tls_test.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='shrpx_tls_test.cc' object='nghttpx_unittest-shrpx_tls_test.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(nghttpx_unittest_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o nghttpx_unittest-shrpx_ssl_test.obj `if test -f 'shrpx_ssl_test.cc'; then $(CYGPATH_W) 'shrpx_ssl_test.cc'; else $(CYGPATH_W) '$(srcdir)/shrpx_ssl_test.cc'; fi`
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(nghttpx_unittest_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o nghttpx_unittest-shrpx_tls_test.obj `if test -f 'shrpx_tls_test.cc'; then $(CYGPATH_W) 'shrpx_tls_test.cc'; else $(CYGPATH_W) '$(srcdir)/shrpx_tls_test.cc'; fi`
 
 nghttpx_unittest-shrpx_downstream_test.o: shrpx_downstream_test.cc
 @am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(nghttpx_unittest_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT nghttpx_unittest-shrpx_downstream_test.o -MD -MP -MF $(DEPDIR)/nghttpx_unittest-shrpx_downstream_test.Tpo -c -o nghttpx_unittest-shrpx_downstream_test.o `test -f 'shrpx_downstream_test.cc' || echo '$(srcdir)/'`shrpx_downstream_test.cc

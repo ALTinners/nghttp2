@@ -64,11 +64,11 @@ struct LogFragment;
 class ConnectBlocker;
 class Http2Session;
 
-namespace ssl {
+namespace tls {
 
 class CertLookupTree;
 
-} // namespace ssl
+} // namespace tls
 
 constexpr auto SHRPX_OPT_PRIVATE_KEY_FILE =
     StringRef::from_lit("private-key-file");
@@ -336,6 +336,11 @@ constexpr auto SHRPX_OPT_REDIRECT_HTTPS_PORT =
 constexpr auto SHRPX_OPT_FRONTEND_MAX_REQUESTS =
     StringRef::from_lit("frontend-max-requests");
 constexpr auto SHRPX_OPT_SINGLE_THREAD = StringRef::from_lit("single-thread");
+constexpr auto SHRPX_OPT_SINGLE_PROCESS = StringRef::from_lit("single-process");
+constexpr auto SHRPX_OPT_NO_ADD_X_FORWARDED_PROTO =
+    StringRef::from_lit("no-add-x-forwarded-proto");
+constexpr auto SHRPX_OPT_NO_STRIP_INCOMING_X_FORWARDED_PROTO =
+    StringRef::from_lit("no-strip-incoming-x-forwarded-proto");
 
 constexpr size_t SHRPX_OBFUSCATED_NODE_LENGTH = 8;
 
@@ -399,6 +404,9 @@ struct UpstreamAddr {
   bool host_unix;
   // true if TLS is enabled.
   bool tls;
+  // true if SNI host should be used as a host when selecting backend
+  // server.
+  bool sni_fwd;
   // true if client is supposed to send PROXY protocol v1 header.
   bool accept_proxy_protocol;
   int fd;
@@ -638,6 +646,10 @@ struct HttpConfig {
     bool add;
     bool strip_incoming;
   } xff;
+  struct {
+    bool add;
+    bool strip_incoming;
+  } xfp;
   std::vector<AltSvc> altsvcs;
   std::vector<ErrorPage> error_pages;
   HeaderRefs add_request_headers;
@@ -864,6 +876,7 @@ struct Config {
         verbose{false},
         daemon{false},
         http2_proxy{false},
+        single_process{false},
         single_thread{false},
         ev_loop_flags{0} {}
   ~Config();
@@ -905,6 +918,9 @@ struct Config {
   bool verbose;
   bool daemon;
   bool http2_proxy;
+  // Run nghttpx in single process mode.  With this mode, signal
+  // handling is omitted.
+  bool single_process;
   bool single_thread;
   // flags passed to ev_default_loop() and ev_loop_new()
   int ev_loop_flags;
@@ -1018,6 +1034,7 @@ enum {
   SHRPX_OPTID_MAX_REQUEST_HEADER_FIELDS,
   SHRPX_OPTID_MAX_RESPONSE_HEADER_FIELDS,
   SHRPX_OPTID_MRUBY_FILE,
+  SHRPX_OPTID_NO_ADD_X_FORWARDED_PROTO,
   SHRPX_OPTID_NO_HOST_REWRITE,
   SHRPX_OPTID_NO_HTTP2_CIPHER_BLACK_LIST,
   SHRPX_OPTID_NO_KQUEUE,
@@ -1025,6 +1042,7 @@ enum {
   SHRPX_OPTID_NO_OCSP,
   SHRPX_OPTID_NO_SERVER_PUSH,
   SHRPX_OPTID_NO_SERVER_REWRITE,
+  SHRPX_OPTID_NO_STRIP_INCOMING_X_FORWARDED_PROTO,
   SHRPX_OPTID_NO_VIA,
   SHRPX_OPTID_NPN_LIST,
   SHRPX_OPTID_OCSP_UPDATE_INTERVAL,
@@ -1040,6 +1058,7 @@ enum {
   SHRPX_OPTID_RESPONSE_HEADER_FIELD_BUFFER,
   SHRPX_OPTID_RLIMIT_NOFILE,
   SHRPX_OPTID_SERVER_NAME,
+  SHRPX_OPTID_SINGLE_PROCESS,
   SHRPX_OPTID_SINGLE_THREAD,
   SHRPX_OPTID_STREAM_READ_TIMEOUT,
   SHRPX_OPTID_STREAM_WRITE_TIMEOUT,

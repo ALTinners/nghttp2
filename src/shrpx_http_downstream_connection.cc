@@ -35,7 +35,7 @@
 #include "shrpx_downstream_connection_pool.h"
 #include "shrpx_worker.h"
 #include "shrpx_http2_session.h"
-#include "shrpx_ssl.h"
+#include "shrpx_tls.h"
 #include "shrpx_log.h"
 #include "http2.h"
 #include "util.h"
@@ -152,7 +152,7 @@ void backend_retry(Downstream *downstream) {
   if (rv == SHRPX_ERR_TLS_REQUIRED) {
     rv = upstream->on_downstream_abort_request_with_https_redirect(downstream);
   } else {
-    rv = upstream->on_downstream_abort_request(downstream, 503);
+    rv = upstream->on_downstream_abort_request(downstream, 502);
   }
 
   if (rv != 0) {
@@ -423,14 +423,15 @@ int HttpDownstreamConnection::initiate_connection() {
       if (addr_->tls) {
         assert(ssl_ctx_);
 
-        auto ssl = ssl::create_ssl(ssl_ctx_);
+        auto ssl = tls::create_ssl(ssl_ctx_);
         if (!ssl) {
           return -1;
         }
 
-        ssl::setup_downstream_http1_alpn(ssl);
+        tls::setup_downstream_http1_alpn(ssl);
 
         conn_.set_ssl(ssl);
+        conn_.tls.client_session_cache = &addr_->tls_session_cache;
 
         auto sni_name =
             addr_->sni.empty() ? StringRef{addr_->host} : StringRef{addr_->sni};
@@ -438,7 +439,7 @@ int HttpDownstreamConnection::initiate_connection() {
           SSL_set_tlsext_host_name(conn_.tls.ssl, sni_name.c_str());
         }
 
-        auto session = ssl::reuse_tls_session(addr_->tls_session_cache);
+        auto session = tls::reuse_tls_session(addr_->tls_session_cache);
         if (session) {
           SSL_set_session(conn_.tls.ssl, session);
           SSL_SESSION_free(session);
@@ -629,10 +630,25 @@ int HttpDownstreamConnection::push_request_headers() {
     buf->append("\r\n");
   }
   if (!config->http2_proxy && !connect_method) {
-    buf->append("X-Forwarded-Proto: ");
-    assert(!req.scheme.empty());
-    buf->append(req.scheme);
-    buf->append("\r\n");
+    auto &xfpconf = httpconf.xfp;
+    auto xfp = xfpconf.strip_incoming
+                   ? nullptr
+                   : req.fs.header(http2::HD_X_FORWARDED_PROTO);
+
+    if (xfpconf.add) {
+      buf->append("X-Forwarded-Proto: ");
+      if (xfp) {
+        buf->append((*xfp).value);
+        buf->append(", ");
+      }
+      assert(!req.scheme.empty());
+      buf->append(req.scheme);
+      buf->append("\r\n");
+    } else if (xfp) {
+      buf->append("X-Forwarded-Proto: ");
+      buf->append((*xfp).value);
+      buf->append("\r\n");
+    }
   }
   auto via = req.fs.header(http2::HD_VIA);
   if (httpconf.no_via) {
@@ -1222,18 +1238,10 @@ int HttpDownstreamConnection::tls_handshake() {
   }
 
   if (!get_config()->tls.insecure &&
-      ssl::check_cert(conn_.tls.ssl, addr_, raddr_) != 0) {
+      tls::check_cert(conn_.tls.ssl, addr_, raddr_) != 0) {
     downstream_failure(addr_, raddr_);
 
     return -1;
-  }
-
-  if (!SSL_session_reused(conn_.tls.ssl)) {
-    auto session = SSL_get0_session(conn_.tls.ssl);
-    if (session) {
-      ssl::try_cache_tls_session(addr_->tls_session_cache, *raddr_, session,
-                                 ev_now(conn_.loop));
-    }
   }
 
   auto &connect_blocker = addr_->connect_blocker;

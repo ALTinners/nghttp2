@@ -41,6 +41,10 @@ namespace shrpx {
 
 struct MemcachedRequest;
 
+namespace tls {
+struct TLSSessionCache;
+} // namespace tls
+
 enum {
   TLS_CONN_NORMAL,
   TLS_CONN_WAIT_FOR_SESSION_CACHE,
@@ -55,6 +59,7 @@ struct TLSConnection {
   SSL *ssl;
   SSL_SESSION *cached_session;
   MemcachedRequest *cached_session_lookup_req;
+  tls::TLSSessionCache *client_session_cache;
   ev_tstamp last_write_idle;
   size_t warmup_writelen;
   // length passed to SSL_write and SSL_read last time.  This is
@@ -66,6 +71,9 @@ struct TLSConnection {
   bool reneg_started;
   // true if ssl is prepared to do handshake as server.
   bool server_handshake;
+  // true if ssl is initialized as server, and client requested
+  // signed_certificate_timestamp extension.
+  bool sct_requested;
 };
 
 struct TCPHint {
