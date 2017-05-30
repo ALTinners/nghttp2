@@ -1688,6 +1688,18 @@ Connections:
               match  against  "nghttp2.org".   The exact  hosts  match
               takes precedence over the wildcard hosts match.
 
+              If path  part ends with  "*", it is treated  as wildcard
+              path.  The  wildcard path  behaves differently  from the
+              normal path.  For normal path,  match is made around the
+              boundary of path component  separator,"/".  On the other
+              hand, the wildcard  path does not take  into account the
+              path component  separator.  All paths which  include the
+              wildcard  path  without  last  "*" as  prefix,  and  are
+              strictly longer than wildcard  path without last "*" are
+              matched.  "*"  must match  at least one  character.  For
+              example,  the   pattern  "/foo*"  matches   "/foo/"  and
+              "/foobar".  But it does not match "/foo", or "/fo".
+
               If <PATTERN> is omitted or  empty string, "/" is used as
               pattern,  which  matches  all request  paths  (catch-all
               pattern).  The catch-all backend must be given.
@@ -2072,12 +2084,12 @@ SSL/TLS:
               Specify  additional certificate  and  private key  file.
               nghttpx will  choose certificates based on  the hostname
               indicated by client using TLS SNI extension.  If nghttpx
-              is  built with  OpenSSL >=  1.0.2, signature  algorithms
-              (e.g., ECDSA+SHA256, RSA+SHA256) presented by client are
-              also taken  into consideration.  This allows  nghttpx to
-              send ECDSA certificate to  modern clients, while sending
-              RSA based certificate to older clients.  This option can
-              be  used multiple  times.  To  make OCSP  stapling work,
+              is  built with  OpenSSL  >= 1.0.2,  the shared  elliptic
+              curves (e.g., P-256) between  client and server are also
+              taken into  consideration.  This allows nghttpx  to send
+              ECDSA certificate  to modern clients, while  sending RSA
+              based certificate to older  clients.  This option can be
+              used  multiple  times.   To  make  OCSP  stapling  work,
               <CERTPATH> must be absolute path.
 
               Additional parameter  can be specified in  <PARAM>.  The
@@ -2222,6 +2234,14 @@ SSL/TLS:
               Set interval to update OCSP response cache.
               Default: )"
       << util::duration_str(config->tls.ocsp.update_interval) << R"(
+  --ocsp-startup
+              Start  accepting connections  after initial  attempts to
+              get OCSP responses  finish.  It does not  matter some of
+              the  attempts  fail.  This  feature  is  useful if  OCSP
+              responses   must    be   available    before   accepting
+              connections.
+  --no-verify-ocsp
+              nghttpx does not verify OCSP response.
   --no-ocsp   Disable OCSP stapling.
   --tls-session-cache-memcached=<HOST>,<PORT>[;tls]
               Specify  address of  memcached server  to store  session
@@ -3171,7 +3191,9 @@ int main(int argc, char **argv) {
         {SHRPX_OPT_BACKEND_HTTP_PROXY_URI.c_str(), required_argument, &flag,
          26},
         {SHRPX_OPT_BACKEND_NO_TLS.c_str(), no_argument, &flag, 27},
+        {SHRPX_OPT_OCSP_STARTUP.c_str(), no_argument, &flag, 28},
         {SHRPX_OPT_FRONTEND_NO_TLS.c_str(), no_argument, &flag, 29},
+        {SHRPX_OPT_NO_VERIFY_OCSP.c_str(), no_argument, &flag, 30},
         {SHRPX_OPT_BACKEND_TLS_SNI_FIELD.c_str(), required_argument, &flag, 31},
         {SHRPX_OPT_DH_PARAM_FILE.c_str(), required_argument, &flag, 33},
         {SHRPX_OPT_READ_RATE.c_str(), required_argument, &flag, 34},
@@ -3521,9 +3543,19 @@ int main(int argc, char **argv) {
         cmdcfgs.emplace_back(SHRPX_OPT_BACKEND_NO_TLS,
                              StringRef::from_lit("yes"));
         break;
+      case 28:
+        // --ocsp-startup
+        cmdcfgs.emplace_back(SHRPX_OPT_OCSP_STARTUP,
+                             StringRef::from_lit("yes"));
+        break;
       case 29:
         // --frontend-no-tls
         cmdcfgs.emplace_back(SHRPX_OPT_FRONTEND_NO_TLS,
+                             StringRef::from_lit("yes"));
+        break;
+      case 30:
+        // --no-verify-ocsp
+        cmdcfgs.emplace_back(SHRPX_OPT_NO_VERIFY_OCSP,
                              StringRef::from_lit("yes"));
         break;
       case 31:

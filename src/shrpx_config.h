@@ -341,6 +341,8 @@ constexpr auto SHRPX_OPT_NO_ADD_X_FORWARDED_PROTO =
     StringRef::from_lit("no-add-x-forwarded-proto");
 constexpr auto SHRPX_OPT_NO_STRIP_INCOMING_X_FORWARDED_PROTO =
     StringRef::from_lit("no-strip-incoming-x-forwarded-proto");
+constexpr auto SHRPX_OPT_OCSP_STARTUP = StringRef::from_lit("ocsp-startup");
+constexpr auto SHRPX_OPT_NO_VERIFY_OCSP = StringRef::from_lit("no-verify-ocsp");
 
 constexpr size_t SHRPX_OBFUSCATED_NODE_LENGTH = 8;
 
@@ -561,6 +563,8 @@ struct TLSConfig {
     ev_tstamp update_interval;
     StringRef fetch_ocsp_response_file;
     bool disabled;
+    bool startup;
+    bool no_verify;
   } ocsp;
 
   // Client verification configurations
@@ -1043,8 +1047,10 @@ enum {
   SHRPX_OPTID_NO_SERVER_PUSH,
   SHRPX_OPTID_NO_SERVER_REWRITE,
   SHRPX_OPTID_NO_STRIP_INCOMING_X_FORWARDED_PROTO,
+  SHRPX_OPTID_NO_VERIFY_OCSP,
   SHRPX_OPTID_NO_VIA,
   SHRPX_OPTID_NPN_LIST,
+  SHRPX_OPTID_OCSP_STARTUP,
   SHRPX_OPTID_OCSP_UPDATE_INTERVAL,
   SHRPX_OPTID_PADDING,
   SHRPX_OPTID_PID_FILE,

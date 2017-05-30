@@ -967,6 +967,12 @@ int parse_mapping(Config *config, DownstreamAddrConfig &addr,
       auto host = StringRef{std::begin(g.pattern) + 1, path_first};
       auto path = StringRef{path_first, std::end(g.pattern)};
 
+      auto path_is_wildcard = false;
+      if (path[path.size() - 1] == '*') {
+        path = StringRef{std::begin(path), std::begin(path) + path.size() - 1};
+        path_is_wildcard = true;
+      }
+
       auto it = std::find_if(
           std::begin(wildcard_patterns), std::end(wildcard_patterns),
           [&host](const WildcardPattern &wp) { return wp.host == host; });
@@ -975,7 +981,7 @@ int parse_mapping(Config *config, DownstreamAddrConfig &addr,
         wildcard_patterns.emplace_back(host);
 
         auto &router = wildcard_patterns.back().router;
-        router.add_route(path, idx);
+        router.add_route(path, idx, path_is_wildcard);
 
         auto iov = make_byte_ref(downstreamconf.balloc, host.size() + 1);
         auto p = iov.base;
@@ -985,13 +991,20 @@ int parse_mapping(Config *config, DownstreamAddrConfig &addr,
 
         rw_router.add_route(rev_host, wildcard_patterns.size() - 1);
       } else {
-        (*it).router.add_route(path, idx);
+        (*it).router.add_route(path, idx, path_is_wildcard);
       }
 
       continue;
     }
 
-    router.add_route(g.pattern, idx);
+    auto path_is_wildcard = false;
+    if (pattern[pattern.size() - 1] == '*') {
+      pattern = StringRef{std::begin(pattern),
+                          std::begin(pattern) + pattern.size() - 1};
+      path_is_wildcard = true;
+    }
+
+    router.add_route(pattern, idx, path_is_wildcard);
   }
   return 0;
 }
@@ -1578,6 +1591,11 @@ int option_lookup_token(const char *name, size_t namelen) {
         return SHRPX_OPTID_HTTP2_BRIDGE;
       }
       break;
+    case 'p':
+      if (util::strieq_l("ocsp-startu", name, 11)) {
+        return SHRPX_OPTID_OCSP_STARTUP;
+      }
+      break;
     case 'y':
       if (util::strieq_l("client-prox", name, 11)) {
         return SHRPX_OPTID_CLIENT_PROXY;
@@ -1631,6 +1649,11 @@ int option_lookup_token(const char *name, size_t namelen) {
     case 'h':
       if (util::strieq_l("no-server-pus", name, 13)) {
         return SHRPX_OPTID_NO_SERVER_PUSH;
+      }
+      break;
+    case 'p':
+      if (util::strieq_l("no-verify-ocs", name, 13)) {
+        return SHRPX_OPTID_NO_VERIFY_OCSP;
       }
       break;
     case 's':
@@ -3408,6 +3431,14 @@ int parse_config(Config *config, int optid, const StringRef &opt,
     config->http.xfp.strip_incoming = !util::strieq_l("yes", optarg);
 
     return 0;
+  case SHRPX_OPTID_OCSP_STARTUP:
+    config->tls.ocsp.startup = util::strieq_l("yes", optarg);
+
+    return 0;
+  case SHRPX_OPTID_NO_VERIFY_OCSP:
+    config->tls.ocsp.no_verify = util::strieq_l("yes", optarg);
+
+    return 0;
   case SHRPX_OPTID_CONF:
     LOG(WARN) << "conf: ignored";
 
@@ -3600,6 +3631,7 @@ StringRef strproto(shrpx_proto proto) {
 
   // gcc needs this.
   assert(0);
+  abort();
 }
 
 namespace {

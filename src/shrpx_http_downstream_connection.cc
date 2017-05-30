@@ -538,7 +538,16 @@ int HttpDownstreamConnection::push_request_headers() {
   buf->append(authority);
   buf->append("\r\n");
 
-  http2::build_http1_headers_from_headers(buf, req.fs.headers());
+  auto &fwdconf = httpconf.forwarded;
+  auto &xffconf = httpconf.xff;
+  auto &xfpconf = httpconf.xfp;
+
+  uint32_t build_flags =
+      (fwdconf.strip_incoming ? http2::HDOP_STRIP_FORWARDED : 0) |
+      (xffconf.strip_incoming ? http2::HDOP_STRIP_X_FORWARDED_FOR : 0) |
+      (xfpconf.strip_incoming ? http2::HDOP_STRIP_X_FORWARDED_PROTO : 0);
+
+  http2::build_http1_headers_from_headers(buf, req.fs.headers(), build_flags);
 
   auto cookie = downstream_->assemble_request_cookie();
   if (!cookie.empty()) {
@@ -577,8 +586,6 @@ int HttpDownstreamConnection::push_request_headers() {
   auto upstream = downstream_->get_upstream();
   auto handler = upstream->get_client_handler();
 
-  auto &fwdconf = httpconf.forwarded;
-
   auto fwd =
       fwdconf.strip_incoming ? nullptr : req.fs.header(http2::HD_FORWARDED);
 
@@ -611,8 +618,6 @@ int HttpDownstreamConnection::push_request_headers() {
     buf->append("\r\n");
   }
 
-  auto &xffconf = httpconf.xff;
-
   auto xff = xffconf.strip_incoming ? nullptr
                                     : req.fs.header(http2::HD_X_FORWARDED_FOR);
 
@@ -630,7 +635,6 @@ int HttpDownstreamConnection::push_request_headers() {
     buf->append("\r\n");
   }
   if (!config->http2_proxy && !connect_method) {
-    auto &xfpconf = httpconf.xfp;
     auto xfp = xfpconf.strip_incoming
                    ? nullptr
                    : req.fs.header(http2::HD_X_FORWARDED_PROTO);
@@ -740,7 +744,8 @@ int HttpDownstreamConnection::end_upload_data() {
     output->append("0\r\n\r\n");
   } else {
     output->append("0\r\n");
-    http2::build_http1_headers_from_headers(output, trailers);
+    http2::build_http1_headers_from_headers(output, trailers,
+                                            http2::HDOP_STRIP_ALL);
     output->append("\r\n");
   }
 
@@ -1001,8 +1006,8 @@ int ensure_max_header_fields(const Downstream *downstream,
 
   if (resp.fs.num_fields() >= httpconf.max_response_header_fields) {
     if (LOG_ENABLED(INFO)) {
-      DLOG(INFO, downstream) << "Too many header field num="
-                             << resp.fs.num_fields() + 1;
+      DLOG(INFO, downstream)
+          << "Too many header field num=" << resp.fs.num_fields() + 1;
     }
     return -1;
   }
@@ -1302,7 +1307,10 @@ int HttpDownstreamConnection::write_tls() {
 
   while (input->rleft() > 0) {
     auto iovcnt = input->riovec(&iov, 1);
-    assert(iovcnt == 1);
+    if (iovcnt != 1) {
+      assert(0);
+      return -1;
+    }
     auto nwrite = conn_.write_tls(iov.iov_base, iov.iov_len);
 
     if (nwrite == 0) {

@@ -80,6 +80,18 @@ Connections
     match  against  "nghttp2.org".   The exact  hosts  match
     takes precedence over the wildcard hosts match.
 
+    If path  part ends with  "\*", it is treated  as wildcard
+    path.  The  wildcard path  behaves differently  from the
+    normal path.  For normal path,  match is made around the
+    boundary of path component  separator,"*/*".  On the other
+    hand, the wildcard  path does not take  into account the
+    path component  separator.  All paths which  include the
+    wildcard  path  without  last  "\*" as  prefix,  and  are
+    strictly longer than wildcard  path without last "\*" are
+    matched.  "\*"  must match  at least one  character.  For
+    example,  the   pattern  "*/foo\**"  matches   "*/foo/*"  and
+    "*/foobar*".  But it does not match "*/foo*", or "*/fo*".
+
     If <PATTERN> is omitted or  empty string, "*/*" is used as
     pattern,  which  matches  all request  paths  (catch-all
     pattern).  The catch-all backend must be given.
@@ -563,12 +575,12 @@ SSL/TLS
     Specify  additional certificate  and  private key  file.
     nghttpx will  choose certificates based on  the hostname
     indicated by client using TLS SNI extension.  If nghttpx
-    is  built with  OpenSSL >=  1.0.2, signature  algorithms
-    (e.g., ECDSA+SHA256, RSA+SHA256) presented by client are
-    also taken  into consideration.  This allows  nghttpx to
-    send ECDSA certificate to  modern clients, while sending
-    RSA based certificate to older clients.  This option can
-    be  used multiple  times.  To  make OCSP  stapling work,
+    is  built with  OpenSSL  >= 1.0.2,  the shared  elliptic
+    curves (e.g., P-256) between  client and server are also
+    taken into  consideration.  This allows nghttpx  to send
+    ECDSA certificate  to modern clients, while  sending RSA
+    based certificate to older  clients.  This option can be
+    used  multiple  times.   To  make  OCSP  stapling  work,
     <CERTPATH> must be absolute path.
 
     Additional parameter  can be specified in  <PARAM>.  The
@@ -742,6 +754,18 @@ SSL/TLS
     Set interval to update OCSP response cache.
 
     Default: ``4h``
+
+.. option:: --ocsp-startup
+
+    Start  accepting connections  after initial  attempts to
+    get OCSP responses  finish.  It does not  matter some of
+    the  attempts  fail.  This  feature  is  useful if  OCSP
+    responses   must    be   available    before   accepting
+    connections.
+
+.. option:: --no-verify-ocsp
+
+    nghttpx does not verify OCSP response.
 
 .. option:: --no-ocsp
 
@@ -1580,6 +1604,22 @@ be customized using :option:`--fetch-ocsp-response-file` option.
 
 If OCSP query is failed, previous OCSP response, if any, is continued
 to be used.
+
+:option:`--fetch-ocsp-response-file` option provides wide range of
+possibility to manage OCSP response.  It can take an arbitrary script
+or executable.  The requirement is that it supports the command-line
+interface of ``fetch-ocsp-response`` script, and it must return a
+valid DER encoded OCSP response on success.  It must return exit code
+0 on success, and 75 for temporary error, and the other error code for
+generic failure.  For large cluster of servers, it is not efficient
+for each server to perform OCSP query using ``fetch-ocsp-response``.
+Instead, you can retrieve OCSP response in some way, and store it in a
+disk or a shared database.  Then specify a program in
+:option:`--fetch-ocsp-response-file` to fetch it from those stores.
+This could provide a way to share the OCSP response between fleet of
+servers, and also any OCSP query strategy can be applied which may be
+beyond the ability of nghttpx itself or ``fetch-ocsp-response``
+script.
 
 TLS SESSION RESUMPTION
 ----------------------

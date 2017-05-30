@@ -2156,6 +2156,7 @@ void test_nghttp2_session_recv_altsvc(void) {
   memset(&callbacks, 0, sizeof(nghttp2_session_callbacks));
 
   callbacks.on_frame_recv_callback = on_frame_recv_callback;
+  callbacks.on_invalid_frame_recv_callback = on_invalid_frame_recv_callback;
 
   nghttp2_option_new(&option);
   nghttp2_option_set_builtin_recv_extension_type(option, NGHTTP2_ALTSVC);
@@ -2200,6 +2201,72 @@ void test_nghttp2_session_recv_altsvc(void) {
 
   CU_ASSERT((ssize_t)nghttp2_buf_len(&buf) == rv);
   CU_ASSERT(0 == ud.frame_recv_cb_called);
+
+  nghttp2_session_del(session);
+
+  /* zero-length value */
+  nghttp2_buf_reset(&buf);
+
+  nghttp2_session_client_new2(&session, &callbacks, &ud, option);
+
+  nghttp2_frame_hd_init(&hd, 2 + sizeof(origin) - 1, NGHTTP2_ALTSVC,
+                        NGHTTP2_FLAG_NONE, 0);
+  nghttp2_frame_pack_frame_hd(buf.last, &hd);
+  buf.last += NGHTTP2_FRAME_HDLEN;
+  nghttp2_put_uint16be(buf.last, sizeof(origin) - 1);
+  buf.last += 2;
+  buf.last = nghttp2_cpymem(buf.last, origin, sizeof(origin) - 1);
+
+  ud.invalid_frame_recv_cb_called = 0;
+  rv = nghttp2_session_mem_recv(session, buf.pos, nghttp2_buf_len(&buf));
+
+  CU_ASSERT((ssize_t)nghttp2_buf_len(&buf) == rv);
+  CU_ASSERT(1 == ud.invalid_frame_recv_cb_called);
+
+  nghttp2_session_del(session);
+
+  /* non-empty origin to a stream other than 0 */
+  nghttp2_buf_reset(&buf);
+
+  nghttp2_session_client_new2(&session, &callbacks, &ud, option);
+
+  open_sent_stream(session, 1);
+
+  nghttp2_frame_hd_init(&hd, 2 + sizeof(origin) - 1 + sizeof(field_value) - 1,
+                        NGHTTP2_ALTSVC, NGHTTP2_FLAG_NONE, 1);
+  nghttp2_frame_pack_frame_hd(buf.last, &hd);
+  buf.last += NGHTTP2_FRAME_HDLEN;
+  nghttp2_put_uint16be(buf.last, sizeof(origin) - 1);
+  buf.last += 2;
+  buf.last = nghttp2_cpymem(buf.last, origin, sizeof(origin) - 1);
+  buf.last = nghttp2_cpymem(buf.last, field_value, sizeof(field_value) - 1);
+
+  ud.invalid_frame_recv_cb_called = 0;
+  rv = nghttp2_session_mem_recv(session, buf.pos, nghttp2_buf_len(&buf));
+
+  CU_ASSERT((ssize_t)nghttp2_buf_len(&buf) == rv);
+  CU_ASSERT(1 == ud.invalid_frame_recv_cb_called);
+
+  nghttp2_session_del(session);
+
+  /* empty origin to stream 0 */
+  nghttp2_buf_reset(&buf);
+
+  nghttp2_session_client_new2(&session, &callbacks, &ud, option);
+
+  nghttp2_frame_hd_init(&hd, 2 + sizeof(field_value) - 1, NGHTTP2_ALTSVC,
+                        NGHTTP2_FLAG_NONE, 0);
+  nghttp2_frame_pack_frame_hd(buf.last, &hd);
+  buf.last += NGHTTP2_FRAME_HDLEN;
+  nghttp2_put_uint16be(buf.last, 0);
+  buf.last += 2;
+  buf.last = nghttp2_cpymem(buf.last, field_value, sizeof(field_value) - 1);
+
+  ud.invalid_frame_recv_cb_called = 0;
+  rv = nghttp2_session_mem_recv(session, buf.pos, nghttp2_buf_len(&buf));
+
+  CU_ASSERT((ssize_t)nghttp2_buf_len(&buf) == rv);
+  CU_ASSERT(1 == ud.invalid_frame_recv_cb_called);
 
   nghttp2_session_del(session);
 
@@ -6417,8 +6484,8 @@ void test_nghttp2_session_flow_control_data_recv(void) {
 
   nghttp2_frame_pack_frame_hd(data, &hd);
   CU_ASSERT(NGHTTP2_MAX_PAYLOADLEN + NGHTTP2_FRAME_HDLEN ==
-            nghttp2_session_mem_recv(session, data, NGHTTP2_MAX_PAYLOADLEN +
-                                                        NGHTTP2_FRAME_HDLEN));
+            nghttp2_session_mem_recv(
+                session, data, NGHTTP2_MAX_PAYLOADLEN + NGHTTP2_FRAME_HDLEN));
 
   item = nghttp2_session_get_next_ob_item(session);
   /* Since this is the last frame, stream-level WINDOW_UPDATE is not
@@ -6436,8 +6503,8 @@ void test_nghttp2_session_flow_control_data_recv(void) {
      sending DATA frames. Without calculating connection-level window,
      the subsequent flow control gets confused. */
   CU_ASSERT(NGHTTP2_MAX_PAYLOADLEN + NGHTTP2_FRAME_HDLEN ==
-            nghttp2_session_mem_recv(session, data, NGHTTP2_MAX_PAYLOADLEN +
-                                                        NGHTTP2_FRAME_HDLEN));
+            nghttp2_session_mem_recv(
+                session, data, NGHTTP2_MAX_PAYLOADLEN + NGHTTP2_FRAME_HDLEN));
 
   item = nghttp2_session_get_next_ob_item(session);
   CU_ASSERT(NGHTTP2_WINDOW_UPDATE == item->frame.hd.type);
@@ -11037,9 +11104,12 @@ void test_nghttp2_http_ignore_regular_header(void) {
   rv = nghttp2_session_mem_recv(session, bufs.head->buf.pos + proclen,
                                 nghttp2_buf_len(&bufs.head->buf) - proclen);
   CU_ASSERT_FATAL(rv > 0);
-  /* header field "foo" must be ignored because it has illegal value.
-     So we have "bar" header field for 5th header. */
-  CU_ASSERT(nghttp2_nv_equal(&bad_ansnv[4], &ud.nv));
+  /* Without on_invalid_frame_recv_callback, bad header causes stream
+     reset */
+  item = nghttp2_session_get_next_ob_item(session);
+
+  CU_ASSERT(NGHTTP2_RST_STREAM == item->frame.hd.type);
+
   proclen += (size_t)rv;
 
   CU_ASSERT(nghttp2_buf_len(&bufs.head->buf) == proclen);

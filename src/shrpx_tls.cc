@@ -45,6 +45,7 @@
 #include <openssl/x509v3.h>
 #include <openssl/rand.h>
 #include <openssl/dh.h>
+#include <openssl/ocsp.h>
 
 #include <nghttp2/nghttp2.h>
 
@@ -153,13 +154,13 @@ int servername_callback(SSL *ssl, int *al, void *arg) {
 
   auto rawhost = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
   if (rawhost == nullptr) {
-    return SSL_TLSEXT_ERR_OK;
+    return SSL_TLSEXT_ERR_NOACK;
   }
 
   auto len = strlen(rawhost);
   // NI_MAXHOST includes terminal NULL.
   if (len == 0 || len + 1 > NI_MAXHOST) {
-    return SSL_TLSEXT_ERR_OK;
+    return SSL_TLSEXT_ERR_NOACK;
   }
 
   std::array<uint8_t, NI_MAXHOST> buf;
@@ -170,17 +171,14 @@ int servername_callback(SSL *ssl, int *al, void *arg) {
 
   auto hostname = StringRef{std::begin(buf), end_buf};
 
-  handler->set_tls_sni(hostname);
-
   auto cert_tree = worker->get_cert_lookup_tree();
-  if (!cert_tree) {
-    return SSL_TLSEXT_ERR_OK;
-  }
 
   auto idx = cert_tree->lookup(hostname);
   if (idx == -1) {
-    return SSL_TLSEXT_ERR_OK;
+    return SSL_TLSEXT_ERR_NOACK;
   }
+
+  handler->set_tls_sni(hostname);
 
   auto conn_handler = worker->get_connection_handler();
 
@@ -189,19 +187,43 @@ int servername_callback(SSL *ssl, int *al, void *arg) {
 
 #if !defined(OPENSSL_IS_BORINGSSL) && !defined(LIBRESSL_VERSION_NUMBER) &&     \
     OPENSSL_VERSION_NUMBER >= 0x10002000L
-  // boringssl removed SSL_get_sigalgs.
-  auto num_sigalg =
-      SSL_get_sigalgs(ssl, 0, nullptr, nullptr, nullptr, nullptr, nullptr);
+  auto num_shared_curves = SSL_get_shared_curve(ssl, -1);
 
-  for (auto i = 0; i < num_sigalg; ++i) {
-    int sigalg;
-    SSL_get_sigalgs(ssl, i, nullptr, nullptr, &sigalg, nullptr, nullptr);
+  for (auto i = 0; i < num_shared_curves; ++i) {
+    auto shared_curve = SSL_get_shared_curve(ssl, i);
+
     for (auto ssl_ctx : ssl_ctx_list) {
       auto cert = SSL_CTX_get0_certificate(ssl_ctx);
-      // X509_get_signature_nid is available since OpenSSL 1.0.2.
-      auto cert_sigalg = X509_get_signature_nid(cert);
 
-      if (sigalg == cert_sigalg) {
+#if OPENSSL_1_1_API
+      auto pubkey = X509_get0_pubkey(cert);
+#else  // !OPENSSL_1_1_API
+      auto pubkey = X509_get_pubkey(cert);
+#endif // !OPENSSL_1_1_API
+
+      if (EVP_PKEY_base_id(pubkey) != EVP_PKEY_EC) {
+        continue;
+      }
+
+#if OPENSSL_1_1_API
+      auto eckey = EVP_PKEY_get0_EC_KEY(pubkey);
+#else  // !OPENSSL_1_1_API
+      auto eckey = EVP_PKEY_get1_EC_KEY(pubkey);
+#endif // !OPENSSL_1_1_API
+
+      if (eckey == nullptr) {
+        continue;
+      }
+
+      auto ecgroup = EC_KEY_get0_group(eckey);
+      auto cert_curve = EC_GROUP_get_curve_name(ecgroup);
+
+#if !OPENSSL_1_1_API
+      EC_KEY_free(eckey);
+      EVP_PKEY_free(pubkey);
+#endif // !OPENSSL_1_1_API
+
+      if (shared_curve == cert_curve) {
         SSL_set_SSL_CTX(ssl, ssl_ctx);
         return SSL_TLSEXT_ERR_OK;
       }
@@ -860,8 +882,9 @@ SSL_CTX *create_ssl_context(const char *private_key_file, const char *cert_file,
       }
       SSL_CTX_set_client_CA_list(ssl_ctx, list);
     }
-    SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER | SSL_VERIFY_CLIENT_ONCE |
-                                    SSL_VERIFY_FAIL_IF_NO_PEER_CERT,
+    SSL_CTX_set_verify(ssl_ctx,
+                       SSL_VERIFY_PEER | SSL_VERIFY_CLIENT_ONCE |
+                           SSL_VERIFY_FAIL_IF_NO_PEER_CERT,
                        verify_callback);
   }
   SSL_CTX_set_tlsext_servername_callback(ssl_ctx, servername_callback);
@@ -999,8 +1022,8 @@ SSL_CTX *create_ssl_client_context(
 
   SSL_CTX_set_options(ssl_ctx, ssl_opts | tlsconf.tls_proto_mask);
 
-  SSL_CTX_set_session_cache_mode(ssl_ctx, SSL_SESS_CACHE_CLIENT |
-                                              SSL_SESS_CACHE_NO_INTERNAL_STORE);
+  SSL_CTX_set_session_cache_mode(
+      ssl_ctx, SSL_SESS_CACHE_CLIENT | SSL_SESS_CACHE_NO_INTERNAL_STORE);
   SSL_CTX_sess_set_new_cb(ssl_ctx, tls_session_client_new_cb);
 
   if (nghttp2::tls::ssl_ctx_set_proto_versions(
@@ -1513,8 +1536,6 @@ int cert_lookup_tree_add_ssl_ctx(
 #endif // defined(LIBRESSL_VERSION_NUMBER) || OPENSSL_VERSION_NUMBER <
        // 0x10002000L
 
-  auto idx = indexed_ssl_ctx.size();
-
   auto altnames = static_cast<GENERAL_NAMES *>(
       X509_get_ext_d2i(cert, NID_subject_alt_name, nullptr, nullptr));
   if (altnames) {
@@ -1557,15 +1578,16 @@ int cert_lookup_tree_add_ssl_ctx(
       auto end_buf = std::copy_n(name, len, std::begin(buf));
       util::inp_strlower(std::begin(buf), end_buf);
 
-      auto nidx = lt->add_cert(StringRef{std::begin(buf), end_buf}, idx);
-      if (nidx == -1) {
+      auto idx = lt->add_cert(StringRef{std::begin(buf), end_buf},
+                              indexed_ssl_ctx.size());
+      if (idx == -1) {
         continue;
       }
-      idx = nidx;
-      if (idx < indexed_ssl_ctx.size()) {
+
+      if (static_cast<size_t>(idx) < indexed_ssl_ctx.size()) {
         indexed_ssl_ctx[idx].push_back(ssl_ctx);
       } else {
-        assert(idx == indexed_ssl_ctx.size());
+        assert(static_cast<size_t>(idx) == indexed_ssl_ctx.size());
         indexed_ssl_ctx.emplace_back(std::vector<SSL_CTX *>{ssl_ctx});
       }
     }
@@ -1597,15 +1619,16 @@ int cert_lookup_tree_add_ssl_ctx(
 
   util::inp_strlower(std::begin(buf), end_buf);
 
-  auto nidx = lt->add_cert(StringRef{std::begin(buf), end_buf}, idx);
-  if (nidx == -1) {
+  auto idx =
+      lt->add_cert(StringRef{std::begin(buf), end_buf}, indexed_ssl_ctx.size());
+  if (idx == -1) {
     return 0;
   }
-  idx = nidx;
-  if (idx < indexed_ssl_ctx.size()) {
+
+  if (static_cast<size_t>(idx) < indexed_ssl_ctx.size()) {
     indexed_ssl_ctx[idx].push_back(ssl_ctx);
   } else {
-    assert(idx == indexed_ssl_ctx.size());
+    assert(static_cast<size_t>(idx) == indexed_ssl_ctx.size());
     indexed_ssl_ctx.emplace_back(std::vector<SSL_CTX *>{ssl_ctx});
   }
 
@@ -1675,15 +1698,7 @@ setup_server_ssl_context(std::vector<SSL_CTX *> &all_ssl_ctx,
 
   all_ssl_ctx.push_back(ssl_ctx);
 
-  if (tlsconf.subcerts.empty()) {
-    return ssl_ctx;
-  }
-
-  if (!cert_tree) {
-    LOG(WARN) << "We have multiple additional certificates (--subcert), but "
-                 "cert_tree is not given.  SNI may not work.";
-    return ssl_ctx;
-  }
+  assert(cert_tree);
 
   if (cert_lookup_tree_add_ssl_ctx(cert_tree, indexed_ssl_ctx, ssl_ctx) == -1) {
     LOG(FATAL) << "Failed to add default certificate.";
@@ -1742,7 +1757,7 @@ void setup_downstream_http1_alpn(SSL *ssl) {
 
 std::unique_ptr<CertLookupTree> create_cert_lookup_tree() {
   auto config = get_config();
-  if (!upstream_tls_enabled(config->conn) || config->tls.subcerts.empty()) {
+  if (!upstream_tls_enabled(config->conn)) {
     return nullptr;
   }
   return make_unique<CertLookupTree>();
@@ -1802,6 +1817,84 @@ int proto_version_from_string(const StringRef &v) {
     return TLS1_VERSION;
   }
   return -1;
+}
+
+int verify_ocsp_response(SSL_CTX *ssl_ctx, const uint8_t *ocsp_resp,
+                         size_t ocsp_resplen) {
+#if !defined(LIBRESSL_VERSION_NUMBER) && OPENSSL_VERSION_NUMBER >= 0x10002000L
+  int rv;
+
+  STACK_OF(X509) * chain_certs;
+  SSL_CTX_get0_chain_certs(ssl_ctx, &chain_certs);
+
+  auto resp = d2i_OCSP_RESPONSE(nullptr, &ocsp_resp, ocsp_resplen);
+  if (resp == nullptr) {
+    LOG(ERROR) << "d2i_OCSP_RESPONSE failed";
+    return -1;
+  }
+  auto resp_deleter = defer(OCSP_RESPONSE_free, resp);
+
+  ERR_clear_error();
+
+  auto bs = OCSP_response_get1_basic(resp);
+  if (bs == nullptr) {
+    LOG(ERROR) << "OCSP_response_get1_basic failed: "
+               << ERR_error_string(ERR_get_error(), nullptr);
+    return -1;
+  }
+  auto bs_deleter = defer(OCSP_BASICRESP_free, bs);
+
+  ERR_clear_error();
+
+  rv = OCSP_basic_verify(bs, chain_certs, nullptr, OCSP_TRUSTOTHER);
+
+  if (rv != 1) {
+    LOG(ERROR) << "OCSP_basic_verify failed: "
+               << ERR_error_string(ERR_get_error(), nullptr);
+    return -1;
+  }
+
+  auto sresp = OCSP_resp_get0(bs, 0);
+  if (sresp == nullptr) {
+    LOG(ERROR) << "OCSP response verification failed: no single response";
+    return -1;
+  }
+
+#if OPENSSL_1_1_API
+  auto certid = OCSP_SINGLERESP_get0_id(sresp);
+#else  // !OPENSSL_1_1_API
+  auto certid = sresp->certId;
+#endif // !OPENSSL_1_1_API
+  assert(certid != nullptr);
+
+  ASN1_INTEGER *serial;
+  rv = OCSP_id_get0_info(nullptr, nullptr, nullptr, &serial,
+                         const_cast<OCSP_CERTID *>(certid));
+  if (rv != 1) {
+    LOG(ERROR) << "OCSP_id_get0_info failed";
+    return -1;
+  }
+
+  if (serial == nullptr) {
+    LOG(ERROR) << "OCSP response does not contain serial number";
+    return -1;
+  }
+
+  auto cert = SSL_CTX_get0_certificate(ssl_ctx);
+  auto cert_serial = X509_get_serialNumber(cert);
+
+  if (ASN1_INTEGER_cmp(cert_serial, serial)) {
+    LOG(ERROR) << "OCSP verification serial numbers do not match";
+    return -1;
+  }
+
+  if (LOG_ENABLED(INFO)) {
+    LOG(INFO) << "OCSP verification succeeded";
+  }
+#endif // !defined(LIBRESSL_VERSION_NUMBER) && OPENSSL_VERSION_NUMBER >=
+       // 0x10002000L
+
+  return 0;
 }
 
 } // namespace tls
