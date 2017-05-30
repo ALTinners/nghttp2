@@ -118,7 +118,8 @@ ConnectionHandler::ConnectionHandler(struct ev_loop *loop, std::mt19937 &gen)
       tls_ticket_key_memcached_get_retry_count_(0),
       tls_ticket_key_memcached_fail_count_(0),
       worker_round_robin_cnt_(get_config()->api.enabled ? 1 : 0),
-      graceful_shutdown_(false) {
+      graceful_shutdown_(false),
+      enable_acceptor_on_ocsp_completion_(false) {
   ev_timer_init(&disable_acceptor_timer_, acceptor_disable_cb, 0., 0.);
   disable_acceptor_timer_.data = this;
 
@@ -219,17 +220,19 @@ int ConnectionHandler::create_single_worker() {
 
   auto config = get_config();
   auto &tlsconf = config->tls;
-  auto &memcachedconf = config->tls.session_cache.memcached;
 
   SSL_CTX *session_cache_ssl_ctx = nullptr;
-  if (memcachedconf.tls) {
-    session_cache_ssl_ctx = tls::create_ssl_client_context(
+  {
+    auto &memcachedconf = config->tls.session_cache.memcached;
+    if (memcachedconf.tls) {
+      session_cache_ssl_ctx = tls::create_ssl_client_context(
 #ifdef HAVE_NEVERBLEED
-        nb_.get(),
+          nb_.get(),
 #endif // HAVE_NEVERBLEED
-        tlsconf.cacert, memcachedconf.cert_file, memcachedconf.private_key_file,
-        nullptr);
-    all_ssl_ctx_.push_back(session_cache_ssl_ctx);
+          tlsconf.cacert, memcachedconf.cert_file,
+          memcachedconf.private_key_file, nullptr);
+      all_ssl_ctx_.push_back(session_cache_ssl_ctx);
+    }
   }
 
   single_worker_ = make_unique<Worker>(
@@ -268,7 +271,6 @@ int ConnectionHandler::create_worker_thread(size_t num) {
 
   auto config = get_config();
   auto &tlsconf = config->tls;
-  auto &memcachedconf = config->tls.session_cache.memcached;
   auto &apiconf = config->api;
 
   // We have dedicated worker for API request processing.
@@ -276,10 +278,10 @@ int ConnectionHandler::create_worker_thread(size_t num) {
     ++num;
   }
 
-  for (size_t i = 0; i < num; ++i) {
-    auto loop = ev_loop_new(config->ev_loop_flags);
+  SSL_CTX *session_cache_ssl_ctx = nullptr;
+  {
+    auto &memcachedconf = config->tls.session_cache.memcached;
 
-    SSL_CTX *session_cache_ssl_ctx = nullptr;
     if (memcachedconf.tls) {
       session_cache_ssl_ctx = tls::create_ssl_client_context(
 #ifdef HAVE_NEVERBLEED
@@ -289,6 +291,11 @@ int ConnectionHandler::create_worker_thread(size_t num) {
           memcachedconf.private_key_file, nullptr);
       all_ssl_ctx_.push_back(session_cache_ssl_ctx);
     }
+  }
+
+  for (size_t i = 0; i < num; ++i) {
+    auto loop = ev_loop_new(config->ev_loop_flags);
+
     auto worker = make_unique<Worker>(
         loop, sv_ssl_ctx, cl_ssl_ctx, session_cache_ssl_ctx, cert_tree_.get(),
         ticket_keys_, this, config->conn.downstream);
@@ -498,6 +505,9 @@ bool ConnectionHandler::get_graceful_shutdown() const {
 }
 
 void ConnectionHandler::cancel_ocsp_update() {
+  enable_acceptor_on_ocsp_completion_ = false;
+  ev_timer_stop(loop_, &ocsp_timer_);
+
   if (ocsp_.proc.pid == 0) {
     return;
   }
@@ -610,8 +620,13 @@ void ConnectionHandler::handle_ocsp_complete() {
               << " finished successfully";
   }
 
+  auto config = get_config();
+  auto &tlsconf = config->tls;
+
+  if (tlsconf.ocsp.no_verify ||
+      tls::verify_ocsp_response(ssl_ctx, ocsp_.resp.data(),
+                                ocsp_.resp.size()) == 0) {
 #ifndef OPENSSL_IS_BORINGSSL
-  {
 #ifdef HAVE_ATOMIC_STD_SHARED_PTR
     std::atomic_store_explicit(
         &tls_ctx_data->ocsp_data,
@@ -622,10 +637,10 @@ void ConnectionHandler::handle_ocsp_complete() {
     tls_ctx_data->ocsp_data =
         std::make_shared<std::vector<uint8_t>>(std::move(ocsp_.resp));
 #endif // !HAVE_ATOMIC_STD_SHARED_PTR
-  }
 #else  // OPENSSL_IS_BORINGSSL
-  SSL_CTX_set_ocsp_response(ssl_ctx, ocsp_.resp.data(), ocsp_.resp.size());
+    SSL_CTX_set_ocsp_response(ssl_ctx, ocsp_.resp.data(), ocsp_.resp.size());
 #endif // OPENSSL_IS_BORINGSSL
+  }
 
   ++ocsp_.next;
   proceed_next_cert_ocsp();
@@ -650,6 +665,12 @@ void ConnectionHandler::proceed_next_cert_ocsp() {
       // We have updated all ocsp response, and schedule next update.
       ev_timer_set(&ocsp_timer_, get_config()->tls.ocsp.update_interval, 0.);
       ev_timer_start(loop_, &ocsp_timer_);
+
+      if (enable_acceptor_on_ocsp_completion_) {
+        enable_acceptor_on_ocsp_completion_ = false;
+        enable_acceptor();
+      }
+
       return;
     }
 
@@ -847,6 +868,10 @@ SSL_CTX *ConnectionHandler::get_ssl_ctx(size_t idx) const {
 const std::vector<SSL_CTX *> &
 ConnectionHandler::get_indexed_ssl_ctx(size_t idx) const {
   return indexed_ssl_ctx_[idx];
+}
+
+void ConnectionHandler::set_enable_acceptor_on_ocsp_completion(bool f) {
+  enable_acceptor_on_ocsp_completion_ = f;
 }
 
 } // namespace shrpx
