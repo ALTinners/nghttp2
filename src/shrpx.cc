@@ -1392,7 +1392,7 @@ constexpr auto DEFAULT_NPN_LIST = StringRef::from_lit("h2,h2-16,h2-14,"
 } // namespace
 
 namespace {
-constexpr auto DEFAULT_TLS_MIN_PROTO_VERSION = StringRef::from_lit("TLSv1.1");
+constexpr auto DEFAULT_TLS_MIN_PROTO_VERSION = StringRef::from_lit("TLSv1.2");
 #ifdef TLS1_3_VERSION
 constexpr auto DEFAULT_TLS_MAX_PROTO_VERSION = StringRef::from_lit("TLSv1.3");
 #else  // !TLS1_3_VERSION
@@ -2071,11 +2071,14 @@ SSL/TLS:
               Don't  verify backend  server's  certificate  if TLS  is
               enabled for backend connections.
   --cacert=<PATH>
-              Set path to trusted CA  certificate file used in backend
-              TLS connections.   The file must  be in PEM  format.  It
-              can  contain  multiple   certificates.   If  the  linked
-              OpenSSL is configured to  load system wide certificates,
-              they are loaded at startup regardless of this option.
+              Set path to trusted CA  certificate file.  It is used in
+              backend  TLS connections  to verify  peer's certificate.
+              It is also used to  verify OCSP response from the script
+              set by --fetch-ocsp-response-file.  The  file must be in
+              PEM format.   It can contain multiple  certificates.  If
+              the  linked OpenSSL  is configured  to load  system wide
+              certificates, they  are loaded at startup  regardless of
+              this option.
   --private-key-passwd-file=<PATH>
               Path  to file  that contains  password for  the server's
               private key.   If none is  given and the private  key is
@@ -2131,7 +2134,11 @@ SSL/TLS:
               --tls-min-proto-version and  --tls-max-proto-version are
               enabled.  If the protocol list advertised by client does
               not  overlap  this range,  you  will  receive the  error
-              message "unknown protocol".  The available versions are:
+              message "unknown protocol".  If a protocol version lower
+              than TLSv1.2 is specified, make sure that the compatible
+              ciphers are  included in --ciphers option.   The default
+              cipher  list  only   includes  ciphers  compatible  with
+              TLSv1.2 or above.  The available versions are:
               )"
 #ifdef TLS1_3_VERSION
                              "TLSv1.3, "
