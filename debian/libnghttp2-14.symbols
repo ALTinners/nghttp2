@@ -46,6 +46,7 @@ libnghttp2.so.14 libnghttp2-14 #MINVER#
  nghttp2_rcbuf_decref@Base 1.9.1
  nghttp2_rcbuf_get_buf@Base 1.9.1
  nghttp2_rcbuf_incref@Base 1.9.1
+ nghttp2_rcbuf_is_static@Base 1.25.0
  nghttp2_select_next_protocol@Base 1.3.0
  nghttp2_session_callbacks_del@Base 1.3.0
  nghttp2_session_callbacks_new@Base 1.3.0
