@@ -6,11 +6,11 @@
 
 #include <string.h>
 #include <limits.h>
-#include "mruby/dump.h"
-#include "mruby/string.h"
-#include "mruby/irep.h"
-#include "mruby/numeric.h"
-#include "mruby/debug.h"
+#include <mruby/dump.h>
+#include <mruby/string.h>
+#include <mruby/irep.h>
+#include <mruby/numeric.h>
+#include <mruby/debug.h>
 
 #define FLAG_BYTEORDER_NATIVE 2
 #define FLAG_BYTEORDER_NONATIVE 0
@@ -54,7 +54,7 @@ write_irep_header(mrb_state *mrb, mrb_irep *irep, uint8_t *buf)
 {
   uint8_t *cur = buf;
 
-  cur += uint32_to_bin(get_irep_record_size_1(mrb, irep), cur);  /* record size */
+  cur += uint32_to_bin((uint32_t)get_irep_record_size_1(mrb, irep), cur);  /* record size */
   cur += uint16_to_bin((uint16_t)irep->nlocals, cur);  /* number of local variable */
   cur += uint16_to_bin((uint16_t)irep->nregs, cur);  /* number of register variable */
   cur += uint16_to_bin((uint16_t)irep->rlen, cur);  /* number of child irep */
@@ -407,7 +407,8 @@ write_lineno_record_1(mrb_state *mrb, mrb_irep *irep, uint8_t* bin)
 
   if (irep->filename) {
     filename_len = strlen(irep->filename);
-  } else {
+  }
+  else {
     filename_len = 0;
   }
   mrb_assert_int_fit(size_t, filename_len, uint16_t, UINT16_MAX);
@@ -1059,6 +1060,7 @@ mrb_dump_irep_cfunc(mrb_state *mrb, mrb_irep *irep, uint8_t flags, FILE *fp, con
       return MRB_DUMP_WRITE_FAULT;
     }
     if (fprintf(fp,
+          "extern const uint8_t %s[];\n"
           "const uint8_t\n"
           "#if defined __GNUC__\n"
           "__attribute__((aligned(%u)))\n"
@@ -1066,6 +1068,7 @@ mrb_dump_irep_cfunc(mrb_state *mrb, mrb_irep *irep, uint8_t flags, FILE *fp, con
           "__declspec(align(%u))\n"
           "#endif\n"
           "%s[] = {",
+          initname,
           (uint16_t)MRB_DUMP_ALIGNMENT, (uint16_t)MRB_DUMP_ALIGNMENT, initname) < 0) {
       mrb_free(mrb, bin);
       return MRB_DUMP_WRITE_FAULT;

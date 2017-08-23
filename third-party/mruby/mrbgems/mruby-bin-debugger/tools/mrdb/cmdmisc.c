@@ -8,7 +8,7 @@
 #include <string.h>
 
 #include "apilist.h"
-#include "mruby/compile.h"
+#include <mruby/compile.h>
 
 typedef struct help_msg {
   const char *cmd1;
@@ -333,7 +333,7 @@ check_cmd_pattern(const char *pattern, const char *cmd)
   if (pattern == NULL || cmd == NULL) {
     return FALSE;
   }
-  if((lbracket = strchr(pattern, '[')) == NULL) {
+  if ((lbracket = strchr(pattern, '[')) == NULL) {
     return !strcmp(pattern, cmd);
   }
   if ((rbracket = strchr(pattern, ']')) == NULL) {

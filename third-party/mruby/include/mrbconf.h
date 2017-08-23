@@ -7,6 +7,23 @@
 #ifndef MRUBYCONF_H
 #define MRUBYCONF_H
 
+#include <limits.h>
+#include <stdint.h>
+
+/* architecture selection: */
+/* specify -DMRB_32BIT or -DMRB_64BIT to override */
+#if !defined(MRB_32BIT) && !defined(MRB_64BIT)
+#if UINT64_MAX == SIZE_MAX
+#define MRB_64BIT
+#else
+#define MRB_32BIT
+#endif
+#endif
+
+#if defined(MRB_32BIT) && defined(MRB_64BIT)
+#error Cannot build for 32 and 64 bit architecture at the same time
+#endif
+
 /* configuration options: */
 /* add -DMRB_USE_FLOAT to use float instead of double for floating point numbers */
 //#define MRB_USE_FLOAT
@@ -34,12 +51,6 @@
 
 /* number of object per heap page */
 //#define MRB_HEAP_PAGE_SIZE 1024
-
-/* use segmented list for IV table */
-//#define MRB_USE_IV_SEGLIST
-
-/* initial size for IV khash; ignored when MRB_USE_IV_SEGLIST is set */
-//#define MRB_IVHASH_INIT_SIZE 8
 
 /* if _etext and _edata available, mruby can reduce memory used by symbols */
 //#define MRB_USE_ETEXT_EDATA

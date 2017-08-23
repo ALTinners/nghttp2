@@ -10,11 +10,7 @@ def t_print(*args)
   len = args.size
   while i < len
     str = args[i].to_s
-    begin
-      __printstr__ str
-    rescue NoMethodError
-      __t_printstr__ str rescue print str
-    end
+    __t_printstr__ str rescue print str
     i += 1
   end
 end
@@ -27,8 +23,8 @@ def assertion_string(err, str, iso=nil, e=nil, bt=nil)
   msg += " => #{e.message}" if e
   msg += " (mrbgems: #{GEMNAME})" if Object.const_defined?(:GEMNAME)
   if $mrbtest_assert && $mrbtest_assert.size > 0
-    $mrbtest_assert.each do |idx, str, diff|
-      msg += "\n - Assertion[#{idx}] Failed: #{str}\n#{diff}"
+    $mrbtest_assert.each do |idx, assert_msg, diff|
+      msg += "\n - Assertion[#{idx}] Failed: #{assert_msg}\n#{diff}"
     end
   end
   msg += "\nbacktrace:\n\t#{bt.join("\n\t")}" if bt
@@ -48,7 +44,8 @@ def assert(str = 'Assertion failed', iso = '')
   begin
     $mrbtest_assert = []
     $mrbtest_assert_idx = 0
-    if(!yield || $mrbtest_assert.size > 0)
+    yield
+    if($mrbtest_assert.size > 0)
       $asserts.push(assertion_string('Fail: ', str, iso, nil))
       $ko_test += 1
       t_print('F')
@@ -65,7 +62,7 @@ def assert(str = 'Assertion failed', iso = '')
       $asserts.push(assertion_string("#{e.class}: ", str, iso, e, bt))
       $kill_test += 1
       t_print('X')
-  end
+    end
   ensure
     $mrbtest_assert = nil
   end
@@ -160,7 +157,7 @@ def assert_raise(*exp)
       msg = "#{msg}#{exp.inspect} exception expected, not"
       diff = "      Class: <#{e.class}>\n" +
              "    Message: #{e.message}"
-      if not exp.any?{|ex| ex.instance_of?(Module) ? e.kind_of?(ex) : ex == e.class }
+      unless exp.any?{|ex| ex.instance_of?(Module) ? e.kind_of?(ex) : ex == e.class }
         $mrbtest_assert.push([$mrbtest_assert_idx, msg, diff])
         ret = false
       end
@@ -217,7 +214,7 @@ def report()
   t_print("\n")
 
   $asserts.each do |msg|
-    puts msg
+    t_print "#{msg}\n"
   end
 
   $total_test = $ok_test+$ko_test+$kill_test
@@ -236,7 +233,7 @@ end
 ##
 # Performs fuzzy check for equality on methods returning floats
 def check_float(a, b)
-  tolerance = 1e-12
+  tolerance = Mrbtest::FLOAT_TOLERANCE
   a = a.to_f
   b = b.to_f
   if a.finite? and b.finite?
