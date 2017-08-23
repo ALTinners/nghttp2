@@ -4,23 +4,21 @@
 ** See Copyright Notice in mruby.h
 */
 
-#include "mruby.h"
-#include "mruby/array.h"
-#include "mruby/class.h"
-#include "mruby/proc.h"
-#include "mruby/string.h"
+#include <mruby.h>
+#include <mruby/array.h>
+#include <mruby/class.h>
+#include <mruby/proc.h>
+#include <mruby/string.h>
 
 typedef int (iv_foreach_func)(mrb_state*,mrb_sym,mrb_value,void*);
 
-#ifdef MRB_USE_IV_SEGLIST
-
-#ifndef MRB_SEGMENT_SIZE
-#define MRB_SEGMENT_SIZE 4
+#ifndef MRB_IV_SEGMENT_SIZE
+#define MRB_IV_SEGMENT_SIZE 4
 #endif
 
 typedef struct segment {
-  mrb_sym key[MRB_SEGMENT_SIZE];
-  mrb_value val[MRB_SEGMENT_SIZE];
+  mrb_sym key[MRB_IV_SEGMENT_SIZE];
+  mrb_value val[MRB_IV_SEGMENT_SIZE];
   struct segment *next;
 } segment;
 
@@ -44,7 +42,7 @@ iv_new(mrb_state *mrb)
 {
   iv_tbl *t;
 
-  t = mrb_malloc(mrb, sizeof(iv_tbl));
+  t = (iv_tbl*)mrb_malloc(mrb, sizeof(iv_tbl));
   t->size = 0;
   t->rootseg =  NULL;
   t->last_len = 0;
@@ -71,7 +69,7 @@ iv_put(mrb_state *mrb, iv_tbl *t, mrb_sym sym, mrb_value val)
   size_t i;
 
   while (seg) {
-    for (i=0; i<MRB_SEGMENT_SIZE; i++) {
+    for (i=0; i<MRB_IV_SEGMENT_SIZE; i++) {
       mrb_sym key = seg->key[i];
       /* Found room in last segment after last_len */
       if (!seg->next && i >= t->last_len) {
@@ -102,7 +100,7 @@ iv_put(mrb_state *mrb, iv_tbl *t, mrb_sym sym, mrb_value val)
     return;
   }
 
-  seg = mrb_malloc(mrb, sizeof(segment));
+  seg = (segment*)mrb_malloc(mrb, sizeof(segment));
   if (!seg) return;
   seg->next = NULL;
   seg->key[0] = sym;
@@ -136,7 +134,7 @@ iv_get(mrb_state *mrb, iv_tbl *t, mrb_sym sym, mrb_value *vp)
 
   seg = t->rootseg;
   while (seg) {
-    for (i=0; i<MRB_SEGMENT_SIZE; i++) {
+    for (i=0; i<MRB_IV_SEGMENT_SIZE; i++) {
       mrb_sym key = seg->key[i];
 
       if (!seg->next && i >= t->last_len) {
@@ -171,7 +169,7 @@ iv_del(mrb_state *mrb, iv_tbl *t, mrb_sym sym, mrb_value *vp)
 
   seg = t->rootseg;
   while (seg) {
-    for (i=0; i<MRB_SEGMENT_SIZE; i++) {
+    for (i=0; i<MRB_IV_SEGMENT_SIZE; i++) {
       mrb_sym key = seg->key[i];
 
       if (!seg->next && i >= t->last_len) {
@@ -198,7 +196,7 @@ iv_foreach(mrb_state *mrb, iv_tbl *t, iv_foreach_func *func, void *p)
 
   seg = t->rootseg;
   while (seg) {
-    for (i=0; i<MRB_SEGMENT_SIZE; i++) {
+    for (i=0; i<MRB_IV_SEGMENT_SIZE; i++) {
       mrb_sym key = seg->key[i];
 
       /* no value in last segment after last_len */
@@ -234,7 +232,7 @@ iv_size(mrb_state *mrb, iv_tbl *t)
       return size;
     }
     seg = seg->next;
-    size += MRB_SEGMENT_SIZE;
+    size += MRB_IV_SEGMENT_SIZE;
   }
   /* empty iv_tbl */
   return 0;
@@ -252,7 +250,7 @@ iv_copy(mrb_state *mrb, iv_tbl *t)
   t2 = iv_new(mrb);
 
   while (seg != NULL) {
-    for (i=0; i<MRB_SEGMENT_SIZE; i++) {
+    for (i=0; i<MRB_IV_SEGMENT_SIZE; i++) {
       mrb_sym key = seg->key[i];
       mrb_value val = seg->val[i];
 
@@ -279,115 +277,6 @@ iv_free(mrb_state *mrb, iv_tbl *t)
   }
   mrb_free(mrb, t);
 }
-
-#else
-
-#include "mruby/khash.h"
-
-#ifndef MRB_IVHASH_INIT_SIZE
-#define MRB_IVHASH_INIT_SIZE 8
-#endif
-
-KHASH_DECLARE(iv, mrb_sym, mrb_value, TRUE)
-KHASH_DEFINE(iv, mrb_sym, mrb_value, TRUE, kh_int_hash_func, kh_int_hash_equal)
-
-typedef struct iv_tbl {
-  khash_t(iv) h;
-} iv_tbl;
-
-static iv_tbl*
-iv_new(mrb_state *mrb)
-{
-  return (iv_tbl*)kh_init_size(iv, mrb, MRB_IVHASH_INIT_SIZE);
-}
-
-static void
-iv_put(mrb_state *mrb, iv_tbl *t, mrb_sym sym, mrb_value val)
-{
-  khash_t(iv) *h = &t->h;
-  khiter_t k;
-
-  k = kh_put(iv, mrb, h, sym);
-  kh_value(h, k) = val;
-}
-
-static mrb_bool
-iv_get(mrb_state *mrb, iv_tbl *t, mrb_sym sym, mrb_value *vp)
-{
-  khash_t(iv) *h = &t->h;
-  khiter_t k;
-
-  k = kh_get(iv, mrb, h, sym);
-  if (k != kh_end(h)) {
-    if (vp) *vp = kh_value(h, k);
-    return TRUE;
-  }
-  return FALSE;
-}
-
-static mrb_bool
-iv_del(mrb_state *mrb, iv_tbl *t, mrb_sym sym, mrb_value *vp)
-{
-  khash_t(iv) *h = &t->h;
-  khiter_t k;
-
-  if (h) {
-    k = kh_get(iv, mrb, h, sym);
-    if (k != kh_end(h)) {
-      mrb_value val = kh_value(h, k);
-      kh_del(iv, mrb, h, k);
-      if (vp) *vp = val;
-      return TRUE;
-    }
-  }
-  return FALSE;
-}
-
-static mrb_bool
-iv_foreach(mrb_state *mrb, iv_tbl *t, iv_foreach_func *func, void *p)
-{
-  khash_t(iv) *h = &t->h;
-  khiter_t k;
-  int n;
-
-  if (h) {
-    for (k = kh_begin(h); k != kh_end(h); k++) {
-      if (kh_exist(h, k)) {
-        n = (*func)(mrb, kh_key(h, k), kh_value(h, k), p);
-        if (n > 0) return FALSE;
-        if (n < 0) {
-          kh_del(iv, mrb, h, k);
-        }
-      }
-    }
-  }
-  return TRUE;
-}
-
-static size_t
-iv_size(mrb_state *mrb, iv_tbl *t)
-{
-  khash_t(iv) *h;
-
-  if (t && (h = &t->h)) {
-    return kh_size(h);
-  }
-  return 0;
-}
-
-static iv_tbl*
-iv_copy(mrb_state *mrb, iv_tbl *t)
-{
-  return (iv_tbl*)kh_copy(iv, mrb, &t->h);
-}
-
-static void
-iv_free(mrb_state *mrb, iv_tbl *t)
-{
-  kh_destroy(iv, mrb, &t->h);
-}
-
-#endif
 
 static int
 iv_mark_i(mrb_state *mrb, mrb_sym sym, mrb_value v, void *p)
@@ -489,6 +378,9 @@ mrb_obj_iv_set(mrb_state *mrb, struct RObject *obj, mrb_sym sym, mrb_value v)
 {
   iv_tbl *t = obj->iv;
 
+  if (MRB_FROZEN_P(obj)) {
+    mrb_raisef(mrb, E_RUNTIME_ERROR, "can't modify frozen %S", mrb_obj_value(obj));
+  }
   if (!t) {
     t = obj->iv = iv_new(mrb);
   }
@@ -756,30 +648,34 @@ mrb_mod_class_variables(mrb_state *mrb, mrb_value mod)
 }
 
 MRB_API mrb_value
-mrb_mod_cv_get(mrb_state *mrb, struct RClass * c, mrb_sym sym)
+mrb_mod_cv_get(mrb_state *mrb, struct RClass *c, mrb_sym sym)
 {
   struct RClass * cls = c;
   mrb_value v;
+  int given = FALSE;
 
   while (c) {
     if (c->iv && iv_get(mrb, c->iv, sym, &v)) {
-      return v;
+      given = TRUE;
     }
     c = c->super;
   }
+  if (given) return v;
   if (cls && cls->tt == MRB_TT_SCLASS) {
     mrb_value klass;
 
     klass = mrb_obj_iv_get(mrb, (struct RObject *)cls,
                            mrb_intern_lit(mrb, "__attached__"));
     c = mrb_class_ptr(klass);
-    if (c->tt == MRB_TT_CLASS) {
+    if (c->tt == MRB_TT_CLASS || c->tt == MRB_TT_MODULE) {
+      given = FALSE;
       while (c) {
         if (c->iv && iv_get(mrb, c->iv, sym, &v)) {
-          return v;
+          given = TRUE;
         }
         c = c->super;
       }
+      if (given) return v;
     }
   }
   mrb_name_error(mrb, sym, "uninitialized class variable %S in %S",
@@ -812,12 +708,32 @@ mrb_mod_cv_set(mrb_state *mrb, struct RClass *c, mrb_sym sym, mrb_value v)
     c = c->super;
   }
 
-  if (!cls->iv) {
-    cls->iv = iv_new(mrb);
+  if (cls && cls->tt == MRB_TT_SCLASS) {
+    mrb_value klass;
+
+    klass = mrb_obj_iv_get(mrb, (struct RObject*)cls,
+                           mrb_intern_lit(mrb, "__attached__"));
+    switch (mrb_type(klass)) {
+    case MRB_TT_CLASS:
+    case MRB_TT_MODULE:
+    case MRB_TT_SCLASS:
+      c = mrb_class_ptr(klass);
+      break;
+    default:
+      c = cls;
+      break;
+    }
+  }
+  else{
+    c = cls;
   }
 
-  mrb_write_barrier(mrb, (struct RBasic*)cls);
-  iv_put(mrb, cls->iv, sym, v);
+  if (!c->iv) {
+    c->iv = iv_new(mrb);
+  }
+
+  mrb_write_barrier(mrb, (struct RBasic*)c);
+  iv_put(mrb, c->iv, sym, v);
 }
 
 MRB_API void
@@ -926,14 +842,14 @@ mrb_vm_const_get(mrb_state *mrb, mrb_sym sym)
     if (c->iv && iv_get(mrb, c->iv, sym, &v)) {
       return v;
     }
-    if (c->tt == MRB_TT_SCLASS) {
+    c2 = c;
+    while (c2 && c2->tt == MRB_TT_SCLASS) {
       mrb_value klass;
-      klass = mrb_obj_iv_get(mrb, (struct RObject *)c,
+      klass = mrb_obj_iv_get(mrb, (struct RObject *)c2,
                              mrb_intern_lit(mrb, "__attached__"));
       c2 = mrb_class_ptr(klass);
-      if (c2->tt == MRB_TT_CLASS)
-        c = c2;
     }
+    if (c2->tt == MRB_TT_CLASS || c2->tt == MRB_TT_MODULE) c = c2;
     c2 = c;
     for (;;) {
       c2 = mrb_class_outer_module(mrb, c2);

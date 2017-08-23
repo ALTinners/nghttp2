@@ -9,9 +9,9 @@
 #include "mrdb.h"
 #include "mrdberror.h"
 #include "apilist.h"
-#include "mruby/compile.h"
-#include "mruby/irep.h"
-#include "mruby/debug.h"
+#include <mruby/compile.h>
+#include <mruby/irep.h>
+#include <mruby/debug.h>
 
 #define LINE_BUF_SIZE MAX_COMMAND_LINE
 
@@ -71,7 +71,7 @@ dirname(mrb_state *mrb, const char *path)
   }
 
   p = strrchr(path, '/');
-  len = p != NULL ? p - path : strlen(path);
+  len = p != NULL ? (size_t)(p - path) : strlen(path);
 
   dir = mrb_malloc(mrb, len + 1);
   strncpy(dir, path, len);
