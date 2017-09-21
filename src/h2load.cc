@@ -90,6 +90,8 @@ Config::Config()
       connection_window_bits(30),
       rate(0),
       rate_period(1.0),
+      duration(0.0),
+      warm_up_time(0.0),
       conn_active_timeout(0.),
       conn_inactivity_timeout(0.),
       no_tls_proto(PROTO_HTTP2),
@@ -118,6 +120,7 @@ Config::~Config() {
 }
 
 bool Config::is_rate_mode() const { return (this->rate != 0); }
+bool Config::is_timing_based_mode() const { return (this->duration > 0); }
 bool Config::has_base_uri() const { return (!this->base_uri.empty()); }
 Config config;
 
@@ -151,31 +154,10 @@ std::mt19937 gen(rd());
 } // namespace
 
 namespace {
-void sampling_init(Sampling &smp, size_t total, size_t max_samples) {
+void sampling_init(Sampling &smp, size_t max_samples) {
   smp.n = 0;
-
-  if (total <= max_samples) {
-    smp.interval = 0.;
-    smp.point = 0.;
-    return;
-  }
-
-  smp.interval = static_cast<double>(total) / max_samples;
-
-  std::uniform_real_distribution<> dis(0., smp.interval);
-
-  smp.point = dis(gen);
+  smp.max_samples = max_samples;
 }
-} // namespace
-
-namespace {
-bool sampling_should_pick(Sampling &smp) {
-  return smp.interval == 0. || smp.n == ceil(smp.point);
-}
-} // namespace
-
-namespace {
-void sampling_advance_point(Sampling &smp) { smp.point += smp.interval; }
 } // namespace
 
 namespace {
@@ -190,6 +172,7 @@ void writecb(struct ev_loop *loop, ev_io *w, int revents) {
     rv = client->connect();
     if (rv != 0) {
       client->fail();
+      client->worker->free_client(client);
       delete client;
       return;
     }
@@ -197,6 +180,7 @@ void writecb(struct ev_loop *loop, ev_io *w, int revents) {
   }
   if (rv != 0) {
     client->fail();
+    client->worker->free_client(client);
     delete client;
   }
 }
@@ -210,6 +194,7 @@ void readcb(struct ev_loop *loop, ev_io *w, int revents) {
     if (client->try_again_or_fail() == 0) {
       return;
     }
+    client->worker->free_client(client);
     delete client;
     return;
   }
@@ -241,13 +226,68 @@ void rate_period_timeout_w_cb(struct ev_loop *loop, ev_timer *w, int revents) {
       std::cerr << "client could not connect to host" << std::endl;
       client->fail();
     } else {
-      client.release();
+      if (worker->config->is_timing_based_mode()) {
+        worker->clients.push_back(client.release());
+      } else {
+        client.release();
+      }
     }
     worker->report_rate_progress();
   }
-  if (worker->nconns_made >= worker->nclients) {
-    ev_timer_stop(worker->loop, w);
+  if (!worker->config->is_timing_based_mode()) {
+    if (worker->nconns_made >= worker->nclients) {
+      ev_timer_stop(worker->loop, w);
+    }
+  } else {
+    // To check whether all created clients are pushed correctly
+    assert(worker->nclients == worker->clients.size());
   }
+}
+} // namespace
+
+namespace {
+// Called when the duration for infinite number of requests are over
+void duration_timeout_cb(struct ev_loop *loop, ev_timer *w, int revents) {
+  auto worker = static_cast<Worker *>(w->data);
+
+  worker->current_phase = Phase::DURATION_OVER;
+
+  std::cout << "Main benchmark duration is over for thread #" << worker->id
+            << ". Stopping all clients." << std::endl;
+  worker->stop_all_clients();
+  std::cout << "Stopped all clients for thread #" << worker->id << std::endl;
+}
+} // namespace
+
+namespace {
+// Called when the warmup duration for infinite number of requests are over
+void warmup_timeout_cb(struct ev_loop *loop, ev_timer *w, int revents) {
+  auto worker = static_cast<Worker *>(w->data);
+
+  std::cout << "Warm-up phase is over for thread #" << worker->id << "."
+            << std::endl;
+  std::cout << "Main benchmark duration is started for thread #" << worker->id
+            << "." << std::endl;
+  assert(worker->stats.req_started == 0);
+  assert(worker->stats.req_done == 0);
+
+  for (auto client : worker->clients) {
+    if (client) {
+      assert(client->req_todo == 0);
+      assert(client->req_left == 1);
+      assert(client->req_inflight == 0);
+      assert(client->req_started == 0);
+      assert(client->req_done == 0);
+
+      client->record_client_start_time();
+      client->clear_connect_times();
+      client->record_connect_start_time();
+    }
+  }
+
+  worker->current_phase = Phase::MAIN_DURATION;
+
+  ev_timer_start(worker->loop, &worker->duration_watcher);
 }
 } // namespace
 
@@ -269,8 +309,7 @@ void conn_timeout_cb(EV_P_ ev_timer *w, int revents) {
 
 namespace {
 bool check_stop_client_request_timeout(Client *client, ev_timer *w) {
-  if (client->req_left == 0 ||
-      client->streams.size() >= client->session->max_concurrent_streams()) {
+  if (client->req_left == 0) {
     // no more requests to make, stop timer
     ev_timer_stop(client->worker->loop, w);
     return true;
@@ -283,6 +322,11 @@ bool check_stop_client_request_timeout(Client *client, ev_timer *w) {
 namespace {
 void client_request_timeout_cb(struct ev_loop *loop, ev_timer *w, int revents) {
   auto client = static_cast<Client *>(w->data);
+
+  if (client->streams.size() >= (size_t)config.max_concurrent_streams) {
+    ev_timer_stop(client->worker->loop, w);
+    return;
+  }
 
   if (client->submit_request() != 0) {
     ev_timer_stop(client->worker->loop, w);
@@ -336,6 +380,11 @@ Client::Client(uint32_t id, Worker *worker, size_t req_todo)
       fd(-1),
       new_connection_requested(false),
       final(false) {
+  if (req_todo == 0) { // this means infinite number of requests are to be made
+    // This ensures that number of requests are unbounded
+    // Just a positive number is fine, we chose the first positive number
+    req_left = 1;
+  }
   ev_io_init(&wev, writecb, 0, EV_WRITE);
   ev_io_init(&rev, readcb, 0, EV_READ);
 
@@ -361,10 +410,7 @@ Client::~Client() {
     SSL_free(ssl);
   }
 
-  if (sampling_should_pick(worker->client_smp)) {
-    sampling_advance_point(worker->client_smp);
-    worker->sample_client_stat(&cstat);
-  }
+  worker->sample_client_stat(&cstat);
   ++worker->client_smp.n;
 }
 
@@ -407,9 +453,17 @@ int Client::make_socket(addrinfo *addr) {
 int Client::connect() {
   int rv;
 
-  record_client_start_time();
-  clear_connect_times();
-  record_connect_start_time();
+  if (!worker->config->is_timing_based_mode() ||
+      worker->current_phase == Phase::MAIN_DURATION) {
+    record_client_start_time();
+    clear_connect_times();
+    record_connect_start_time();
+  } else if (worker->current_phase == Phase::INITIAL_IDLE) {
+    worker->current_phase = Phase::WARM_UP;
+    std::cout << "Warm-up started for thread #" << worker->id << "."
+              << std::endl;
+    ev_timer_start(worker->loop, &worker->warmup_watcher);
+  }
 
   if (worker->config->conn_inactivity_timeout > 0.) {
     ev_timer_again(worker->loop, &conn_inactivity_watcher);
@@ -467,13 +521,17 @@ int Client::try_again_or_fail() {
 
   if (new_connection_requested) {
     new_connection_requested = false;
-    if (req_left) {
-      // At the moment, we don't have a facility to re-start request
-      // already in in-flight.  Make them fail.
-      worker->stats.req_failed += req_inflight;
-      worker->stats.req_error += req_inflight;
 
-      req_inflight = 0;
+    if (req_left) {
+
+      if (worker->current_phase == Phase::MAIN_DURATION) {
+        // At the moment, we don't have a facility to re-start request
+        // already in in-flight.  Make them fail.
+        worker->stats.req_failed += req_inflight;
+        worker->stats.req_error += req_inflight;
+
+        req_inflight = 0;
+      }
 
       // Keep using current address
       if (connect() == 0) {
@@ -529,11 +587,16 @@ int Client::submit_request() {
     return -1;
   }
 
+  if (worker->current_phase != Phase::MAIN_DURATION) {
+    return 0;
+  }
+
   ++worker->stats.req_started;
-  --req_left;
   ++req_started;
   ++req_inflight;
-
+  if (!worker->config->is_timing_based_mode()) {
+    --req_left;
+  }
   // if an active timeout is set and this is the last request to be submitted
   // on this connection, start the active timeout.
   if (worker->config->conn_active_timeout > 0. && req_left == 0) {
@@ -544,6 +607,10 @@ int Client::submit_request() {
 }
 
 void Client::process_timedout_streams() {
+  if (worker->current_phase != Phase::MAIN_DURATION) {
+    return;
+  }
+
   for (auto &p : streams) {
     auto &req_stat = p.second.req_stat;
     if (!req_stat.completed) {
@@ -557,6 +624,10 @@ void Client::process_timedout_streams() {
 }
 
 void Client::process_abandoned_streams() {
+  if (worker->current_phase != Phase::MAIN_DURATION) {
+    return;
+  }
+
   auto req_abandoned = req_inflight + req_left;
 
   worker->stats.req_failed += req_abandoned;
@@ -567,6 +638,10 @@ void Client::process_abandoned_streams() {
 }
 
 void Client::process_request_failure() {
+  if (worker->current_phase != Phase::MAIN_DURATION) {
+    return;
+  }
+
   worker->stats.req_failed += req_left;
   worker->stats.req_error += req_left;
 
@@ -575,6 +650,8 @@ void Client::process_request_failure() {
   if (req_inflight == 0) {
     terminate_session();
   }
+  std::cout << "Process Request Failure:" << worker->stats.req_failed
+            << std::endl;
 }
 
 namespace {
@@ -653,6 +730,15 @@ void Client::on_header(int32_t stream_id, const uint8_t *name, size_t namelen,
     return;
   }
   auto &stream = (*itr).second;
+
+  if (worker->current_phase != Phase::MAIN_DURATION) {
+    // If the stream is for warm-up phase, then mark as a success
+    // But we do not update the count for 2xx, 3xx, etc status codes
+    // Same has been done in on_status_code function
+    stream.status_success = 1;
+    return;
+  }
+
   if (stream.status_success == -1 && namelen == 7 &&
       util::streq_l(":status", name, namelen)) {
     int status = 0;
@@ -691,6 +777,11 @@ void Client::on_status_code(int32_t stream_id, uint16_t status) {
   }
   auto &stream = (*itr).second;
 
+  if (worker->current_phase != Phase::MAIN_DURATION) {
+    stream.status_success = 1;
+    return;
+  }
+
   if (status >= 200 && status < 300) {
     ++worker->stats.status[2];
     stream.status_success = 1;
@@ -706,39 +797,38 @@ void Client::on_status_code(int32_t stream_id, uint16_t status) {
 }
 
 void Client::on_stream_close(int32_t stream_id, bool success, bool final) {
-  ++req_done;
-  --req_inflight;
+  if (worker->current_phase == Phase::MAIN_DURATION) {
+    if (req_inflight > 0) {
+      --req_inflight;
+    }
+    auto req_stat = get_req_stat(stream_id);
+    if (!req_stat) {
+      return;
+    }
 
-  auto req_stat = get_req_stat(stream_id);
-  if (!req_stat) {
-    return;
-  }
+    req_stat->stream_close_time = std::chrono::steady_clock::now();
+    if (success) {
+      req_stat->completed = true;
+      ++worker->stats.req_success;
+      ++cstat.req_success;
 
-  req_stat->stream_close_time = std::chrono::steady_clock::now();
-  if (success) {
-    req_stat->completed = true;
-    ++worker->stats.req_success;
-    ++cstat.req_success;
+      if (streams[stream_id].status_success == 1) {
+        ++worker->stats.req_status_success;
+      } else {
+        ++worker->stats.req_failed;
+      }
 
-    if (streams[stream_id].status_success == 1) {
-      ++worker->stats.req_status_success;
+      worker->sample_req_stat(req_stat);
+
+      // Count up in successful cases only
+      ++worker->request_times_smp.n;
     } else {
       ++worker->stats.req_failed;
+      ++worker->stats.req_error;
     }
-
-    if (sampling_should_pick(worker->request_times_smp)) {
-      sampling_advance_point(worker->request_times_smp);
-      worker->sample_req_stat(req_stat);
-    }
-
-    // Count up in successful cases only
-    ++worker->request_times_smp.n;
-  } else {
-    ++worker->stats.req_failed;
-    ++worker->stats.req_error;
+    ++worker->stats.req_done;
+    ++req_done;
   }
-
-  ++worker->stats.req_done;
 
   worker->report_progress();
   streams.erase(stream_id);
@@ -747,10 +837,14 @@ void Client::on_stream_close(int32_t stream_id, bool success, bool final) {
     return;
   }
 
-  if (!config.timing_script && !final && req_left > 0 &&
-      submit_request() != 0) {
-    process_request_failure();
-    return;
+  if (!final && req_left > 0) {
+    if (config.timing_script) {
+      if (!ev_is_active(&request_timeout_watcher)) {
+        ev_feed_event(worker->loop, &request_timeout_watcher, EV_TIMER);
+      }
+    } else if (submit_request() != 0) {
+      process_request_failure();
+    }
   }
 }
 
@@ -865,7 +959,9 @@ int Client::connection_made() {
   record_connect_time();
 
   if (!config.timing_script) {
-    auto nreq = std::min(req_left, session->max_concurrent_streams());
+    auto nreq = config.is_timing_based_mode()
+                    ? std::max(req_left, session->max_concurrent_streams())
+                    : std::min(req_left, session->max_concurrent_streams());
     for (; nreq > 0; --nreq) {
       if (submit_request() != 0) {
         process_request_failure();
@@ -906,7 +1002,9 @@ int Client::on_read(const uint8_t *data, size_t len) {
   if (rv != 0) {
     return -1;
   }
-  worker->stats.bytes_total += len;
+  if (worker->current_phase == Phase::MAIN_DURATION) {
+    worker->stats.bytes_total += len;
+  }
   signal_write();
   return 0;
 }
@@ -1176,37 +1274,78 @@ Worker::Worker(uint32_t id, SSL_CTX *ssl_ctx, size_t req_todo, size_t nclients,
       rate(rate),
       max_samples(max_samples),
       next_client_id(0) {
-  if (!config->is_rate_mode()) {
+  if (!config->is_rate_mode() && !config->is_timing_based_mode()) {
     progress_interval = std::max(static_cast<size_t>(1), req_todo / 10);
   } else {
     progress_interval = std::max(static_cast<size_t>(1), nclients / 10);
   }
 
+  // Below timeout is not needed in case of timing-based benchmarking
   // create timer that will go off every rate_period
   ev_timer_init(&timeout_watcher, rate_period_timeout_w_cb, 0.,
                 config->rate_period);
   timeout_watcher.data = this;
 
-  stats.req_stats.reserve(std::min(req_todo, max_samples));
-  stats.client_stats.reserve(std::min(nclients, max_samples));
+  if (config->is_timing_based_mode()) {
+    stats.req_stats.reserve(std::max(req_todo, max_samples));
+    stats.client_stats.reserve(std::max(nclients, max_samples));
+  } else {
+    stats.req_stats.reserve(std::min(req_todo, max_samples));
+    stats.client_stats.reserve(std::min(nclients, max_samples));
+  }
 
-  sampling_init(request_times_smp, req_todo, max_samples);
-  sampling_init(client_smp, nclients, max_samples);
+  sampling_init(request_times_smp, max_samples);
+  sampling_init(client_smp, max_samples);
+
+  ev_timer_init(&duration_watcher, duration_timeout_cb, config->duration, 0.);
+  duration_watcher.data = this;
+
+  ev_timer_init(&warmup_watcher, warmup_timeout_cb, config->warm_up_time, 0.);
+  warmup_watcher.data = this;
+
+  if (config->is_timing_based_mode()) {
+    current_phase = Phase::INITIAL_IDLE;
+  } else {
+    current_phase = Phase::MAIN_DURATION;
+  }
 }
 
 Worker::~Worker() {
   ev_timer_stop(loop, &timeout_watcher);
+  ev_timer_stop(loop, &duration_watcher);
+  ev_timer_stop(loop, &warmup_watcher);
   ev_loop_destroy(loop);
 }
 
+void Worker::stop_all_clients() {
+  for (auto client : clients) {
+    if (client && client->session) {
+      client->terminate_session();
+    }
+  }
+}
+
+void Worker::free_client(Client *deleted_client) {
+  for (auto &client : clients) {
+    if (client == deleted_client) {
+      client->req_todo = client->req_done;
+      stats.req_todo += client->req_todo;
+      auto index = &client - &clients[0];
+      clients[index] = NULL;
+      return;
+    }
+  }
+}
+
 void Worker::run() {
-  if (!config->is_rate_mode()) {
+  if (!config->is_rate_mode() && !config->is_timing_based_mode()) {
     for (size_t i = 0; i < nclients; ++i) {
       auto req_todo = nreqs_per_client;
       if (nreqs_rem > 0) {
         ++req_todo;
         --nreqs_rem;
       }
+
       auto client = make_unique<Client>(next_client_id++, this, req_todo);
       if (client->connect() != 0) {
         std::cerr << "client could not connect to host" << std::endl;
@@ -1215,27 +1354,45 @@ void Worker::run() {
         client.release();
       }
     }
-  } else {
+  } else if (config->is_rate_mode()) {
     ev_timer_again(loop, &timeout_watcher);
 
     // call callback so that we don't waste the first rate_period
+    rate_period_timeout_w_cb(loop, &timeout_watcher, 0);
+  } else {
+    // call the callback to start for one single time
     rate_period_timeout_w_cb(loop, &timeout_watcher, 0);
   }
   ev_run(loop, 0);
 }
 
+namespace {
+template <typename Stats, typename Stat>
+void sample(Sampling &smp, Stats &stats, Stat *s) {
+  ++smp.n;
+  if (stats.size() < smp.max_samples) {
+    stats.push_back(*s);
+    return;
+  }
+  auto d = std::uniform_int_distribution<unsigned long>(0, smp.n - 1);
+  auto i = d(gen);
+  if (i < smp.max_samples) {
+    stats[i] = *s;
+  }
+}
+} // namespace
+
 void Worker::sample_req_stat(RequestStat *req_stat) {
-  stats.req_stats.push_back(*req_stat);
-  assert(stats.req_stats.size() <= max_samples);
+  sample(request_times_smp, stats.req_stats, req_stat);
 }
 
 void Worker::sample_client_stat(ClientStat *cstat) {
-  stats.client_stats.push_back(*cstat);
-  assert(stats.client_stats.size() <= max_samples);
+  sample(client_smp, stats.client_stats, cstat);
 }
 
 void Worker::report_progress() {
-  if (id != 0 || config->is_rate_mode() || stats.req_done % progress_interval) {
+  if (id != 0 || config->is_rate_mode() || stats.req_done % progress_interval ||
+      config->is_timing_based_mode()) {
     return;
   }
 
@@ -1313,14 +1470,10 @@ process_time_stats(const std::vector<std::unique_ptr<Worker>> &workers) {
   size_t nclient_times = 0;
   for (const auto &w : workers) {
     nrequest_times += w->stats.req_stats.size();
-    if (w->request_times_smp.interval != 0.) {
-      request_times_sampling = true;
-    }
+    request_times_sampling = w->request_times_smp.n > w->stats.req_stats.size();
 
     nclient_times += w->stats.client_stats.size();
-    if (w->client_smp.interval != 0.) {
-      client_times_sampling = true;
-    }
+    client_times_sampling = w->client_smp.n > w->stats.client_stats.size();
   }
 
   std::vector<double> request_times;
@@ -1581,12 +1734,27 @@ std::unique_ptr<Worker> create_worker(uint32_t id, SSL_CTX *ssl_ctx,
                 << util::duration_str(config.rate_period) << " ";
   }
 
-  std::cout << "spawning thread #" << id << ": " << nclients
-            << " total client(s). " << rate_report.str() << nreqs
-            << " total requests" << std::endl;
+  if (config.is_timing_based_mode()) {
+    std::cout << "spawning thread #" << id << ": " << nclients
+              << " total client(s). Timing-based test with "
+              << config.warm_up_time << "s of warm-up time and "
+              << config.duration << "s of main duration for measurements."
+              << std::endl;
+  } else {
+    std::cout << "spawning thread #" << id << ": " << nclients
+              << " total client(s). " << rate_report.str() << nreqs
+              << " total requests" << std::endl;
+  }
 
-  return make_unique<Worker>(id, ssl_ctx, nreqs, nclients, rate, max_samples,
-                             &config);
+  if (config.is_rate_mode()) {
+    return make_unique<Worker>(id, ssl_ctx, nreqs, nclients, rate, max_samples,
+                               &config);
+  } else {
+    // Here rate is same as client because the rate_timeout callback
+    // will be called only once
+    return make_unique<Worker>(id, ssl_ctx, nreqs, nclients, nclients,
+                               max_samples, &config);
+  }
 }
 } // namespace
 
@@ -1652,7 +1820,9 @@ Options:
               Number of  requests across all  clients.  If it  is used
               with --timing-script-file option,  this option specifies
               the number of requests  each client performs rather than
-              the number of requests across all clients.
+              the number of requests  across all clients.  This option
+              is ignored if timing-based  benchmarking is enabled (see
+              --duration option).
               Default: )"
       << config.nreqs << R"(
   -c, --clients=<N>
@@ -1737,6 +1907,13 @@ Options:
               length of the period in time.  This option is ignored if
               the rate option is not used.  The default value for this
               option is 1s.
+  -D, --duration=<N>
+              Specifies the main duration for the measurements in case
+              of timing-based benchmarking.
+  --warm-up-time=<DURATION>
+              Specifies the  time  period  before  starting the actual
+              measurements, in  case  of  timing-based benchmarking.
+              Needs to provided along with -D option.
   -T, --connection-active-timeout=<DURATION>
               Specifies  the maximum  time that  h2load is  willing to
               keep a  connection open,  regardless of the  activity on
@@ -1850,6 +2027,7 @@ int main(int argc, char **argv) {
         {"rate", required_argument, nullptr, 'r'},
         {"connection-active-timeout", required_argument, nullptr, 'T'},
         {"connection-inactivity-timeout", required_argument, nullptr, 'N'},
+        {"duration", required_argument, nullptr, 'D'},
         {"timing-script-file", required_argument, &flag, 3},
         {"base-uri", required_argument, nullptr, 'B'},
         {"npn-list", required_argument, &flag, 4},
@@ -1857,11 +2035,12 @@ int main(int argc, char **argv) {
         {"h1", no_argument, &flag, 6},
         {"header-table-size", required_argument, &flag, 7},
         {"encoder-header-table-size", required_argument, &flag, 8},
+        {"warm-up-time", required_argument, &flag, 9},
         {nullptr, 0, nullptr, 0}};
     int option_index = 0;
-    auto c =
-        getopt_long(argc, argv, "hvW:c:d:m:n:p:t:w:H:i:r:T:N:B:", long_options,
-                    &option_index);
+    auto c = getopt_long(argc, argv,
+                         "hvW:c:d:m:n:p:t:w:H:i:r:T:N:D:B:", long_options,
+                         &option_index);
     if (c == -1) {
       break;
     }
@@ -2016,6 +2195,14 @@ int main(int argc, char **argv) {
       config.base_uri = arg.str();
       break;
     }
+    case 'D':
+      config.duration = strtoul(optarg, nullptr, 10);
+      if (config.duration == 0) {
+        std::cerr << "-D: the main duration for timing-based benchmarking "
+                  << "must be positive." << std::endl;
+        exit(EXIT_FAILURE);
+      }
+      break;
     case 'v':
       config.verbose = true;
       break;
@@ -2069,6 +2256,14 @@ int main(int argc, char **argv) {
         // --encoder-header-table-size
         if (parse_header_table_size(config.encoder_header_table_size,
                                     "encoder-header-table-size", optarg) != 0) {
+          exit(EXIT_FAILURE);
+        }
+        break;
+      case 9:
+        // --warm-up-time
+        config.warm_up_time = util::parse_duration_with_unit(optarg);
+        if (!std::isfinite(config.warm_up_time)) {
+          std::cerr << "--warm-up-time: value error " << optarg << std::endl;
           exit(EXIT_FAILURE);
         }
         break;
@@ -2157,8 +2352,9 @@ int main(int argc, char **argv) {
     exit(EXIT_FAILURE);
   }
 
-  if (config.nreqs == 0) {
-    std::cerr << "-n: the number of requests must be strictly greater than 0."
+  if (config.nreqs == 0 && !config.is_timing_based_mode()) {
+    std::cerr << "-n: the number of requests must be strictly greater than 0 "
+                 "if timing-based test is not being run."
               << std::endl;
     exit(EXIT_FAILURE);
   }
@@ -2182,7 +2378,8 @@ int main(int argc, char **argv) {
 
   // With timing script, we don't distribute config.nreqs to each
   // client or thread.
-  if (!config.timing_script && config.nreqs < config.nclients) {
+  if (!config.timing_script && config.nreqs < config.nclients &&
+      !config.is_timing_based_mode()) {
     std::cerr << "-n, -c: the number of requests must be greater than or "
               << "equal to the clients." << std::endl;
     exit(EXIT_FAILURE);
@@ -2190,9 +2387,12 @@ int main(int argc, char **argv) {
 
   if (config.nclients < config.nthreads) {
     std::cerr << "-c, -t: the number of clients must be greater than or equal "
-                 "to the number of threads."
-              << std::endl;
+              << "to the number of threads." << std::endl;
     exit(EXIT_FAILURE);
+  }
+
+  if (config.is_timing_based_mode()) {
+    config.nreqs = 0;
   }
 
   if (config.is_rate_mode()) {
@@ -2528,7 +2728,7 @@ int main(int argc, char **argv) {
   // Requests which have not been issued due to connection errors, are
   // counted towards req_failed and req_error.
   auto req_not_issued =
-      stats.req_todo - stats.req_status_success - stats.req_failed;
+      (stats.req_todo - stats.req_status_success - stats.req_failed);
   stats.req_failed += req_not_issued;
   stats.req_error += req_not_issued;
 
@@ -2539,10 +2739,17 @@ int main(int argc, char **argv) {
   double rps = 0;
   int64_t bps = 0;
   if (duration.count() > 0) {
-    auto secd = std::chrono::duration_cast<
-        std::chrono::duration<double, std::chrono::seconds::period>>(duration);
-    rps = stats.req_success / secd.count();
-    bps = stats.bytes_total / secd.count();
+    if (config.is_timing_based_mode()) {
+      // we only want to consider the main duration if warm-up is given
+      rps = stats.req_success / config.duration;
+      bps = stats.bytes_total / config.duration;
+    } else {
+      auto secd = std::chrono::duration_cast<
+          std::chrono::duration<double, std::chrono::seconds::period>>(
+          duration);
+      rps = stats.req_success / secd.count();
+      bps = stats.bytes_total / secd.count();
+    }
   }
 
   double header_space_savings = 0.;
