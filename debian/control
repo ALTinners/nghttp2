@@ -17,8 +17,8 @@ Build-Depends: debhelper (>= 10),
                libxml2-dev (>= 2.7.7),
                pkg-config,
                zlib1g-dev (>= 1.2.3)
-Build-Depends-Indep: python-sphinx
-Standards-Version: 4.0.0
+Build-Depends-Indep: python3-sphinx
+Standards-Version: 4.1.0
 Homepage: https://nghttp2.org/
 Vcs-Git: git://anonscm.debian.org/collab-maint/nghttp2.git
 Vcs-Browser: https://anonscm.debian.org/cgit/collab-maint/nghttp2.git
