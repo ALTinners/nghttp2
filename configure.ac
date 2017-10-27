@@ -25,7 +25,7 @@ dnl Do not change user variables!
 dnl http://www.gnu.org/software/automake/manual/html_node/Flag-Variables-Ordering.html
 
 AC_PREREQ(2.61)
-AC_INIT([nghttp2], [1.26.0], [t-tujikawa@users.sourceforge.net])
+AC_INIT([nghttp2], [1.27.0], [t-tujikawa@users.sourceforge.net])
 AC_CONFIG_AUX_DIR([.])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_HEADERS([config.h])
@@ -410,7 +410,7 @@ if test "x${request_systemd}" = "xyes" &&
 fi
 
 # libxml2 (for src/nghttp)
-PKG_CHECK_MODULES([LIBXML2], [libxml-2.0 >= 2.7.7],
+PKG_CHECK_MODULES([LIBXML2], [libxml-2.0 >= 2.6.26],
                   [have_libxml2=yes], [have_libxml2=no])
 if test "x${have_libxml2}" = "xyes"; then
   AC_DEFINE([HAVE_LIBXML2], [1], [Define to 1 if you have `libxml2` library.])
@@ -804,6 +804,9 @@ if test "x$werror" != "xno"; then
     AX_CHECK_COMPILE_FLAG([-Werror], [CXXFLAGS="$CXXFLAGS -Werror"])
     AX_CHECK_COMPILE_FLAG([-Wformat-security], [CXXFLAGS="$CXXFLAGS -Wformat-security"])
     AX_CHECK_COMPILE_FLAG([-Wsometimes-uninitialized], [CXXFLAGS="$CXXFLAGS -Wsometimes-uninitialized"])
+    # Disable noexcept-type warning of g++-7.  This is not harmful as
+    # long as all source files are compiled with the same compiler.
+    AX_CHECK_COMPILE_FLAG([-Wno-noexcept-type], [CXXFLAGS="$CXXFLAGS -Wno-noexcept-type"])
     AC_LANG_POP()
 fi
 
