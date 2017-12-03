@@ -745,7 +745,7 @@ SSL_CTX *create_ssl_context(const char *private_key_file, const char *cert_file,
                             ,
                             neverbleed_t *nb
 #endif // HAVE_NEVERBLEED
-                            ) {
+) {
   auto ssl_ctx = SSL_CTX_new(SSLv23_server_method());
   if (!ssl_ctx) {
     LOG(FATAL) << ERR_error_string(ERR_get_error(), nullptr);
@@ -1041,8 +1041,8 @@ SSL_CTX *create_ssl_client_context(
 
   SSL_CTX_set_options(ssl_ctx, ssl_opts | tlsconf.tls_proto_mask);
 
-  SSL_CTX_set_session_cache_mode(
-      ssl_ctx, SSL_SESS_CACHE_CLIENT | SSL_SESS_CACHE_NO_INTERNAL_STORE);
+  SSL_CTX_set_session_cache_mode(ssl_ctx, SSL_SESS_CACHE_CLIENT |
+                                              SSL_SESS_CACHE_NO_INTERNAL_STORE);
   SSL_CTX_sess_set_new_cb(ssl_ctx, tls_session_client_new_cb);
 
   if (nghttp2::tls::ssl_ctx_set_proto_versions(
@@ -1698,7 +1698,7 @@ setup_server_ssl_context(std::vector<SSL_CTX *> &all_ssl_ctx,
                          ,
                          neverbleed_t *nb
 #endif // HAVE_NEVERBLEED
-                         ) {
+) {
   auto config = get_config();
 
   if (!upstream_tls_enabled(config->conn)) {
@@ -1713,7 +1713,7 @@ setup_server_ssl_context(std::vector<SSL_CTX *> &all_ssl_ctx,
                                     ,
                                     nb
 #endif // HAVE_NEVERBLEED
-                                    );
+  );
 
   all_ssl_ctx.push_back(ssl_ctx);
 
@@ -1731,7 +1731,7 @@ setup_server_ssl_context(std::vector<SSL_CTX *> &all_ssl_ctx,
                                       ,
                                       nb
 #endif // HAVE_NEVERBLEED
-                                      );
+    );
     all_ssl_ctx.push_back(ssl_ctx);
 
     if (cert_lookup_tree_add_ssl_ctx(cert_tree, indexed_ssl_ctx, ssl_ctx) ==
@@ -1748,7 +1748,7 @@ SSL_CTX *setup_downstream_client_ssl_context(
 #ifdef HAVE_NEVERBLEED
     neverbleed_t *nb
 #endif // HAVE_NEVERBLEED
-    ) {
+) {
   auto &tlsconf = get_config()->tls;
 
   return create_ssl_client_context(
@@ -1918,6 +1918,79 @@ int verify_ocsp_response(SSL_CTX *ssl_ctx, const uint8_t *ocsp_resp,
        // && OPENSSL_VERSION_NUMBER >= 0x10002000L
 
   return 0;
+}
+
+ssize_t get_x509_fingerprint(uint8_t *dst, size_t dstlen, const X509 *x,
+                             const EVP_MD *md) {
+  unsigned int len = dstlen;
+  if (X509_digest(x, md, dst, &len) != 1) {
+    return -1;
+  }
+  return len;
+}
+
+namespace {
+StringRef get_x509_name(BlockAllocator &balloc, X509_NAME *nm) {
+  auto b = BIO_new(BIO_s_mem());
+  if (!b) {
+    return StringRef{};
+  }
+
+  // Not documented, but it seems that X509_NAME_print_ex returns the
+  // number of bytes written into b.
+  auto slen = X509_NAME_print_ex(b, nm, 0, XN_FLAG_RFC2253);
+  if (slen <= 0) {
+    return StringRef{};
+  }
+
+  auto iov = make_byte_ref(balloc, slen + 1);
+  BIO_read(b, iov.base, slen);
+  BIO_free(b);
+  iov.base[slen] = '\0';
+  return StringRef{iov.base, static_cast<size_t>(slen)};
+}
+} // namespace
+
+StringRef get_x509_subject_name(BlockAllocator &balloc, X509 *x) {
+  return get_x509_name(balloc, X509_get_subject_name(x));
+}
+
+StringRef get_x509_issuer_name(BlockAllocator &balloc, X509 *x) {
+  return get_x509_name(balloc, X509_get_issuer_name(x));
+}
+
+#ifdef WORDS_BIGENDIAN
+#define bswap64(N) (N)
+#else /* !WORDS_BIGENDIAN */
+#define bswap64(N)                                                             \
+  ((uint64_t)(ntohl((uint32_t)(N))) << 32 | ntohl((uint32_t)((N) >> 32)))
+#endif /* !WORDS_BIGENDIAN */
+
+StringRef get_x509_serial(BlockAllocator &balloc, X509 *x) {
+#if OPENSSL_1_1_API
+  auto sn = X509_get0_serialNumber(x);
+  uint64_t r;
+  if (ASN1_INTEGER_get_uint64(&r, sn) != 1) {
+    return StringRef{};
+  }
+
+  r = bswap64(r);
+  return util::format_hex(
+      balloc, StringRef{reinterpret_cast<uint8_t *>(&r), sizeof(r)});
+#else  // !OPENSSL_1_1_API
+  auto sn = X509_get_serialNumber(x);
+  auto bn = BN_new();
+  auto bn_d = defer(BN_free, bn);
+  if (!ASN1_INTEGER_to_BN(sn, bn)) {
+    return StringRef{};
+  }
+
+  std::array<uint8_t, 8> b;
+  auto n = BN_bn2bin(bn, b.data());
+  assert(n == b.size());
+
+  return util::format_hex(balloc, StringRef{std::begin(b), std::end(b)});
+#endif // !OPENSSL_1_1_API
 }
 
 } // namespace tls

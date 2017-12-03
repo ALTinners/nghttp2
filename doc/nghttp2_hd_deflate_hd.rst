@@ -24,8 +24,8 @@ Synopsis
     
     After this function returns, it is safe to delete the *nva*.
     
-    This function returns 0 if it succeeds, or one of the following
-    negative error codes:
+    This function returns the number of bytes written to *buf* if it
+    succeeds, or one of the following negative error codes:
     
     :macro:`NGHTTP2_ERR_NOMEM`
         Out of memory.

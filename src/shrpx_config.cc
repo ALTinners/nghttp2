@@ -498,6 +498,15 @@ LogFragmentType log_var_lookup_token(const char *name, size_t namelen) {
       break;
     }
     break;
+  case 17:
+    switch (name[16]) {
+    case 'l':
+      if (util::strieq_l("tls_client_seria", name, 16)) {
+        return SHRPX_LOGF_TLS_CLIENT_SERIAL;
+      }
+      break;
+    }
+    break;
   case 18:
     switch (name[17]) {
     case 'd':
@@ -506,6 +515,42 @@ LogFragmentType log_var_lookup_token(const char *name, size_t namelen) {
       }
       if (util::strieq_l("tls_session_reuse", name, 17)) {
         return SHRPX_LOGF_TLS_SESSION_REUSED;
+      }
+      break;
+    }
+    break;
+  case 22:
+    switch (name[21]) {
+    case 'e':
+      if (util::strieq_l("tls_client_issuer_nam", name, 21)) {
+        return SHRPX_LOGF_TLS_CLIENT_ISSUER_NAME;
+      }
+      break;
+    }
+    break;
+  case 23:
+    switch (name[22]) {
+    case 'e':
+      if (util::strieq_l("tls_client_subject_nam", name, 22)) {
+        return SHRPX_LOGF_TLS_CLIENT_SUBJECT_NAME;
+      }
+      break;
+    }
+    break;
+  case 27:
+    switch (name[26]) {
+    case '1':
+      if (util::strieq_l("tls_client_fingerprint_sha", name, 26)) {
+        return SHRPX_LOGF_TLS_CLIENT_FINGERPRINT_SHA1;
+      }
+      break;
+    }
+    break;
+  case 29:
+    switch (name[28]) {
+    case '6':
+      if (util::strieq_l("tls_client_fingerprint_sha25", name, 28)) {
+        return SHRPX_LOGF_TLS_CLIENT_FINGERPRINT_SHA256;
       }
       break;
     }
@@ -762,10 +807,10 @@ int parse_upstream_params(UpstreamParams &out, const StringRef &src_params) {
 
 struct DownstreamParams {
   StringRef sni;
+  AffinityConfig affinity;
   size_t fall;
   size_t rise;
   shrpx_proto proto;
-  shrpx_session_affinity affinity;
   bool tls;
   bool dns;
   bool redirect_if_not_tls;
@@ -835,11 +880,38 @@ int parse_downstream_params(DownstreamParams &out,
     } else if (util::istarts_with_l(param, "affinity=")) {
       auto valstr = StringRef{first + str_size("affinity="), end};
       if (util::strieq_l("none", valstr)) {
-        out.affinity = AFFINITY_NONE;
+        out.affinity.type = AFFINITY_NONE;
       } else if (util::strieq_l("ip", valstr)) {
-        out.affinity = AFFINITY_IP;
+        out.affinity.type = AFFINITY_IP;
+      } else if (util::strieq_l("cookie", valstr)) {
+        out.affinity.type = AFFINITY_COOKIE;
       } else {
-        LOG(ERROR) << "backend: affinity: value must be either none or ip";
+        LOG(ERROR)
+            << "backend: affinity: value must be one of none, ip, and cookie";
+        return -1;
+      }
+    } else if (util::istarts_with_l(param, "affinity-cookie-name=")) {
+      auto val = StringRef{first + str_size("affinity-cookie-name="), end};
+      if (val.empty()) {
+        LOG(ERROR)
+            << "backend: affinity-cookie-name: non empty string is expected";
+        return -1;
+      }
+      out.affinity.cookie.name = val;
+    } else if (util::istarts_with_l(param, "affinity-cookie-path=")) {
+      out.affinity.cookie.path =
+          StringRef{first + str_size("affinity-cookie-path="), end};
+    } else if (util::istarts_with_l(param, "affinity-cookie-secure=")) {
+      auto valstr = StringRef{first + str_size("affinity-cookie-secure="), end};
+      if (util::strieq_l("auto", valstr)) {
+        out.affinity.cookie.secure = COOKIE_SECURE_AUTO;
+      } else if (util::strieq_l("yes", valstr)) {
+        out.affinity.cookie.secure = COOKIE_SECURE_YES;
+      } else if (util::strieq_l("no", valstr)) {
+        out.affinity.cookie.secure = COOKIE_SECURE_NO;
+      } else {
+        LOG(ERROR) << "backend: affinity-cookie-secure: value must be one of "
+                      "auto, yes, and no";
         return -1;
       }
     } else if (util::strieq_l("dns", param)) {
@@ -891,6 +963,13 @@ int parse_mapping(Config *config, DownstreamAddrConfig &addr,
     return -1;
   }
 
+  if (params.affinity.type == AFFINITY_COOKIE &&
+      params.affinity.cookie.name.empty()) {
+    LOG(ERROR) << "backend: affinity-cookie-name is mandatory if "
+                  "affinity=cookie is specified";
+    return -1;
+  }
+
   addr.fall = params.fall;
   addr.rise = params.rise;
   addr.proto = params.proto;
@@ -935,8 +1014,27 @@ int parse_mapping(Config *config, DownstreamAddrConfig &addr,
       if (g.pattern == pattern) {
         // Last value wins if we have multiple different affinity
         // value under one group.
-        if (params.affinity != AFFINITY_NONE) {
-          g.affinity = params.affinity;
+        if (params.affinity.type != AFFINITY_NONE) {
+          if (g.affinity.type == AFFINITY_NONE) {
+            g.affinity.type = params.affinity.type;
+            if (params.affinity.type == AFFINITY_COOKIE) {
+              g.affinity.cookie.name = make_string_ref(
+                  downstreamconf.balloc, params.affinity.cookie.name);
+              if (!params.affinity.cookie.path.empty()) {
+                g.affinity.cookie.path = make_string_ref(
+                    downstreamconf.balloc, params.affinity.cookie.path);
+              }
+              g.affinity.cookie.secure = params.affinity.cookie.secure;
+            }
+          } else if (g.affinity.type != params.affinity.type ||
+                     g.affinity.cookie.name != params.affinity.cookie.name ||
+                     g.affinity.cookie.path != params.affinity.cookie.path ||
+                     g.affinity.cookie.secure !=
+                         params.affinity.cookie.secure) {
+            LOG(ERROR) << "backend: affinity: multiple different affinity "
+                          "configurations found in a single group";
+            return -1;
+          }
         }
         // If at least one backend requires frontend TLS connection,
         // enable it for all backends sharing the same pattern.
@@ -956,7 +1054,16 @@ int parse_mapping(Config *config, DownstreamAddrConfig &addr,
     addr_groups.emplace_back(pattern);
     auto &g = addr_groups.back();
     g.addrs.push_back(addr);
-    g.affinity = params.affinity;
+    g.affinity.type = params.affinity.type;
+    if (params.affinity.type == AFFINITY_COOKIE) {
+      g.affinity.cookie.name =
+          make_string_ref(downstreamconf.balloc, params.affinity.cookie.name);
+      if (!params.affinity.cookie.path.empty()) {
+        g.affinity.cookie.path =
+            make_string_ref(downstreamconf.balloc, params.affinity.cookie.path);
+      }
+      g.affinity.cookie.secure = params.affinity.cookie.secure;
+    }
     g.redirect_if_not_tls = params.redirect_if_not_tls;
 
     if (pattern[0] == '*') {
@@ -2566,14 +2673,16 @@ int parse_config(Config *config, int optid, const StringRef &opt,
               << SHRPX_OPT_FRONTEND;
     return 0;
   case SHRPX_OPTID_BACKEND_NO_TLS:
-    LOG(WARN) << opt << ": deprecated.  backend connection is not encrypted by "
-                        "default.  See also "
+    LOG(WARN) << opt
+              << ": deprecated.  backend connection is not encrypted by "
+                 "default.  See also "
               << SHRPX_OPT_BACKEND_TLS;
     return 0;
   case SHRPX_OPTID_BACKEND_TLS_SNI_FIELD:
-    LOG(WARN) << opt << ": deprecated.  Use sni keyword in --backend option.  "
-                        "For now, all sni values of all backends are "
-                        "overridden by the given value "
+    LOG(WARN) << opt
+              << ": deprecated.  Use sni keyword in --backend option.  "
+                 "For now, all sni values of all backends are "
+                 "overridden by the given value "
               << optarg;
     config->tls.backend_sni_name = make_string_ref(config->balloc, optarg);
 
@@ -2684,8 +2793,9 @@ int parse_config(Config *config, int optid, const StringRef &opt,
 
     return 0;
   case SHRPX_OPTID_CLIENT:
-    LOG(ERROR) << opt << ": deprecated.  Use frontend=<addr>,<port>;no-tls, "
-                         "backend=<addr>,<port>;;proto=h2;tls";
+    LOG(ERROR) << opt
+               << ": deprecated.  Use frontend=<addr>,<port>;no-tls, "
+                  "backend=<addr>,<port>;;proto=h2;tls";
     return -1;
   case SHRPX_OPTID_INSECURE:
     config->tls.insecure = util::strieq_l("yes", optarg);
@@ -2780,8 +2890,9 @@ int parse_config(Config *config, int optid, const StringRef &opt,
     return 0;
   }
   case SHRPX_OPTID_TLS_PROTO_LIST: {
-    LOG(WARN) << opt << ": deprecated.  Use tls-min-proto-version and "
-                        "tls-max-proto-version instead.";
+    LOG(WARN) << opt
+              << ": deprecated.  Use tls-min-proto-version and "
+                 "tls-max-proto-version instead.";
     auto list = util::split_str(optarg, ',');
     config->tls.tls_proto_list.resize(list.size());
     for (size_t i = 0; i < list.size(); ++i) {
@@ -3406,8 +3517,9 @@ int parse_config(Config *config, int optid, const StringRef &opt,
   case SHRPX_OPTID_REDIRECT_HTTPS_PORT: {
     auto n = util::parse_uint(optarg);
     if (n == -1 || n < 0 || n > 65535) {
-      LOG(ERROR) << opt << ": bad value.  Specify an integer in the range [0, "
-                           "65535], inclusive";
+      LOG(ERROR) << opt
+                 << ": bad value.  Specify an integer in the range [0, "
+                    "65535], inclusive";
       return -1;
     }
     config->http.redirect_https_port = optarg;
@@ -3796,7 +3908,7 @@ int configure_downstream_group(Config *config, bool http2_proxy,
       }
     }
 
-    if (g.affinity == AFFINITY_IP) {
+    if (g.affinity.type != AFFINITY_NONE) {
       size_t idx = 0;
       for (auto &addr : g.addrs) {
         StringRef key;

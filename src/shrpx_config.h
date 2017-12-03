@@ -356,6 +356,31 @@ enum shrpx_session_affinity {
   AFFINITY_NONE,
   // Client IP affinity
   AFFINITY_IP,
+  // Cookie based affinity
+  AFFINITY_COOKIE,
+};
+
+enum shrpx_cookie_secure {
+  // Secure attribute of session affinity cookie is determined by the
+  // request scheme.
+  COOKIE_SECURE_AUTO,
+  // Secure attribute of session affinity cookie is always set.
+  COOKIE_SECURE_YES,
+  // Secure attribute of session affinity cookie is always unset.
+  COOKIE_SECURE_NO,
+};
+
+struct AffinityConfig {
+  // Type of session affinity.
+  shrpx_session_affinity type;
+  struct {
+    // Name of a cookie to use.
+    StringRef name;
+    // Path which a cookie is applied to.
+    StringRef path;
+    // Secure attribute
+    shrpx_cookie_secure secure;
+  } cookie;
 };
 
 enum shrpx_forwarded_param {
@@ -449,15 +474,15 @@ struct AffinityHash {
 
 struct DownstreamAddrGroupConfig {
   DownstreamAddrGroupConfig(const StringRef &pattern)
-      : pattern(pattern), affinity(AFFINITY_NONE), redirect_if_not_tls(false) {}
+      : pattern(pattern), affinity{AFFINITY_NONE}, redirect_if_not_tls(false) {}
 
   StringRef pattern;
   std::vector<DownstreamAddrConfig> addrs;
   // Bunch of session affinity hash.  Only used if affinity ==
   // AFFINITY_IP.
   std::vector<AffinityHash> affinity_hash;
-  // Session affinity
-  shrpx_session_affinity affinity;
+  // Cookie based session affinity configuration.
+  AffinityConfig affinity;
   // true if this group requires that client connection must be TLS,
   // and the request must be redirected to https URI.
   bool redirect_if_not_tls;
