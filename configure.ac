@@ -25,7 +25,7 @@ dnl Do not change user variables!
 dnl http://www.gnu.org/software/automake/manual/html_node/Flag-Variables-Ordering.html
 
 AC_PREREQ(2.61)
-AC_INIT([nghttp2], [1.27.0], [t-tujikawa@users.sourceforge.net])
+AC_INIT([nghttp2], [1.28.0], [t-tujikawa@users.sourceforge.net])
 AC_CONFIG_AUX_DIR([.])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_HEADERS([config.h])
@@ -44,9 +44,9 @@ m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
 dnl See versioning rule:
 dnl  http://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
-AC_SUBST(LT_CURRENT, 28)
+AC_SUBST(LT_CURRENT, 29)
 AC_SUBST(LT_REVISION, 0)
-AC_SUBST(LT_AGE, 14)
+AC_SUBST(LT_AGE, 15)
 
 major=`echo $PACKAGE_VERSION |cut -d. -f1 | sed -e "s/[^0-9]//g"`
 minor=`echo $PACKAGE_VERSION |cut -d. -f2 | sed -e "s/[^0-9]//g"`
@@ -119,7 +119,7 @@ AC_ARG_WITH([jemalloc],
 
 AC_ARG_WITH([spdylay],
     [AS_HELP_STRING([--with-spdylay],
-                    [Use spdylay [default=no]])],
+                    [(Deprecated) Use spdylay [default=no]])],
     [request_spdylay=$withval], [request_spdylay=no])
 
 AC_ARG_WITH([systemd],
@@ -949,3 +949,7 @@ AC_MSG_NOTICE([summary of build options:
       Python bindings:${enable_python_bindings}
       Threading:      ${enable_threads}
 ])
+
+if test "x${have_spdylay}" == "xyes"; then
+  AC_MSG_WARN([spdylay support was deprecated, and will be removed in v1.29.0.])
+fi

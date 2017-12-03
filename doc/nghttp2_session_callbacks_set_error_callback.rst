@@ -12,3 +12,10 @@ Synopsis
     
     Sets callback function invoked when library tells error message to
     the application.
+    
+    This function is deprecated.  The new application should use
+    `nghttp2_session_callbacks_set_error_callback2()`.
+    
+    If both :type:`nghttp2_error_callback` and
+    :type:`nghttp2_error_callback2` are set, the latter takes
+    precedence.

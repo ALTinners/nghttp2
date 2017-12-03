@@ -76,8 +76,15 @@ bool match_shared_downstream_addr(
     return false;
   }
 
-  if (lhs->affinity != rhs->affinity ||
+  if (lhs->affinity.type != rhs->affinity.type ||
       lhs->redirect_if_not_tls != rhs->redirect_if_not_tls) {
+    return false;
+  }
+
+  if (lhs->affinity.type == AFFINITY_COOKIE &&
+      (lhs->affinity.cookie.name != rhs->affinity.cookie.name ||
+       lhs->affinity.cookie.path != rhs->affinity.cookie.path ||
+       lhs->affinity.cookie.secure != rhs->affinity.cookie.secure)) {
     return false;
   }
 
@@ -156,7 +163,7 @@ void Worker::replace_downstream_config(
 
     auto &shared_addr = g->shared_addr;
 
-    if (shared_addr->affinity == AFFINITY_NONE) {
+    if (shared_addr->affinity.type == AFFINITY_NONE) {
       shared_addr->dconn_pool.remove_all();
       continue;
     }
@@ -186,7 +193,16 @@ void Worker::replace_downstream_config(
     auto shared_addr = std::make_shared<SharedDownstreamAddr>();
 
     shared_addr->addrs.resize(src.addrs.size());
-    shared_addr->affinity = src.affinity;
+    shared_addr->affinity.type = src.affinity.type;
+    if (src.affinity.type == AFFINITY_COOKIE) {
+      shared_addr->affinity.cookie.name =
+          make_string_ref(shared_addr->balloc, src.affinity.cookie.name);
+      if (!src.affinity.cookie.path.empty()) {
+        shared_addr->affinity.cookie.path =
+            make_string_ref(shared_addr->balloc, src.affinity.cookie.path);
+      }
+      shared_addr->affinity.cookie.secure = src.affinity.cookie.secure;
+    }
     shared_addr->affinity_hash = src.affinity_hash;
     shared_addr->redirect_if_not_tls = src.redirect_if_not_tls;
 
@@ -268,7 +284,7 @@ void Worker::replace_downstream_config(
       shared_addr->http1_pri.weight = num_http1;
       shared_addr->http2_pri.weight = num_http2;
 
-      if (shared_addr->affinity != AFFINITY_NONE) {
+      if (shared_addr->affinity.type != AFFINITY_NONE) {
         for (auto &addr : shared_addr->addrs) {
           addr.dconn_pool = make_unique<DownstreamConnectionPool>();
         }

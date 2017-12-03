@@ -1040,6 +1040,31 @@ Types (structs, unions and typedefs)
     of length *len*.  *len* does not include the sentinel NULL
     character.
     
+    This function is deprecated.  The new application should use
+    :type:`nghttp2_error_callback2`.
+    
+    The format of error message may change between nghttp2 library
+    versions.  The application should not depend on the particular
+    format.
+    
+    Normally, application should return 0 from this callback.  If fatal
+    error occurred while doing something in this callback, application
+    should return :macro:`NGHTTP2_ERR_CALLBACK_FAILURE`.  In this case,
+    library will return immediately with return value
+    :macro:`NGHTTP2_ERR_CALLBACK_FAILURE`.  Currently, if nonzero value
+    is returned from this callback, they are treated as
+    :macro:`NGHTTP2_ERR_CALLBACK_FAILURE`, but application should not
+    rely on this details.
+.. type:: typedef int (*nghttp2_error_callback2)(nghttp2_session *session, int lib_error_code, const char *msg, size_t len, void *user_data)
+
+    
+    Callback function invoked when library provides the error code, and
+    message.  This callback is solely for debugging purpose.
+    *lib_error_code* is one of error code defined in
+    :macro:`nghttp2_error`.  The *msg* is typically NULL-terminated
+    string of length *len*, and intended for human consumption.  *len*
+    does not include the sentinel NULL character.
+    
     The format of error message may change between nghttp2 library
     versions.  The application should not depend on the particular
     format.
