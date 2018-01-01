@@ -1,3 +1,11 @@
+nghttp2 (1.29.0-1) unstable; urgency=medium
+
+  * Imported upstream version 1.29.0
+  * Bumped Standards-Version to 4.1.2 (no changes needed)
+  * Updated debhelper compat to 11
+
+ -- Tomasz Buchert <tomasz@debian.org>  Mon, 01 Jan 2018 14:19:36 +0100
+
 nghttp2 (1.28.0-1) unstable; urgency=medium
 
   * Imported upstream version 1.28.0

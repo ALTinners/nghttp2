@@ -3,7 +3,7 @@ Maintainer: Dave Beckett <dajobe@debian.org>
 Uploaders: Tomasz Buchert <tomasz@debian.org>, Ondřej Surý <ondrej@debian.org>
 Section: httpd
 Priority: optional
-Build-Depends: debhelper (>= 10),
+Build-Depends: debhelper (>= 11),
                dpkg-dev (>= 1.17.14),
                libc-ares-dev,
                libcunit1-dev (>= 2.1) <!nocheck>,
@@ -18,7 +18,7 @@ Build-Depends: debhelper (>= 10),
                pkg-config,
                zlib1g-dev (>= 1.2.3)
 Build-Depends-Indep: python3-sphinx
-Standards-Version: 4.1.1
+Standards-Version: 4.1.2
 Homepage: https://nghttp2.org/
 Vcs-Git: git://anonscm.debian.org/collab-maint/nghttp2.git
 Vcs-Browser: https://anonscm.debian.org/cgit/collab-maint/nghttp2.git
@@ -81,7 +81,7 @@ Multi-Arch: foreign
 Depends: libnghttp2-14 (= ${binary:Version}),
          lsb-base (>= 3.2-14),
          openssl,
-         python,
+         python3,
          ${misc:Depends},
          ${shlibs:Depends}
 Replaces: nghttp2 (<< 1.3.4-2~)
