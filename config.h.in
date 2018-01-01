@@ -89,6 +89,9 @@
 /* Define to 1 if you have the `memset' function. */
 #undef HAVE_MEMSET
 
+/* Define to 1 if you have the `mkostemp' function. */
+#undef HAVE_MKOSTEMP
+
 /* Define to 1 if you have `mruby` library. */
 #undef HAVE_MRUBY
 
@@ -118,9 +121,6 @@
 
 /* Define to 1 if you have the `socket' function. */
 #undef HAVE_SOCKET
-
-/* Define to 1 if you have `spdylay` library. */
-#undef HAVE_SPDYLAY
 
 /* Define to 1 if you have the `sqrt' function. */
 #undef HAVE_SQRT

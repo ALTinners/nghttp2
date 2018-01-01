@@ -112,32 +112,30 @@ check_PROGRAMS = $(am__EXEEXT_3)
 TESTS = $(am__EXEEXT_3)
 @ENABLE_APP_TRUE@am__append_1 = nghttp nghttpd nghttpx h2load
 @ENABLE_APP_TRUE@@HAVE_LIBXML2_TRUE@am__append_2 = HtmlParser.cc
-@ENABLE_APP_TRUE@@HAVE_SPDYLAY_TRUE@am__append_3 = h2load_spdy_session.cc h2load_spdy_session.h
-@ENABLE_APP_TRUE@@HAVE_SPDYLAY_TRUE@am__append_4 = shrpx_spdy_upstream.cc shrpx_spdy_upstream.h
-@ENABLE_APP_TRUE@@HAVE_MRUBY_TRUE@am__append_5 = \
+@ENABLE_APP_TRUE@@HAVE_MRUBY_TRUE@am__append_3 = \
 @ENABLE_APP_TRUE@@HAVE_MRUBY_TRUE@	shrpx_mruby.cc shrpx_mruby.h \
 @ENABLE_APP_TRUE@@HAVE_MRUBY_TRUE@	shrpx_mruby_module.cc shrpx_mruby_module.h \
 @ENABLE_APP_TRUE@@HAVE_MRUBY_TRUE@	shrpx_mruby_module_env.cc shrpx_mruby_module_env.h \
 @ENABLE_APP_TRUE@@HAVE_MRUBY_TRUE@	shrpx_mruby_module_request.cc shrpx_mruby_module_request.h \
 @ENABLE_APP_TRUE@@HAVE_MRUBY_TRUE@	shrpx_mruby_module_response.cc shrpx_mruby_module_response.h
 
-@ENABLE_APP_TRUE@@HAVE_MRUBY_TRUE@am__append_6 = \
+@ENABLE_APP_TRUE@@HAVE_MRUBY_TRUE@am__append_4 = \
 @ENABLE_APP_TRUE@@HAVE_MRUBY_TRUE@	-I${top_srcdir}/third-party/mruby/include @LIBMRUBY_CFLAGS@
 
-@ENABLE_APP_TRUE@@HAVE_MRUBY_TRUE@am__append_7 = -L${top_builddir}/third-party/mruby/build/lib @LIBMRUBY_LIBS@
-@ENABLE_APP_TRUE@@HAVE_NEVERBLEED_TRUE@am__append_8 = -I${top_srcdir}/third-party/neverbleed
-@ENABLE_APP_TRUE@@HAVE_NEVERBLEED_TRUE@am__append_9 = ${top_builddir}/third-party/libneverbleed.la
-@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@am__append_10 = nghttpx-unittest
-@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@@HAVE_MRUBY_TRUE@am__append_11 = \
+@ENABLE_APP_TRUE@@HAVE_MRUBY_TRUE@am__append_5 = -L${top_builddir}/third-party/mruby/build/lib @LIBMRUBY_LIBS@
+@ENABLE_APP_TRUE@@HAVE_NEVERBLEED_TRUE@am__append_6 = -I${top_srcdir}/third-party/neverbleed
+@ENABLE_APP_TRUE@@HAVE_NEVERBLEED_TRUE@am__append_7 = ${top_builddir}/third-party/libneverbleed.la
+@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@am__append_8 = nghttpx-unittest
+@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@@HAVE_MRUBY_TRUE@am__append_9 = \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@@HAVE_MRUBY_TRUE@	-I${top_srcdir}/third-party/mruby/include @LIBMRUBY_CFLAGS@
 
-@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@@HAVE_MRUBY_TRUE@am__append_12 = \
+@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@@HAVE_MRUBY_TRUE@am__append_10 = \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@@HAVE_MRUBY_TRUE@	-L${top_builddir}/third-party/mruby/build/lib @LIBMRUBY_LIBS@
 
-@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@@HAVE_NEVERBLEED_TRUE@am__append_13 = -I${top_srcdir}/third-party/neverbleed
-@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@@HAVE_NEVERBLEED_TRUE@am__append_14 = ${top_builddir}/third-party/libneverbleed.la
-@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@am__append_15 = nghttpx-unittest
-@ENABLE_HPACK_TOOLS_TRUE@am__append_16 = inflatehd deflatehd
+@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@@HAVE_NEVERBLEED_TRUE@am__append_11 = -I${top_srcdir}/third-party/neverbleed
+@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@@HAVE_NEVERBLEED_TRUE@am__append_12 = ${top_builddir}/third-party/libneverbleed.la
+@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@am__append_13 = nghttpx-unittest
+@ENABLE_HPACK_TOOLS_TRUE@am__append_14 = inflatehd deflatehd
 subdir = src
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/ax_boost_asio.m4 \
@@ -202,18 +200,17 @@ am__libnghttpx_a_SOURCES_DIST = util.cc util.h http2.cc http2.h \
 	shrpx_dual_dns_resolver.cc shrpx_dual_dns_resolver.h \
 	shrpx_dns_tracker.cc shrpx_dns_tracker.h buffer.h memchunk.h \
 	template.h allocator.h xsi_strerror.c xsi_strerror.h \
-	shrpx_spdy_upstream.cc shrpx_spdy_upstream.h shrpx_mruby.cc \
-	shrpx_mruby.h shrpx_mruby_module.cc shrpx_mruby_module.h \
-	shrpx_mruby_module_env.cc shrpx_mruby_module_env.h \
-	shrpx_mruby_module_request.cc shrpx_mruby_module_request.h \
-	shrpx_mruby_module_response.cc shrpx_mruby_module_response.h
-@ENABLE_APP_TRUE@@HAVE_SPDYLAY_TRUE@am__objects_1 = libnghttpx_a-shrpx_spdy_upstream.$(OBJEXT)
-@ENABLE_APP_TRUE@@HAVE_MRUBY_TRUE@am__objects_2 = libnghttpx_a-shrpx_mruby.$(OBJEXT) \
+	shrpx_mruby.cc shrpx_mruby.h shrpx_mruby_module.cc \
+	shrpx_mruby_module.h shrpx_mruby_module_env.cc \
+	shrpx_mruby_module_env.h shrpx_mruby_module_request.cc \
+	shrpx_mruby_module_request.h shrpx_mruby_module_response.cc \
+	shrpx_mruby_module_response.h
+@ENABLE_APP_TRUE@@HAVE_MRUBY_TRUE@am__objects_1 = libnghttpx_a-shrpx_mruby.$(OBJEXT) \
 @ENABLE_APP_TRUE@@HAVE_MRUBY_TRUE@	libnghttpx_a-shrpx_mruby_module.$(OBJEXT) \
 @ENABLE_APP_TRUE@@HAVE_MRUBY_TRUE@	libnghttpx_a-shrpx_mruby_module_env.$(OBJEXT) \
 @ENABLE_APP_TRUE@@HAVE_MRUBY_TRUE@	libnghttpx_a-shrpx_mruby_module_request.$(OBJEXT) \
 @ENABLE_APP_TRUE@@HAVE_MRUBY_TRUE@	libnghttpx_a-shrpx_mruby_module_response.$(OBJEXT)
-@ENABLE_APP_TRUE@am__objects_3 = libnghttpx_a-util.$(OBJEXT) \
+@ENABLE_APP_TRUE@am__objects_2 = libnghttpx_a-util.$(OBJEXT) \
 @ENABLE_APP_TRUE@	libnghttpx_a-http2.$(OBJEXT) \
 @ENABLE_APP_TRUE@	libnghttpx_a-timegm.$(OBJEXT) \
 @ENABLE_APP_TRUE@	libnghttpx_a-app_helper.$(OBJEXT) \
@@ -253,8 +250,8 @@ am__libnghttpx_a_SOURCES_DIST = util.cc util.h http2.cc http2.h \
 @ENABLE_APP_TRUE@	libnghttpx_a-shrpx_dual_dns_resolver.$(OBJEXT) \
 @ENABLE_APP_TRUE@	libnghttpx_a-shrpx_dns_tracker.$(OBJEXT) \
 @ENABLE_APP_TRUE@	libnghttpx_a-xsi_strerror.$(OBJEXT) \
-@ENABLE_APP_TRUE@	$(am__objects_1) $(am__objects_2)
-@ENABLE_APP_TRUE@am_libnghttpx_a_OBJECTS = $(am__objects_3)
+@ENABLE_APP_TRUE@	$(am__objects_1)
+@ENABLE_APP_TRUE@am_libnghttpx_a_OBJECTS = $(am__objects_2)
 libnghttpx_a_OBJECTS = $(am_libnghttpx_a_OBJECTS)
 am__vpath_adj_setup = srcdirstrip=`echo "$(srcdir)" | sed 's|.|.|g'`;
 am__vpath_adj = case $$p in \
@@ -363,9 +360,9 @@ libnghttp2_asio_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CXX \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	nghttpx-unittest$(EXEEXT)
 PROGRAMS = $(bin_PROGRAMS)
 am__deflatehd_SOURCES_DIST = deflatehd.cc comp_helper.c comp_helper.h
-@ENABLE_HPACK_TOOLS_TRUE@am__objects_4 = comp_helper.$(OBJEXT)
+@ENABLE_HPACK_TOOLS_TRUE@am__objects_3 = comp_helper.$(OBJEXT)
 @ENABLE_HPACK_TOOLS_TRUE@am_deflatehd_OBJECTS = deflatehd.$(OBJEXT) \
-@ENABLE_HPACK_TOOLS_TRUE@	$(am__objects_4)
+@ENABLE_HPACK_TOOLS_TRUE@	$(am__objects_3)
 deflatehd_OBJECTS = $(am_deflatehd_OBJECTS)
 deflatehd_LDADD = $(LDADD)
 deflatehd_DEPENDENCIES = $(top_builddir)/lib/libnghttp2.la \
@@ -373,21 +370,18 @@ deflatehd_DEPENDENCIES = $(top_builddir)/lib/libnghttp2.la \
 am__h2load_SOURCES_DIST = util.cc util.h http2.cc http2.h h2load.cc \
 	h2load.h timegm.c timegm.h tls.cc tls.h h2load_session.h \
 	h2load_http2_session.cc h2load_http2_session.h \
-	h2load_http1_session.cc h2load_http1_session.h \
-	h2load_spdy_session.cc h2load_spdy_session.h
-@ENABLE_APP_TRUE@@HAVE_SPDYLAY_TRUE@am__objects_5 = h2load_spdy_session.$(OBJEXT)
+	h2load_http1_session.cc h2load_http1_session.h
 @ENABLE_APP_TRUE@am_h2load_OBJECTS = util.$(OBJEXT) http2.$(OBJEXT) \
 @ENABLE_APP_TRUE@	h2load.$(OBJEXT) timegm.$(OBJEXT) \
 @ENABLE_APP_TRUE@	tls.$(OBJEXT) h2load_http2_session.$(OBJEXT) \
-@ENABLE_APP_TRUE@	h2load_http1_session.$(OBJEXT) \
-@ENABLE_APP_TRUE@	$(am__objects_5)
+@ENABLE_APP_TRUE@	h2load_http1_session.$(OBJEXT)
 h2load_OBJECTS = $(am_h2load_OBJECTS)
 h2load_LDADD = $(LDADD)
 h2load_DEPENDENCIES = $(top_builddir)/lib/libnghttp2.la \
 	$(top_builddir)/third-party/libhttp-parser.la
 am__inflatehd_SOURCES_DIST = inflatehd.cc comp_helper.c comp_helper.h
 @ENABLE_HPACK_TOOLS_TRUE@am_inflatehd_OBJECTS = inflatehd.$(OBJEXT) \
-@ENABLE_HPACK_TOOLS_TRUE@	$(am__objects_4)
+@ENABLE_HPACK_TOOLS_TRUE@	$(am__objects_3)
 inflatehd_OBJECTS = $(am_inflatehd_OBJECTS)
 inflatehd_LDADD = $(LDADD)
 inflatehd_DEPENDENCIES = $(top_builddir)/lib/libnghttp2.la \
@@ -396,16 +390,16 @@ am__nghttp_SOURCES_DIST = util.cc http2.cc timegm.c app_helper.cc \
 	nghttp2_gzip.c util.h http2.h timegm.h app_helper.h \
 	nghttp2_config.h nghttp2_gzip.h network.h nghttp.cc nghttp.h \
 	HtmlParser.cc HtmlParser.h tls.cc tls.h
-@ENABLE_APP_TRUE@am__objects_6 = util.$(OBJEXT) http2.$(OBJEXT) \
+@ENABLE_APP_TRUE@am__objects_4 = util.$(OBJEXT) http2.$(OBJEXT) \
 @ENABLE_APP_TRUE@	timegm.$(OBJEXT) app_helper.$(OBJEXT) \
 @ENABLE_APP_TRUE@	nghttp2_gzip.$(OBJEXT)
-am__objects_7 =
-@ENABLE_APP_TRUE@@HAVE_LIBXML2_TRUE@am__objects_8 =  \
+am__objects_5 =
+@ENABLE_APP_TRUE@@HAVE_LIBXML2_TRUE@am__objects_6 =  \
 @ENABLE_APP_TRUE@@HAVE_LIBXML2_TRUE@	HtmlParser.$(OBJEXT)
-@ENABLE_APP_TRUE@am__objects_9 = $(am__objects_8)
-@ENABLE_APP_TRUE@am_nghttp_OBJECTS = $(am__objects_6) $(am__objects_7) \
-@ENABLE_APP_TRUE@	nghttp.$(OBJEXT) $(am__objects_9) \
-@ENABLE_APP_TRUE@	$(am__objects_7) tls.$(OBJEXT)
+@ENABLE_APP_TRUE@am__objects_7 = $(am__objects_6)
+@ENABLE_APP_TRUE@am_nghttp_OBJECTS = $(am__objects_4) $(am__objects_5) \
+@ENABLE_APP_TRUE@	nghttp.$(OBJEXT) $(am__objects_7) \
+@ENABLE_APP_TRUE@	$(am__objects_5) tls.$(OBJEXT)
 nghttp_OBJECTS = $(am_nghttp_OBJECTS)
 nghttp_LDADD = $(LDADD)
 nghttp_DEPENDENCIES = $(top_builddir)/lib/libnghttp2.la \
@@ -414,8 +408,8 @@ am__nghttpd_SOURCES_DIST = util.cc http2.cc timegm.c app_helper.cc \
 	nghttp2_gzip.c util.h http2.h timegm.h app_helper.h \
 	nghttp2_config.h nghttp2_gzip.h network.h nghttpd.cc tls.cc \
 	tls.h HttpServer.cc HttpServer.h
-@ENABLE_APP_TRUE@am_nghttpd_OBJECTS = $(am__objects_6) \
-@ENABLE_APP_TRUE@	$(am__objects_7) nghttpd.$(OBJEXT) \
+@ENABLE_APP_TRUE@am_nghttpd_OBJECTS = $(am__objects_4) \
+@ENABLE_APP_TRUE@	$(am__objects_5) nghttpd.$(OBJEXT) \
 @ENABLE_APP_TRUE@	tls.$(OBJEXT) HttpServer.$(OBJEXT)
 nghttpd_OBJECTS = $(am_nghttpd_OBJECTS)
 nghttpd_LDADD = $(LDADD)
@@ -428,7 +422,7 @@ am__DEPENDENCIES_2 = $(top_builddir)/lib/libnghttp2.la \
 	$(top_builddir)/third-party/libhttp-parser.la
 @ENABLE_APP_TRUE@nghttpx_DEPENDENCIES = libnghttpx.a \
 @ENABLE_APP_TRUE@	$(am__DEPENDENCIES_2) $(am__DEPENDENCIES_1) \
-@ENABLE_APP_TRUE@	$(am__append_9)
+@ENABLE_APP_TRUE@	$(am__append_7)
 am__nghttpx_unittest_SOURCES_DIST = shrpx-unittest.cc \
 	shrpx_tls_test.cc shrpx_tls_test.h shrpx_downstream_test.cc \
 	shrpx_downstream_test.h shrpx_config_test.cc \
@@ -459,7 +453,7 @@ nghttpx_unittest_OBJECTS = $(am_nghttpx_unittest_OBJECTS)
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	libnghttpx.a \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	$(am__DEPENDENCIES_2) \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	$(am__DEPENDENCIES_1) \
-@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	$(am__append_14)
+@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	$(am__append_12)
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -831,8 +825,6 @@ LIBMRUBY_CFLAGS = @LIBMRUBY_CFLAGS@
 LIBMRUBY_LIBS = @LIBMRUBY_LIBS@
 LIBOBJS = @LIBOBJS@
 LIBS = @LIBS@
-LIBSPDYLAY_CFLAGS = @LIBSPDYLAY_CFLAGS@
-LIBSPDYLAY_LIBS = @LIBSPDYLAY_LIBS@
 LIBTOOL = @LIBTOOL@
 LIBXML2_CFLAGS = @LIBXML2_CFLAGS@
 LIBXML2_LIBS = @LIBXML2_LIBS@
@@ -974,7 +966,6 @@ AM_CPPFLAGS = \
 	-I$(top_srcdir)/lib \
 	-I$(top_srcdir)/src/includes \
 	-I$(top_srcdir)/third-party \
-	@LIBSPDYLAY_CFLAGS@ \
 	@LIBXML2_CFLAGS@ \
 	@LIBEV_CFLAGS@ \
 	@OPENSSL_CFLAGS@ \
@@ -986,7 +977,6 @@ AM_CPPFLAGS = \
 LDADD = $(top_builddir)/lib/libnghttp2.la \
 	$(top_builddir)/third-party/libhttp-parser.la \
 	@JEMALLOC_LIBS@ \
-	@LIBSPDYLAY_LIBS@ \
 	@LIBXML2_LIBS@ \
 	@LIBEV_LIBS@ \
 	@OPENSSL_LIBS@ \
@@ -1013,13 +1003,14 @@ LDADD = $(top_builddir)/lib/libnghttp2.la \
 @ENABLE_APP_TRUE@	tls.cc tls.h \
 @ENABLE_APP_TRUE@	HttpServer.cc HttpServer.h
 
-@ENABLE_APP_TRUE@h2load_SOURCES = util.cc util.h http2.cc http2.h \
-@ENABLE_APP_TRUE@	h2load.cc h2load.h timegm.c timegm.h tls.cc \
-@ENABLE_APP_TRUE@	tls.h h2load_session.h \
-@ENABLE_APP_TRUE@	h2load_http2_session.cc \
-@ENABLE_APP_TRUE@	h2load_http2_session.h \
-@ENABLE_APP_TRUE@	h2load_http1_session.cc \
-@ENABLE_APP_TRUE@	h2load_http1_session.h $(am__append_3)
+@ENABLE_APP_TRUE@h2load_SOURCES = util.cc util.h \
+@ENABLE_APP_TRUE@	http2.cc http2.h h2load.cc h2load.h \
+@ENABLE_APP_TRUE@	timegm.c timegm.h \
+@ENABLE_APP_TRUE@	tls.cc tls.h \
+@ENABLE_APP_TRUE@	h2load_session.h \
+@ENABLE_APP_TRUE@	h2load_http2_session.cc h2load_http2_session.h \
+@ENABLE_APP_TRUE@	h2load_http1_session.cc h2load_http1_session.h
+
 @ENABLE_APP_TRUE@NGHTTPX_SRCS = util.cc util.h http2.cc http2.h \
 @ENABLE_APP_TRUE@	timegm.c timegm.h base64.h app_helper.cc \
 @ENABLE_APP_TRUE@	app_helper.h tls.cc tls.h shrpx_config.cc \
@@ -1075,16 +1066,15 @@ LDADD = $(top_builddir)/lib/libnghttp2.la \
 @ENABLE_APP_TRUE@	shrpx_dual_dns_resolver.h \
 @ENABLE_APP_TRUE@	shrpx_dns_tracker.cc shrpx_dns_tracker.h \
 @ENABLE_APP_TRUE@	buffer.h memchunk.h template.h allocator.h \
-@ENABLE_APP_TRUE@	xsi_strerror.c xsi_strerror.h $(am__append_4) \
-@ENABLE_APP_TRUE@	$(am__append_5)
+@ENABLE_APP_TRUE@	xsi_strerror.c xsi_strerror.h $(am__append_3)
 @ENABLE_APP_TRUE@noinst_LIBRARIES = libnghttpx.a
 @ENABLE_APP_TRUE@libnghttpx_a_SOURCES = ${NGHTTPX_SRCS}
 @ENABLE_APP_TRUE@libnghttpx_a_CPPFLAGS = ${AM_CPPFLAGS} \
-@ENABLE_APP_TRUE@	$(am__append_6) $(am__append_8)
+@ENABLE_APP_TRUE@	$(am__append_4) $(am__append_6)
 @ENABLE_APP_TRUE@nghttpx_SOURCES = shrpx.cc shrpx.h
 @ENABLE_APP_TRUE@nghttpx_CPPFLAGS = ${libnghttpx_a_CPPFLAGS}
-@ENABLE_APP_TRUE@nghttpx_LDADD = libnghttpx.a ${LDADD} $(am__append_7) \
-@ENABLE_APP_TRUE@	$(am__append_9)
+@ENABLE_APP_TRUE@nghttpx_LDADD = libnghttpx.a ${LDADD} $(am__append_5) \
+@ENABLE_APP_TRUE@	$(am__append_7)
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@nghttpx_unittest_SOURCES = shrpx-unittest.cc \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	shrpx_tls_test.cc shrpx_tls_test.h \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	shrpx_downstream_test.cc shrpx_downstream_test.h \
@@ -1104,13 +1094,13 @@ LDADD = $(top_builddir)/lib/libnghttp2.la \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@nghttpx_unittest_CPPFLAGS =  \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	${AM_CPPFLAGS} \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	-DNGHTTP2_SRC_DIR=\"$(top_srcdir)/src\" \
-@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	$(am__append_11) \
-@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	$(am__append_13)
+@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	$(am__append_9) \
+@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	$(am__append_11)
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@nghttpx_unittest_LDADD =  \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	libnghttpx.a ${LDADD} \
 @ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	@CUNIT_LIBS@ @TESTLDADD@ \
-@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	$(am__append_12) \
-@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	$(am__append_14)
+@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	$(am__append_10) \
+@ENABLE_APP_TRUE@@HAVE_CUNIT_TRUE@	$(am__append_12)
 @ENABLE_HPACK_TOOLS_TRUE@HPACK_TOOLS_COMMON_SRCS = comp_helper.c comp_helper.h
 @ENABLE_HPACK_TOOLS_TRUE@inflatehd_SOURCES = inflatehd.cc $(HPACK_TOOLS_COMMON_SRCS)
 @ENABLE_HPACK_TOOLS_TRUE@deflatehd_SOURCES = deflatehd.cc $(HPACK_TOOLS_COMMON_SRCS)
@@ -1342,7 +1332,6 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/h2load.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/h2load_http1_session.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/h2load_http2_session.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/h2load_spdy_session.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/http2.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/inflatehd.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttp2_asio_la-asio_client_request.Plo@am__quote@
@@ -1411,7 +1400,6 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttpx_a-shrpx_rate_limit.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttpx_a-shrpx_router.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttpx_a-shrpx_signal.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttpx_a-shrpx_spdy_upstream.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttpx_a-shrpx_tls.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttpx_a-shrpx_worker.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttpx_a-shrpx_worker_process.Po@am__quote@
@@ -2084,20 +2072,6 @@ libnghttpx_a-shrpx_dns_tracker.obj: shrpx_dns_tracker.cc
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='shrpx_dns_tracker.cc' object='libnghttpx_a-shrpx_dns_tracker.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libnghttpx_a-shrpx_dns_tracker.obj `if test -f 'shrpx_dns_tracker.cc'; then $(CYGPATH_W) 'shrpx_dns_tracker.cc'; else $(CYGPATH_W) '$(srcdir)/shrpx_dns_tracker.cc'; fi`
-
-libnghttpx_a-shrpx_spdy_upstream.o: shrpx_spdy_upstream.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libnghttpx_a-shrpx_spdy_upstream.o -MD -MP -MF $(DEPDIR)/libnghttpx_a-shrpx_spdy_upstream.Tpo -c -o libnghttpx_a-shrpx_spdy_upstream.o `test -f 'shrpx_spdy_upstream.cc' || echo '$(srcdir)/'`shrpx_spdy_upstream.cc
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libnghttpx_a-shrpx_spdy_upstream.Tpo $(DEPDIR)/libnghttpx_a-shrpx_spdy_upstream.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='shrpx_spdy_upstream.cc' object='libnghttpx_a-shrpx_spdy_upstream.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libnghttpx_a-shrpx_spdy_upstream.o `test -f 'shrpx_spdy_upstream.cc' || echo '$(srcdir)/'`shrpx_spdy_upstream.cc
-
-libnghttpx_a-shrpx_spdy_upstream.obj: shrpx_spdy_upstream.cc
-@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libnghttpx_a-shrpx_spdy_upstream.obj -MD -MP -MF $(DEPDIR)/libnghttpx_a-shrpx_spdy_upstream.Tpo -c -o libnghttpx_a-shrpx_spdy_upstream.obj `if test -f 'shrpx_spdy_upstream.cc'; then $(CYGPATH_W) 'shrpx_spdy_upstream.cc'; else $(CYGPATH_W) '$(srcdir)/shrpx_spdy_upstream.cc'; fi`
-@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libnghttpx_a-shrpx_spdy_upstream.Tpo $(DEPDIR)/libnghttpx_a-shrpx_spdy_upstream.Po
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='shrpx_spdy_upstream.cc' object='libnghttpx_a-shrpx_spdy_upstream.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libnghttpx_a-shrpx_spdy_upstream.obj `if test -f 'shrpx_spdy_upstream.cc'; then $(CYGPATH_W) 'shrpx_spdy_upstream.cc'; else $(CYGPATH_W) '$(srcdir)/shrpx_spdy_upstream.cc'; fi`
 
 libnghttpx_a-shrpx_mruby.o: shrpx_mruby.cc
 @am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libnghttpx_a-shrpx_mruby.o -MD -MP -MF $(DEPDIR)/libnghttpx_a-shrpx_mruby.Tpo -c -o libnghttpx_a-shrpx_mruby.o `test -f 'shrpx_mruby.cc' || echo '$(srcdir)/'`shrpx_mruby.cc
