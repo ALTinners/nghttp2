@@ -20,8 +20,8 @@ Build-Depends: debhelper (>= 11),
 Build-Depends-Indep: python3-sphinx
 Standards-Version: 4.1.2
 Homepage: https://nghttp2.org/
-Vcs-Git: git://anonscm.debian.org/collab-maint/nghttp2.git
-Vcs-Browser: https://anonscm.debian.org/cgit/collab-maint/nghttp2.git
+Vcs-Git: https://salsa.debian.org/debian/nghttp2.git
+Vcs-Browser: https://salsa.debian.org/debian/nghttp2
 
 Package: libnghttp2-dev
 Suggests: libnghttp2-doc
