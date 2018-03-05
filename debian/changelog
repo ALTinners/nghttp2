@@ -1,3 +1,10 @@
+nghttp2 (1.31.0-1) unstable; urgency=medium
+
+  * Imported upstream version 1.31.0
+  * Update symbols of libnghttp2
+
+ -- Tomasz Buchert <tomasz@debian.org>  Tue, 06 Mar 2018 00:06:34 +0100
+
 nghttp2 (1.30.0-1) unstable; urgency=medium
 
   * Imported upstream version 1.30.0
