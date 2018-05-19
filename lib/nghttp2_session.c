@@ -219,6 +219,10 @@ static int session_terminate_session(nghttp2_session *session,
     return 0;
   }
 
+  /* Ignore all incoming frames because we are going to tear down the
+     session. */
+  session->iframe.state = NGHTTP2_IB_IGN_ALL;
+
   if (reason == NULL) {
     debug_data = NULL;
     debug_datalen = 0;
@@ -5346,9 +5350,6 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
 
       if (iframe->sbuf.pos[3] != NGHTTP2_SETTINGS ||
           (iframe->sbuf.pos[4] & NGHTTP2_FLAG_ACK)) {
-
-        iframe->state = NGHTTP2_IB_IGN_ALL;
-
         rv = session_call_error_callback(
             session, NGHTTP2_ERR_SETTINGS_EXPECTED,
             "Remote peer returned unexpected data while we expected "
@@ -5395,10 +5396,6 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
         DEBUGF("recv: length is too large %zu > %u\n", iframe->frame.hd.length,
                session->local_settings.max_frame_size);
 
-        busy = 1;
-
-        iframe->state = NGHTTP2_IB_IGN_PAYLOAD;
-
         rv = nghttp2_session_terminate_session_with_reason(
             session, NGHTTP2_FRAME_SIZE_ERROR, "too large frame size");
 
@@ -5406,7 +5403,7 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
           return rv;
         }
 
-        break;
+        return (ssize_t)inlen;
       }
 
       switch (iframe->frame.hd.type) {
@@ -5420,6 +5417,9 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
         busy = 1;
 
         rv = session_on_data_received_fail_fast(session);
+        if (iframe->state == NGHTTP2_IB_IGN_ALL) {
+          return (ssize_t)inlen;
+        }
         if (rv == NGHTTP2_ERR_IGN_PAYLOAD) {
           DEBUGF("recv: DATA not allowed stream_id=%d\n",
                  iframe->frame.hd.stream_id);
@@ -5433,7 +5433,6 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
 
         rv = inbound_frame_handle_pad(iframe, &iframe->frame.hd);
         if (rv < 0) {
-          iframe->state = NGHTTP2_IB_IGN_DATA;
           rv = nghttp2_session_terminate_session_with_reason(
               session, NGHTTP2_PROTOCOL_ERROR,
               "DATA: insufficient padding space");
@@ -5441,7 +5440,7 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
           if (nghttp2_is_fatal(rv)) {
             return rv;
           }
-          break;
+          return (ssize_t)inlen;
         }
 
         if (rv == 1) {
@@ -5462,17 +5461,13 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
 
         rv = inbound_frame_handle_pad(iframe, &iframe->frame.hd);
         if (rv < 0) {
-          busy = 1;
-
-          iframe->state = NGHTTP2_IB_IGN_PAYLOAD;
-
           rv = nghttp2_session_terminate_session_with_reason(
               session, NGHTTP2_PROTOCOL_ERROR,
               "HEADERS: insufficient padding space");
           if (nghttp2_is_fatal(rv)) {
             return rv;
           }
-          break;
+          return (ssize_t)inlen;
         }
 
         if (rv == 1) {
@@ -5513,6 +5508,10 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
         }
 
         busy = 1;
+
+        if (iframe->state == NGHTTP2_IB_IGN_ALL) {
+          return (ssize_t)inlen;
+        }
 
         if (rv == NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE) {
           rv = nghttp2_session_add_rst_stream(
@@ -5628,15 +5627,13 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
 
         rv = inbound_frame_handle_pad(iframe, &iframe->frame.hd);
         if (rv < 0) {
-          busy = 1;
-          iframe->state = NGHTTP2_IB_IGN_PAYLOAD;
           rv = nghttp2_session_terminate_session_with_reason(
               session, NGHTTP2_PROTOCOL_ERROR,
               "PUSH_PROMISE: insufficient padding space");
           if (nghttp2_is_fatal(rv)) {
             return rv;
           }
-          break;
+          return (ssize_t)inlen;
         }
 
         if (rv == 1) {
@@ -5696,11 +5693,7 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
           return rv;
         }
 
-        busy = 1;
-
-        iframe->state = NGHTTP2_IB_IGN_PAYLOAD;
-
-        break;
+        return (ssize_t)inlen;
       default:
         DEBUGF("recv: extension frame\n");
 
@@ -5770,6 +5763,7 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
         case NGHTTP2_IB_IGN_PAYLOAD:
         case NGHTTP2_IB_FRAME_SIZE_ERROR:
         case NGHTTP2_IB_IGN_DATA:
+        case NGHTTP2_IB_IGN_ALL:
           break;
         default:
           rv = session_call_on_begin_frame(session, &iframe->frame.hd);
@@ -5800,20 +5794,18 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
       case NGHTTP2_HEADERS:
         if (iframe->padlen == 0 &&
             (iframe->frame.hd.flags & NGHTTP2_FLAG_PADDED)) {
+          pri_fieldlen = nghttp2_frame_priority_len(iframe->frame.hd.flags);
           padlen = inbound_frame_compute_pad(iframe);
-          if (padlen < 0) {
-            busy = 1;
+          if (padlen < 0 ||
+              (size_t)padlen + pri_fieldlen > 1 + iframe->payloadleft) {
             rv = nghttp2_session_terminate_session_with_reason(
                 session, NGHTTP2_PROTOCOL_ERROR, "HEADERS: invalid padding");
             if (nghttp2_is_fatal(rv)) {
               return rv;
             }
-            iframe->state = NGHTTP2_IB_IGN_PAYLOAD;
-            break;
+            return (ssize_t)inlen;
           }
           iframe->frame.headers.padlen = (size_t)padlen;
-
-          pri_fieldlen = nghttp2_frame_priority_len(iframe->frame.hd.flags);
 
           if (pri_fieldlen > 0) {
             if (iframe->payloadleft < pri_fieldlen) {
@@ -5836,6 +5828,10 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
         }
 
         busy = 1;
+
+        if (iframe->state == NGHTTP2_IB_IGN_ALL) {
+          return (ssize_t)inlen;
+        }
 
         if (rv == NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE) {
           rv = nghttp2_session_add_rst_stream(
@@ -5861,6 +5857,10 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
           return rv;
         }
 
+        if (iframe->state == NGHTTP2_IB_IGN_ALL) {
+          return (ssize_t)inlen;
+        }
+
         session_inbound_frame_reset(session);
 
         break;
@@ -5870,6 +5870,10 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
           return rv;
         }
 
+        if (iframe->state == NGHTTP2_IB_IGN_ALL) {
+          return (ssize_t)inlen;
+        }
+
         session_inbound_frame_reset(session);
 
         break;
@@ -5877,16 +5881,15 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
         if (iframe->padlen == 0 &&
             (iframe->frame.hd.flags & NGHTTP2_FLAG_PADDED)) {
           padlen = inbound_frame_compute_pad(iframe);
-          if (padlen < 0) {
-            busy = 1;
+          if (padlen < 0 || (size_t)padlen + 4 /* promised stream id */
+                                > 1 + iframe->payloadleft) {
             rv = nghttp2_session_terminate_session_with_reason(
                 session, NGHTTP2_PROTOCOL_ERROR,
                 "PUSH_PROMISE: invalid padding");
             if (nghttp2_is_fatal(rv)) {
               return rv;
             }
-            iframe->state = NGHTTP2_IB_IGN_PAYLOAD;
-            break;
+            return (ssize_t)inlen;
           }
 
           iframe->frame.push_promise.padlen = (size_t)padlen;
@@ -5911,6 +5914,10 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
 
         busy = 1;
 
+        if (iframe->state == NGHTTP2_IB_IGN_ALL) {
+          return (ssize_t)inlen;
+        }
+
         if (rv == NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE) {
           rv = nghttp2_session_add_rst_stream(
               session, iframe->frame.push_promise.promised_stream_id,
@@ -5934,6 +5941,10 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
         rv = session_process_ping_frame(session);
         if (nghttp2_is_fatal(rv)) {
           return rv;
+        }
+
+        if (iframe->state == NGHTTP2_IB_IGN_ALL) {
+          return (ssize_t)inlen;
         }
 
         session_inbound_frame_reset(session);
@@ -5965,6 +5976,10 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
         rv = session_process_window_update_frame(session);
         if (nghttp2_is_fatal(rv)) {
           return rv;
+        }
+
+        if (iframe->state == NGHTTP2_IB_IGN_ALL) {
+          return (ssize_t)inlen;
         }
 
         session_inbound_frame_reset(session);
@@ -6028,6 +6043,12 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
 
       data_readlen = inbound_frame_effective_readlen(
           iframe, iframe->payloadleft - readlen, readlen);
+
+      if (data_readlen == -1) {
+        /* everything is padding */
+        data_readlen = 0;
+      }
+
       trail_padlen = nghttp2_frame_trail_padlen(&iframe->frame, iframe->padlen);
 
       final = (iframe->frame.hd.flags & NGHTTP2_FLAG_END_HEADERS) &&
@@ -6045,6 +6066,10 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
 
         if (nghttp2_is_fatal(rv)) {
           return rv;
+        }
+
+        if (iframe->state == NGHTTP2_IB_IGN_ALL) {
+          return (ssize_t)inlen;
         }
 
         if (rv == NGHTTP2_ERR_PAUSE) {
@@ -6156,11 +6181,9 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
         return rv;
       }
 
-      busy = 1;
+      assert(iframe->state == NGHTTP2_IB_IGN_ALL);
 
-      iframe->state = NGHTTP2_IB_IGN_PAYLOAD;
-
-      break;
+      return (ssize_t)inlen;
     case NGHTTP2_IB_READ_SETTINGS:
       DEBUGF("recv: [IB_READ_SETTINGS]\n");
 
@@ -6187,6 +6210,10 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
 
       if (nghttp2_is_fatal(rv)) {
         return rv;
+      }
+
+      if (iframe->state == NGHTTP2_IB_IGN_ALL) {
+        return (ssize_t)inlen;
       }
 
       session_inbound_frame_reset(session);
@@ -6217,6 +6244,10 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
 
       if (nghttp2_is_fatal(rv)) {
         return rv;
+      }
+
+      if (iframe->state == NGHTTP2_IB_IGN_ALL) {
+        return (ssize_t)inlen;
       }
 
       session_inbound_frame_reset(session);
@@ -6258,11 +6289,7 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
           return rv;
         }
 
-        busy = 1;
-
-        iframe->state = NGHTTP2_IB_IGN_PAYLOAD;
-
-        break;
+        return (ssize_t)inlen;
       }
 
       /* CONTINUATION won't bear NGHTTP2_PADDED flag */
@@ -6306,12 +6333,20 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
         return rv;
       }
 
+      if (iframe->state == NGHTTP2_IB_IGN_ALL) {
+        return (ssize_t)inlen;
+      }
+
       /* Pad Length field is consumed immediately */
       rv =
           nghttp2_session_consume(session, iframe->frame.hd.stream_id, readlen);
 
       if (nghttp2_is_fatal(rv)) {
         return rv;
+      }
+
+      if (iframe->state == NGHTTP2_IB_IGN_ALL) {
+        return (ssize_t)inlen;
       }
 
       stream = nghttp2_session_get_stream(session, iframe->frame.hd.stream_id);
@@ -6334,8 +6369,7 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
         if (nghttp2_is_fatal(rv)) {
           return rv;
         }
-        iframe->state = NGHTTP2_IB_IGN_DATA;
-        break;
+        return (ssize_t)inlen;
       }
 
       iframe->frame.data.padlen = (size_t)padlen;
@@ -6369,6 +6403,10 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
           return rv;
         }
 
+        if (iframe->state == NGHTTP2_IB_IGN_ALL) {
+          return (ssize_t)inlen;
+        }
+
         rv = session_update_recv_stream_window_size(
             session, stream, readlen,
             iframe->payloadleft ||
@@ -6395,6 +6433,10 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
           if (nghttp2_is_fatal(rv)) {
             return rv;
           }
+
+          if (iframe->state == NGHTTP2_IB_IGN_ALL) {
+            return (ssize_t)inlen;
+          }
         }
 
         DEBUGF("recv: data_readlen=%zd\n", data_readlen);
@@ -6409,6 +6451,10 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
 
                 if (nghttp2_is_fatal(rv)) {
                   return rv;
+                }
+
+                if (iframe->state == NGHTTP2_IB_IGN_DATA) {
+                  return (ssize_t)inlen;
                 }
               }
 
@@ -6467,6 +6513,10 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
           return rv;
         }
 
+        if (iframe->state == NGHTTP2_IB_IGN_ALL) {
+          return (ssize_t)inlen;
+        }
+
         if (session->opt_flags & NGHTTP2_OPTMASK_NO_AUTO_WINDOW_UPDATE) {
 
           /* Ignored DATA is considered as "consumed" immediately. */
@@ -6474,6 +6524,10 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
 
           if (nghttp2_is_fatal(rv)) {
             return rv;
+          }
+
+          if (iframe->state == NGHTTP2_IB_IGN_ALL) {
+            return (ssize_t)inlen;
           }
         }
       }
