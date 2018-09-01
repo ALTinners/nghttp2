@@ -55,13 +55,13 @@ int main() {
 
   /* initialize the CUnit test registry */
   if (CUE_SUCCESS != CU_initialize_registry())
-    return CU_get_error();
+    return (int)CU_get_error();
 
   /* add a suite to the registry */
   pSuite = CU_add_suite("libnghttp2_TestSuite", init_suite1, clean_suite1);
   if (NULL == pSuite) {
     CU_cleanup_registry();
-    return CU_get_error();
+    return (int)CU_get_error();
   }
 
   /* add the tests to the suite */
@@ -316,6 +316,8 @@ int main() {
                    test_nghttp2_session_pause_data) ||
       !CU_add_test(pSuite, "session_no_closed_streams",
                    test_nghttp2_session_no_closed_streams) ||
+      !CU_add_test(pSuite, "session_set_stream_user_data",
+                   test_nghttp2_session_set_stream_user_data) ||
       !CU_add_test(pSuite, "http_mandatory_headers",
                    test_nghttp2_http_mandatory_headers) ||
       !CU_add_test(pSuite, "http_content_length",
@@ -411,7 +413,7 @@ int main() {
                    test_nghttp2_bufs_next_present) ||
       !CU_add_test(pSuite, "bufs_realloc", test_nghttp2_bufs_realloc)) {
     CU_cleanup_registry();
-    return CU_get_error();
+    return (int)CU_get_error();
   }
 
   /* Run all tests using the CUnit Basic interface */
@@ -423,6 +425,6 @@ int main() {
     return (int)num_tests_failed;
   } else {
     printf("CUnit Error: %s\n", CU_get_error_msg());
-    return CU_get_error();
+    return (int)CU_get_error();
   }
 }
