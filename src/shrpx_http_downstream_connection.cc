@@ -87,7 +87,11 @@ void retry_downstream_connection(Downstream *downstream,
   downstream->pop_downstream_connection();
 
   int rv;
-  auto ndconn = handler->get_downstream_connection(rv, downstream);
+  // We have to use h1 backend for retry if we have already written h1
+  // request in request buffer.
+  auto ndconn = handler->get_downstream_connection(
+      rv, downstream,
+      downstream->get_request_header_sent() ? PROTO_HTTP1 : PROTO_NONE);
   if (ndconn) {
     if (downstream->attach_downstream_connection(std::move(ndconn)) == 0 &&
         downstream->push_request_headers() == 0) {
@@ -693,9 +697,35 @@ int HttpDownstreamConnection::push_request_headers() {
   // Don't call signal_write() if we anticipate request body.  We call
   // signal_write() when we received request body chunk, and it
   // enables us to send headers and data in one writev system call.
-  if (connect_method ||
+  if (connect_method || downstream_->get_blocked_request_buf()->rleft() ||
       (!req.http2_expect_body && req.fs.content_length == 0)) {
     signal_write();
+  }
+
+  return process_blocked_request_buf();
+}
+
+int HttpDownstreamConnection::process_blocked_request_buf() {
+  auto src = downstream_->get_blocked_request_buf();
+
+  if (src->rleft()) {
+    auto dest = downstream_->get_request_buf();
+    auto chunked = downstream_->get_chunked_request();
+    if (chunked) {
+      auto chunk_size_hex = util::utox(src->rleft());
+      dest->append(chunk_size_hex);
+      dest->append("\r\n");
+    }
+
+    src->remove(*dest);
+
+    if (chunked) {
+      dest->append("\r\n");
+    }
+  }
+
+  if (downstream_->get_blocked_request_data_eof()) {
+    return end_upload_data();
   }
 
   return 0;

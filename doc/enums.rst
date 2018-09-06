@@ -282,6 +282,11 @@ Enums
         (``0x0a``) 
         The ALTSVC frame, which is defined in `RFC 7383
         <https://tools.ietf.org/html/rfc7838#section-4>`_.
+    .. macro:: NGHTTP2_ORIGIN
+
+        (``0x0c``) 
+        The ORIGIN frame, which is defined by `RFC 8336
+        <https://tools.ietf.org/html/rfc8336>`_.
 
 .. type:: nghttp2_flag
 

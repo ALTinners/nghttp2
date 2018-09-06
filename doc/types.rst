@@ -1194,6 +1194,41 @@ Types (structs, unions and typedefs)
 
         The length of the *field_value*.
 
+.. type:: nghttp2_origin_entry
+
+    
+    The single entry of an origin.
+
+    .. member::   uint8_t *origin
+
+        The pointer to origin.  No validation is made against this field
+        by the library.  This is not necessarily NULL-terminated.
+    .. member::   size_t origin_len
+
+        The length of the *origin*.
+
+.. type:: nghttp2_ext_origin
+
+    
+    The payload of ORIGIN frame.  ORIGIN frame is a non-critical
+    extension to HTTP/2 and defined by `RFC 8336
+    <https://tools.ietf.org/html/rfc8336>`_.
+    
+    If this frame is received, and
+    `nghttp2_option_set_user_recv_extension_type()` is not set, and
+    `nghttp2_option_set_builtin_recv_extension_type()` is set for
+    :macro:`NGHTTP2_ORIGIN`, ``nghttp2_extension.payload`` will point to
+    this struct.
+    
+    It has the following members:
+
+    .. member::   size_t nov
+
+        The number of origins contained in *ov*.
+    .. member::   nghttp2_origin_entry *ov
+
+        The pointer to the array of origins contained in ORIGIN frame.
+
 .. type:: nghttp2_hd_deflater
 
     

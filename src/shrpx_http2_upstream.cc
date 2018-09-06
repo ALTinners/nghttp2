@@ -39,7 +39,7 @@
 #include "shrpx_http2_session.h"
 #include "shrpx_log.h"
 #ifdef HAVE_MRUBY
-#include "shrpx_mruby.h"
+#  include "shrpx_mruby.h"
 #endif // HAVE_MRUBY
 #include "http2.h"
 #include "util.h"
@@ -461,6 +461,9 @@ void Http2Upstream::initiate_downstream(Downstream *downstream) {
     return;
   }
 
+#ifdef HAVE_MRUBY
+  auto dconn_ptr = dconn.get();
+#endif // HAVE_MRUBY
   rv = downstream->attach_downstream_connection(std::move(dconn));
   if (rv != 0) {
     // downstream connection fails, send error page
@@ -474,6 +477,27 @@ void Http2Upstream::initiate_downstream(Downstream *downstream) {
 
     return;
   }
+
+#ifdef HAVE_MRUBY
+  const auto &group = dconn_ptr->get_downstream_addr_group();
+  if (group) {
+    const auto &mruby_ctx = group->mruby_ctx;
+    if (mruby_ctx->run_on_request_proc(downstream) != 0) {
+      if (error_reply(downstream, 500) != 0) {
+        rst_stream(downstream, NGHTTP2_INTERNAL_ERROR);
+      }
+
+      downstream_queue_.mark_failure(downstream);
+
+      return;
+    }
+
+    if (downstream->get_response_state() == Downstream::MSG_COMPLETE) {
+      return;
+    }
+  }
+#endif // HAVE_MRUBY
+
   rv = downstream->push_request_headers();
   if (rv != 0) {
 
@@ -590,7 +614,7 @@ int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
   auto downstream = static_cast<Downstream *>(
       nghttp2_session_get_stream_user_data(session, stream_id));
 
-  if (!downstream || !downstream->get_downstream_connection()) {
+  if (!downstream) {
     if (upstream->consume(stream_id, len) != 0) {
       return NGHTTP2_ERR_CALLBACK_FAILURE;
     }
@@ -1611,6 +1635,24 @@ int Http2Upstream::on_downstream_header_complete(Downstream *downstream) {
 
 #ifdef HAVE_MRUBY
   if (!downstream->get_non_final_response()) {
+    auto dconn = downstream->get_downstream_connection();
+    const auto &group = dconn->get_downstream_addr_group();
+    if (group) {
+      const auto &dmruby_ctx = group->mruby_ctx;
+
+      if (dmruby_ctx->run_on_response_proc(downstream) != 0) {
+        if (error_reply(downstream, 500) != 0) {
+          return -1;
+        }
+        // Returning -1 will signal deletion of dconn.
+        return -1;
+      }
+
+      if (downstream->get_response_state() == Downstream::MSG_COMPLETE) {
+        return -1;
+      }
+    }
+
     auto worker = handler_->get_worker();
     auto mruby_ctx = worker->get_mruby_context();
 
