@@ -38,7 +38,7 @@
 #include "shrpx_http2_session.h"
 #include "shrpx_log.h"
 #ifdef HAVE_MRUBY
-#include "shrpx_mruby.h"
+#  include "shrpx_mruby.h"
 #endif // HAVE_MRUBY
 #include "util.h"
 #include "http2.h"
@@ -121,6 +121,7 @@ Downstream::Downstream(Upstream *upstream, MemchunkPool *mcpool,
       req_(balloc_),
       resp_(balloc_),
       request_start_time_(std::chrono::high_resolution_clock::now()),
+      blocked_request_buf_(mcpool),
       request_buf_(mcpool),
       response_buf_(mcpool),
       upstream_(upstream),
@@ -142,7 +143,8 @@ Downstream::Downstream(Upstream *upstream, MemchunkPool *mcpool,
       request_pending_(false),
       request_header_sent_(false),
       accesslog_written_(false),
-      new_affinity_cookie_(false) {
+      new_affinity_cookie_(false),
+      blocked_request_data_eof_(false) {
 
   auto &timeoutconf = get_config()->http2.timeout;
 
@@ -186,6 +188,16 @@ Downstream::~Downstream() {
 #endif // HAVE_MRUBY
   }
 
+#ifdef HAVE_MRUBY
+  if (dconn_) {
+    const auto &group = dconn_->get_downstream_addr_group();
+    if (group) {
+      const auto &mruby_ctx = group->mruby_ctx;
+      mruby_ctx->delete_downstream(this);
+    }
+  }
+#endif // HAVE_MRUBY
+
   // DownstreamConnection may refer to this object.  Delete it now
   // explicitly.
   dconn_.reset();
@@ -215,6 +227,14 @@ void Downstream::detach_downstream_connection() {
     return;
   }
 
+#ifdef HAVE_MRUBY
+  const auto &group = dconn_->get_downstream_addr_group();
+  if (group) {
+    const auto &mruby_ctx = group->mruby_ctx;
+    mruby_ctx->delete_downstream(this);
+  }
+#endif // HAVE_MRUBY
+
   dconn_->detach_downstream(this);
 
   auto handler = dconn_->get_client_handler();
@@ -228,6 +248,18 @@ DownstreamConnection *Downstream::get_downstream_connection() {
 }
 
 std::unique_ptr<DownstreamConnection> Downstream::pop_downstream_connection() {
+#ifdef HAVE_MRUBY
+  if (!dconn_) {
+    return nullptr;
+  }
+
+  const auto &group = dconn_->get_downstream_addr_group();
+  if (group) {
+    const auto &mruby_ctx = group->mruby_ctx;
+    mruby_ctx->delete_downstream(this);
+  }
+#endif // HAVE_MRUBY
+
   return std::unique_ptr<DownstreamConnection>(dconn_.release());
 }
 
@@ -584,7 +616,8 @@ bool Downstream::request_buf_full() {
 
   if (dconn_) {
     auto &downstreamconf = *worker->get_downstream_config();
-    return request_buf_.rleft() >= downstreamconf.request_buffer_size;
+    return blocked_request_buf_.rleft() + request_buf_.rleft() >=
+           downstreamconf.request_buffer_size;
   }
 
   return false;
@@ -605,6 +638,12 @@ int Downstream::push_request_headers() {
 int Downstream::push_upload_data_chunk(const uint8_t *data, size_t datalen) {
   req_.recv_body_length += datalen;
 
+  if (!request_header_sent_) {
+    blocked_request_buf_.append(data, datalen);
+    req_.unconsumed_body_length += datalen;
+    return 0;
+  }
+
   // Assumes that request headers have already been pushed to output
   // buffer using push_request_headers().
   if (!dconn_) {
@@ -621,6 +660,10 @@ int Downstream::push_upload_data_chunk(const uint8_t *data, size_t datalen) {
 }
 
 int Downstream::end_upload_data() {
+  if (!request_header_sent_) {
+    blocked_request_data_eof_ = true;
+    return 0;
+  }
   if (!dconn_) {
     DLOG(INFO, this) << "dconn_ is NULL";
     return -1;
@@ -1050,6 +1093,14 @@ uint32_t Downstream::get_affinity_cookie_to_send() const {
     return affinity_cookie_;
   }
   return 0;
+}
+
+DefaultMemchunks *Downstream::get_blocked_request_buf() {
+  return &blocked_request_buf_;
+}
+
+bool Downstream::get_blocked_request_data_eof() const {
+  return blocked_request_data_eof_;
 }
 
 } // namespace shrpx

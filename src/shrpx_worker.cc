@@ -25,7 +25,7 @@
 #include "shrpx_worker.h"
 
 #ifdef HAVE_UNISTD_H
-#include <unistd.h>
+#  include <unistd.h>
 #endif // HAVE_UNISTD_H
 
 #include <memory>
@@ -37,7 +37,7 @@
 #include "shrpx_log_config.h"
 #include "shrpx_memcached_dispatcher.h"
 #ifdef HAVE_MRUBY
-#include "shrpx_mruby.h"
+#  include "shrpx_mruby.h"
 #endif // HAVE_MRUBY
 #include "util.h"
 #include "template.h"
@@ -67,6 +67,10 @@ void proc_wev_cb(struct ev_loop *loop, ev_timer *w, int revents) {
   worker->process_events();
 }
 } // namespace
+
+DownstreamAddrGroup::DownstreamAddrGroup() : retired{false} {}
+
+DownstreamAddrGroup::~DownstreamAddrGroup() {}
 
 // DownstreamKey is used to index SharedDownstreamAddr in order to
 // find the same configuration.
@@ -177,6 +181,12 @@ void Worker::replace_downstream_config(
       std::vector<std::shared_ptr<DownstreamAddrGroup>>(groups.size());
 
   std::map<DownstreamKey, size_t> addr_groups_indexer;
+#ifdef HAVE_MRUBY
+  // TODO It is a bit less efficient because
+  // mruby::create_mruby_context returns std::unique_ptr and we cannot
+  // use std::make_shared.
+  std::map<StringRef, std::shared_ptr<mruby::MRubyContext>> shared_mruby_ctxs;
+#endif // HAVE_MRUBY
 
   for (size_t i = 0; i < groups.size(); ++i) {
     auto &src = groups[i];
@@ -185,6 +195,16 @@ void Worker::replace_downstream_config(
     dst = std::make_shared<DownstreamAddrGroup>();
     dst->pattern =
         ImmutableString{std::begin(src.pattern), std::end(src.pattern)};
+#ifdef HAVE_MRUBY
+    auto mruby_ctx_it = shared_mruby_ctxs.find(src.mruby_file);
+    if (mruby_ctx_it == std::end(shared_mruby_ctxs)) {
+      dst->mruby_ctx = mruby::create_mruby_context(src.mruby_file);
+      assert(dst->mruby_ctx);
+      shared_mruby_ctxs.emplace(src.mruby_file, dst->mruby_ctx);
+    } else {
+      dst->mruby_ctx = (*mruby_ctx_it).second;
+    }
+#endif // HAVE_MRUBY
 
     auto shared_addr = std::make_shared<SharedDownstreamAddr>();
 
