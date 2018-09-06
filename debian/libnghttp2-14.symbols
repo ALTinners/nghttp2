@@ -137,6 +137,7 @@ libnghttp2.so.14 libnghttp2-14 #MINVER#
  nghttp2_submit_extension@Base 1.8.0
  nghttp2_submit_goaway@Base 1.3.0
  nghttp2_submit_headers@Base 1.3.0
+ nghttp2_submit_origin@Base 1.33.0
  nghttp2_submit_ping@Base 1.3.0
  nghttp2_submit_priority@Base 1.3.0
  nghttp2_submit_push_promise@Base 1.3.0
