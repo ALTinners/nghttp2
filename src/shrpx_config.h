@@ -347,6 +347,15 @@ constexpr auto SHRPX_OPT_VERIFY_CLIENT_TOLERATE_EXPIRED =
     StringRef::from_lit("verify-client-tolerate-expired");
 constexpr auto SHRPX_OPT_IGNORE_PER_PATTERN_MRUBY_ERROR =
     StringRef::from_lit("ignore-per-pattern-mruby-error");
+constexpr auto SHRPX_OPT_TLS_NO_POSTPONE_EARLY_DATA =
+    StringRef::from_lit("tls-no-postpone-early-data");
+constexpr auto SHRPX_OPT_TLS_MAX_EARLY_DATA =
+    StringRef::from_lit("tls-max-early-data");
+constexpr auto SHRPX_OPT_TLS13_CIPHERS = StringRef::from_lit("tls13-ciphers");
+constexpr auto SHRPX_OPT_TLS13_CLIENT_CIPHERS =
+    StringRef::from_lit("tls13-client-ciphers");
+constexpr auto SHRPX_OPT_NO_STRIP_INCOMING_EARLY_DATA =
+    StringRef::from_lit("no-strip-incoming-early-data");
 
 constexpr size_t SHRPX_OBFUSCATED_NODE_LENGTH = 8;
 
@@ -495,6 +504,11 @@ struct DownstreamAddrGroupConfig {
   // true if this group requires that client connection must be TLS,
   // and the request must be redirected to https URI.
   bool redirect_if_not_tls;
+  // Timeouts for backend connection.
+  struct {
+    ev_tstamp read;
+    ev_tstamp write;
+  } timeout;
 };
 
 struct TicketKey {
@@ -622,6 +636,7 @@ struct TLSConfig {
     StringRef private_key_file;
     StringRef cert_file;
     StringRef ciphers;
+    StringRef tls13_ciphers;
     bool no_http2_cipher_black_list;
   } client;
 
@@ -648,14 +663,20 @@ struct TLSConfig {
   StringRef cert_file;
   StringRef dh_param_file;
   StringRef ciphers;
+  StringRef tls13_ciphers;
   StringRef ecdh_curves;
   StringRef cacert;
+  // The maximum amount of 0-RTT data that server accepts.
+  uint32_t max_early_data;
   // The minimum and maximum TLS version.  These values are defined in
   // OpenSSL header file.
   int min_proto_version;
   int max_proto_version;
   bool insecure;
   bool no_http2_cipher_black_list;
+  // true if forwarding requests included in TLS early data should not
+  // be postponed until TLS handshake finishes.
+  bool no_postpone_early_data;
 };
 
 // custom error page
@@ -690,6 +711,9 @@ struct HttpConfig {
     bool add;
     bool strip_incoming;
   } xfp;
+  struct {
+    bool strip_incoming;
+  } early_data;
   std::vector<AltSvc> altsvcs;
   std::vector<ErrorPage> error_pages;
   HeaderRefs add_request_headers;
@@ -1086,6 +1110,7 @@ enum {
   SHRPX_OPTID_NO_OCSP,
   SHRPX_OPTID_NO_SERVER_PUSH,
   SHRPX_OPTID_NO_SERVER_REWRITE,
+  SHRPX_OPTID_NO_STRIP_INCOMING_EARLY_DATA,
   SHRPX_OPTID_NO_STRIP_INCOMING_X_FORWARDED_PROTO,
   SHRPX_OPTID_NO_VERIFY_OCSP,
   SHRPX_OPTID_NO_VIA,
@@ -1114,8 +1139,10 @@ enum {
   SHRPX_OPTID_SYSLOG_FACILITY,
   SHRPX_OPTID_TLS_DYN_REC_IDLE_TIMEOUT,
   SHRPX_OPTID_TLS_DYN_REC_WARMUP_THRESHOLD,
+  SHRPX_OPTID_TLS_MAX_EARLY_DATA,
   SHRPX_OPTID_TLS_MAX_PROTO_VERSION,
   SHRPX_OPTID_TLS_MIN_PROTO_VERSION,
+  SHRPX_OPTID_TLS_NO_POSTPONE_EARLY_DATA,
   SHRPX_OPTID_TLS_PROTO_LIST,
   SHRPX_OPTID_TLS_SCT_DIR,
   SHRPX_OPTID_TLS_SESSION_CACHE_MEMCACHED,
@@ -1133,6 +1160,8 @@ enum {
   SHRPX_OPTID_TLS_TICKET_KEY_MEMCACHED_MAX_RETRY,
   SHRPX_OPTID_TLS_TICKET_KEY_MEMCACHED_PRIVATE_KEY_FILE,
   SHRPX_OPTID_TLS_TICKET_KEY_MEMCACHED_TLS,
+  SHRPX_OPTID_TLS13_CIPHERS,
+  SHRPX_OPTID_TLS13_CLIENT_CIPHERS,
   SHRPX_OPTID_USER,
   SHRPX_OPTID_VERIFY_CLIENT,
   SHRPX_OPTID_VERIFY_CLIENT_CACERT,

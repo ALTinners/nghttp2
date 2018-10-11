@@ -812,6 +812,8 @@ struct DownstreamParams {
   StringRef sni;
   StringRef mruby;
   AffinityConfig affinity;
+  ev_tstamp read_timeout;
+  ev_tstamp write_timeout;
   size_t fall;
   size_t rise;
   shrpx_proto proto;
@@ -820,6 +822,22 @@ struct DownstreamParams {
   bool redirect_if_not_tls;
   bool upgrade_scheme;
 };
+
+namespace {
+// Parses |value| of parameter named |name| as duration.  This
+// function returns 0 if it succeeds and the parsed value is assigned
+// to |dest|, or -1.
+int parse_downstream_param_duration(ev_tstamp &dest, const StringRef &name,
+                                    const StringRef &value) {
+  auto t = util::parse_duration_with_unit(value);
+  if (t == std::numeric_limits<double>::infinity()) {
+    LOG(ERROR) << "backend: " << name << ": bad value: '" << value << "'";
+    return -1;
+  }
+  dest = t;
+  return 0;
+}
+} // namespace
 
 namespace {
 // Parses downstream configuration parameter |src_params|, and stores
@@ -928,6 +946,18 @@ int parse_downstream_params(DownstreamParams &out,
     } else if (util::istarts_with_l(param, "mruby=")) {
       auto valstr = StringRef{first + str_size("mruby="), end};
       out.mruby = valstr;
+    } else if (util::istarts_with_l(param, "read-timeout=")) {
+      if (parse_downstream_param_duration(
+              out.read_timeout, StringRef::from_lit("read-timeout"),
+              StringRef{first + str_size("read-timeout="), end}) == -1) {
+        return -1;
+      }
+    } else if (util::istarts_with_l(param, "write-timeout=")) {
+      if (parse_downstream_param_duration(
+              out.write_timeout, StringRef::from_lit("write-timeout"),
+              StringRef{first + str_size("write-timeout="), end}) == -1) {
+        return -1;
+      }
     } else if (!param.empty()) {
       LOG(ERROR) << "backend: " << param << ": unknown keyword";
       return -1;
@@ -1053,15 +1083,40 @@ int parse_mapping(Config *config, DownstreamAddrConfig &addr,
         g.redirect_if_not_tls = true;
       }
       // All backends in the same group must have the same mruby path.
-      // If some backend does not specify mruby file, and there is at
-      // least one backend with mruby file, it is used for all backend
-      // in the group.
-      if (g.mruby_file.empty()) {
-        g.mruby_file = make_string_ref(downstreamconf.balloc, params.mruby);
-      } else if (g.mruby_file != params.mruby) {
-        LOG(ERROR) << "backend: mruby: multiple different mruby file found in "
-                      "a single group";
-        return -1;
+      // If some backends do not specify mruby file, and there is at
+      // least one backend with mruby file, it is used for all
+      // backends in the group.
+      if (!params.mruby.empty()) {
+        if (g.mruby_file.empty()) {
+          g.mruby_file = make_string_ref(downstreamconf.balloc, params.mruby);
+        } else if (g.mruby_file != params.mruby) {
+          LOG(ERROR) << "backend: mruby: multiple different mruby file found "
+                        "in a single group";
+          return -1;
+        }
+      }
+      // All backends in the same group must have the same read/write
+      // timeout.  If some backends do not specify read/write timeout,
+      // and there is at least one backend with read/write timeout, it
+      // is used for all backends in the group.
+      if (params.read_timeout > 1e-9) {
+        if (g.timeout.read < 1e-9) {
+          g.timeout.read = params.read_timeout;
+        } else if (fabs(g.timeout.read - params.read_timeout) > 1e-9) {
+          LOG(ERROR)
+              << "backend: read-timeout: multiple different read-timeout "
+                 "found in a single group";
+          return -1;
+        }
+      }
+      if (params.write_timeout > 1e-9) {
+        if (g.timeout.write < 1e-9) {
+          g.timeout.write = params.write_timeout;
+        } else if (fabs(g.timeout.write - params.write_timeout) > 1e-9) {
+          LOG(ERROR) << "backend: write-timeout: multiple different "
+                        "write-timeout found in a single group";
+          return -1;
+        }
       }
 
       g.addrs.push_back(addr);
@@ -1085,6 +1140,8 @@ int parse_mapping(Config *config, DownstreamAddrConfig &addr,
     }
     g.redirect_if_not_tls = params.redirect_if_not_tls;
     g.mruby_file = make_string_ref(downstreamconf.balloc, params.mruby);
+    g.timeout.read = params.read_timeout;
+    g.timeout.write = params.write_timeout;
 
     if (pattern[0] == '*') {
       // wildcard pattern
@@ -1759,6 +1816,11 @@ int option_lookup_token(const char *name, size_t namelen) {
         return SHRPX_OPTID_FORWARDED_FOR;
       }
       break;
+    case 's':
+      if (util::strieq_l("tls13-cipher", name, 12)) {
+        return SHRPX_OPTID_TLS13_CIPHERS;
+      }
+      break;
     case 't':
       if (util::strieq_l("verify-clien", name, 12)) {
         return SHRPX_OPTID_VERIFY_CLIENT;
@@ -1883,6 +1945,11 @@ int option_lookup_token(const char *name, size_t namelen) {
     break;
   case 18:
     switch (name[17]) {
+    case 'a':
+      if (util::strieq_l("tls-max-early-dat", name, 17)) {
+        return SHRPX_OPTID_TLS_MAX_EARLY_DATA;
+      }
+      break;
     case 'r':
       if (util::strieq_l("add-request-heade", name, 17)) {
         return SHRPX_OPTID_ADD_REQUEST_HEADER;
@@ -1949,6 +2016,11 @@ int option_lookup_token(const char *name, size_t namelen) {
     case 'l':
       if (util::strieq_l("ocsp-update-interva", name, 19)) {
         return SHRPX_OPTID_OCSP_UPDATE_INTERVAL;
+      }
+      break;
+    case 's':
+      if (util::strieq_l("tls13-client-cipher", name, 19)) {
+        return SHRPX_OPTID_TLS13_CLIENT_CIPHERS;
       }
       break;
     case 't':
@@ -2114,6 +2186,11 @@ int option_lookup_token(const char *name, size_t namelen) {
     break;
   case 26:
     switch (name[25]) {
+    case 'a':
+      if (util::strieq_l("tls-no-postpone-early-dat", name, 25)) {
+        return SHRPX_OPTID_TLS_NO_POSTPONE_EARLY_DATA;
+      }
+      break;
     case 'e':
       if (util::strieq_l("frontend-http2-window-siz", name, 25)) {
         return SHRPX_OPTID_FRONTEND_HTTP2_WINDOW_SIZE;
@@ -2166,6 +2243,11 @@ int option_lookup_token(const char *name, size_t namelen) {
     break;
   case 28:
     switch (name[27]) {
+    case 'a':
+      if (util::strieq_l("no-strip-incoming-early-dat", name, 27)) {
+        return SHRPX_OPTID_NO_STRIP_INCOMING_EARLY_DATA;
+      }
+      break;
     case 'd':
       if (util::strieq_l("tls-dyn-rec-warmup-threshol", name, 27)) {
         return SHRPX_OPTID_TLS_DYN_REC_WARMUP_THRESHOLD;
@@ -2821,6 +2903,10 @@ int parse_config(Config *config, int optid, const StringRef &opt,
     return parse_uint(&config->conn.listener.backlog, opt, optarg);
   case SHRPX_OPTID_CIPHERS:
     config->tls.ciphers = make_string_ref(config->balloc, optarg);
+
+    return 0;
+  case SHRPX_OPTID_TLS13_CIPHERS:
+    config->tls.tls13_ciphers = make_string_ref(config->balloc, optarg);
 
     return 0;
   case SHRPX_OPTID_CLIENT:
@@ -3538,6 +3624,10 @@ int parse_config(Config *config, int optid, const StringRef &opt,
     config->tls.client.ciphers = make_string_ref(config->balloc, optarg);
 
     return 0;
+  case SHRPX_OPTID_TLS13_CLIENT_CIPHERS:
+    config->tls.client.tls13_ciphers = make_string_ref(config->balloc, optarg);
+
+    return 0;
   case SHRPX_OPTID_ACCESSLOG_WRITE_EARLY:
     config->logging.access.write_early = util::strieq_l("yes", optarg);
 
@@ -3589,6 +3679,17 @@ int parse_config(Config *config, int optid, const StringRef &opt,
     return 0;
   case SHRPX_OPTID_IGNORE_PER_PATTERN_MRUBY_ERROR:
     config->ignore_per_pattern_mruby_error = util::strieq_l("yes", optarg);
+
+    return 0;
+  case SHRPX_OPTID_TLS_NO_POSTPONE_EARLY_DATA:
+    config->tls.no_postpone_early_data = util::strieq_l("yes", optarg);
+
+    return 0;
+  case SHRPX_OPTID_TLS_MAX_EARLY_DATA: {
+    return parse_uint_with_unit(&config->tls.max_early_data, opt, optarg);
+  }
+  case SHRPX_OPTID_NO_STRIP_INCOMING_EARLY_DATA:
+    config->http.early_data.strip_incoming = !util::strieq_l("yes", optarg);
 
     return 0;
   case SHRPX_OPTID_CONF:
@@ -4001,6 +4102,14 @@ int configure_downstream_group(Config *config, bool http2_proxy,
                 [](const AffinityHash &lhs, const AffinityHash &rhs) {
                   return lhs.hash < rhs.hash;
                 });
+    }
+
+    auto &timeout = g.timeout;
+    if (timeout.read < 1e-9) {
+      timeout.read = downstreamconf.timeout.read;
+    }
+    if (timeout.write < 1e-9) {
+      timeout.write = downstreamconf.timeout.write;
     }
   }
 

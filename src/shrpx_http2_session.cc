@@ -186,9 +186,9 @@ Http2Session::Http2Session(struct ev_loop *loop, SSL_CTX *ssl_ctx,
     : dlnext(nullptr),
       dlprev(nullptr),
       conn_(loop, -1, nullptr, worker->get_mcpool(),
-            worker->get_downstream_config()->timeout.write,
-            worker->get_downstream_config()->timeout.read, {}, {}, writecb,
-            readcb, timeoutcb, this, get_config()->tls.dyn_rec.warmup_threshold,
+            group->shared_addr->timeout.write, group->shared_addr->timeout.read,
+            {}, {}, writecb, readcb, timeoutcb, this,
+            get_config()->tls.dyn_rec.warmup_threshold,
             get_config()->tls.dyn_rec.idle_timeout, PROTO_HTTP2),
       wb_(worker->get_mcpool()),
       worker_(worker),
@@ -199,7 +199,9 @@ Http2Session::Http2Session(struct ev_loop *loop, SSL_CTX *ssl_ctx,
       raddr_(nullptr),
       state_(DISCONNECTED),
       connection_check_state_(CONNECTION_CHECK_NONE),
-      freelist_zone_(FREELIST_ZONE_NONE) {
+      freelist_zone_(FREELIST_ZONE_NONE),
+      settings_recved_(false),
+      allow_connect_proto_(false) {
   read_ = write_ = &Http2Session::noop;
 
   on_read_ = &Http2Session::read_noop;
@@ -618,7 +620,7 @@ int htp_hdrs_completecb(http_parser *htp) {
   http_parser_pause(htp, 1);
 
   // We just check status code here
-  if (htp->status_code == 200) {
+  if (htp->status_code / 100 == 2) {
     if (LOG_ENABLED(INFO)) {
       SSLOG(INFO, http2session) << "Tunneling success";
     }
@@ -1141,7 +1143,7 @@ int on_response_headers(Http2Session *http2session, Downstream *downstream,
   }
 
   downstream->set_response_state(Downstream::HEADER_COMPLETE);
-  downstream->check_upgrade_fulfilled();
+  downstream->check_upgrade_fulfilled_http2();
 
   if (downstream->get_upgraded()) {
     resp.connection_close = true;
@@ -1308,6 +1310,7 @@ int on_frame_recv_callback(nghttp2_session *session, const nghttp2_frame *frame,
   }
   case NGHTTP2_SETTINGS: {
     if ((frame->hd.flags & NGHTTP2_FLAG_ACK) == 0) {
+      http2session->on_settings_received(frame);
       return 0;
     }
 
@@ -1769,7 +1772,6 @@ int Http2Session::downstream_write() {
   for (;;) {
     const uint8_t *data;
     auto datalen = nghttp2_session_mem_send(session_, &data);
-
     if (datalen < 0) {
       SSLOG(ERROR, this) << "nghttp2_session_mem_send() returned error: "
                          << nghttp2_strerror(datalen);
@@ -1856,9 +1858,11 @@ int Http2Session::consume(int32_t stream_id, size_t len) {
   return 0;
 }
 
-bool Http2Session::can_push_request() const {
+bool Http2Session::can_push_request(const Downstream *downstream) const {
+  auto &req = downstream->request();
   return state_ == CONNECTED &&
-         connection_check_state_ == CONNECTION_CHECK_NONE;
+         connection_check_state_ == CONNECTION_CHECK_NONE &&
+         (!req.connect_proto || settings_recved_);
 }
 
 void Http2Session::start_checking_connection() {
@@ -1917,6 +1921,11 @@ void Http2Session::submit_pending_requests() {
       continue;
     }
 
+    auto &req = downstream->request();
+    if (req.connect_proto && !settings_recved_) {
+      continue;
+    }
+
     auto upstream = downstream->get_upstream();
 
     if (dconn->push_request_headers() != 0) {
@@ -1963,10 +1972,8 @@ int Http2Session::connected() {
     SSLOG(INFO, this) << "Connection established";
   }
 
-  auto &downstreamconf = *get_config()->conn.downstream;
-
   // Reset timeout for write.  Previously, we set timeout for connect.
-  conn_.wt.repeat = downstreamconf.timeout.write;
+  conn_.wt.repeat = group_->shared_addr->timeout.write;
   ev_timer_again(conn_.loop, &conn_.wt);
 
   conn_.rlimit.startw();
@@ -2404,5 +2411,29 @@ void Http2Session::check_retire() {
 }
 
 const Address *Http2Session::get_raddr() const { return raddr_; }
+
+void Http2Session::on_settings_received(const nghttp2_frame *frame) {
+  // TODO This effectively disallows nghttpx to change its behaviour
+  // based on the 2nd SETTINGS.
+  if (settings_recved_) {
+    return;
+  }
+
+  settings_recved_ = true;
+
+  for (size_t i = 0; i < frame->settings.niv; ++i) {
+    auto &ent = frame->settings.iv[i];
+    if (ent.settings_id == NGHTTP2_SETTINGS_ENABLE_CONNECT_PROTOCOL) {
+      allow_connect_proto_ = true;
+      break;
+    }
+  }
+
+  submit_pending_requests();
+}
+
+bool Http2Session::get_allow_connect_proto() const {
+  return allow_connect_proto_;
+}
 
 } // namespace shrpx
