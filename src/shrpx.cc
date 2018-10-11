@@ -1459,12 +1459,17 @@ void fill_default_config(Config *config) {
 
   tlsconf.session_timeout = std::chrono::hours(12);
   tlsconf.ciphers = StringRef::from_lit(nghttp2::tls::DEFAULT_CIPHER_LIST);
+  tlsconf.tls13_ciphers =
+      StringRef::from_lit(nghttp2::tls::DEFAULT_TLS13_CIPHER_LIST);
   tlsconf.client.ciphers =
       StringRef::from_lit(nghttp2::tls::DEFAULT_CIPHER_LIST);
+  tlsconf.client.tls13_ciphers =
+      StringRef::from_lit(nghttp2::tls::DEFAULT_TLS13_CIPHER_LIST);
   tlsconf.min_proto_version =
       tls::proto_version_from_string(DEFAULT_TLS_MIN_PROTO_VERSION);
   tlsconf.max_proto_version =
       tls::proto_version_from_string(DEFAULT_TLS_MAX_PROTO_VERSION);
+  tlsconf.max_early_data = 16_k;
 #if OPENSSL_1_1_API || defined(OPENSSL_IS_BORINGSSL)
   tlsconf.ecdh_curves = StringRef::from_lit("X25519:P-256:P-384:P-521");
 #else  // !OPENSSL_1_1_API && !defined(OPENSSL_IS_BORINGSSL)
@@ -1482,6 +1487,7 @@ void fill_default_config(Config *config) {
   httpconf.max_requests = std::numeric_limits<size_t>::max();
   httpconf.xfp.add = true;
   httpconf.xfp.strip_incoming = true;
+  httpconf.early_data.strip_incoming = true;
 
   auto &http2conf = config->http2;
   {
@@ -1730,11 +1736,13 @@ Connections:
               parameters       are:      "proto=<PROTO>",       "tls",
               "sni=<SNI_HOST>",         "fall=<N>",        "rise=<N>",
               "affinity=<METHOD>",    "dns",    "redirect-if-not-tls",
-              "upgrade-scheme",  and  "mruby=<PATH>".   The  parameter
-              consists of keyword, and  optionally followed by "=" and
-              value.  For  example, the parameter  "proto=h2" consists
-              of the  keyword "proto"  and value "h2".   The parameter
-              "tls" consists of the keyword "tls" without value.  Each
+              "upgrade-scheme",                        "mruby=<PATH>",
+              "read-timeout=<DURATION>",                           and
+              "write-timeout=<DURATION>".   The parameter  consists of
+              keyword, and optionally followed  by "=" and value.  For
+              example,  the  parameter   "proto=h2"  consists  of  the
+              keyword  "proto" and  value "h2".   The parameter  "tls"
+              consists  of  the  keyword "tls"  without  value.   Each
               parameter is described as follows.
 
               The backend application protocol  can be specified using
@@ -1832,6 +1840,14 @@ Connections:
               script  file  which  is  invoked when  this  pattern  is
               matched.  All backends which share the same pattern must
               have the same mruby path.
+
+              "read-timeout=<DURATION>" and "write-timeout=<DURATION>"
+              parameters  specify the  read and  write timeout  of the
+              backend connection  when this  pattern is  matched.  All
+              backends which share the same pattern must have the same
+              timeouts.  If these timeouts  are entirely omitted for a
+              pattern,            --backend-read-timeout           and
+              --backend-write-timeout are used.
 
               Since ";" and ":" are  used as delimiter, <PATTERN> must
               not  contain these  characters.  Since  ";" has  special
@@ -2080,13 +2096,31 @@ SSL/TLS:
   --ciphers=<SUITE>
               Set allowed  cipher list  for frontend  connection.  The
               format of the string is described in OpenSSL ciphers(1).
+              This option  sets cipher suites for  TLSv1.2 or earlier.
+              Use --tls13-ciphers for TLSv1.3.
               Default: )"
       << config->tls.ciphers << R"(
+  --tls13-ciphers=<SUITE>
+              Set allowed  cipher list  for frontend  connection.  The
+              format of the string is described in OpenSSL ciphers(1).
+              This  option  sets  cipher   suites  for  TLSv1.3.   Use
+              --ciphers for TLSv1.2 or earlier.
+              Default: )"
+      << config->tls.tls13_ciphers << R"(
   --client-ciphers=<SUITE>
               Set  allowed cipher  list for  backend connection.   The
               format of the string is described in OpenSSL ciphers(1).
+              This option  sets cipher suites for  TLSv1.2 or earlier.
+              Use --tls13-client-ciphers for TLSv1.3.
               Default: )"
       << config->tls.client.ciphers << R"(
+  --tls13-client-ciphers=<SUITE>
+              Set  allowed cipher  list for  backend connection.   The
+              format of the string is described in OpenSSL ciphers(1).
+              This  option  sets  cipher   suites  for  TLSv1.3.   Use
+              --tls13-client-ciphers for TLSv1.2 or earlier.
+              Default: )"
+      << config->tls.client.tls13_ciphers << R"(
   --ecdh-curves=<LIST>
               Set  supported  curve  list  for  frontend  connections.
               <LIST> is a  colon separated list of curve  NID or names
@@ -2370,6 +2404,18 @@ SSL/TLS:
               HTTP/2.   To  use  those   cipher  suites  with  HTTP/2,
               consider   to  use   --client-no-http2-cipher-black-list
               option.  But be aware its implications.
+  --tls-no-postpone-early-data
+              By default,  nghttpx postpones forwarding  HTTP requests
+              sent in early data, including those sent in partially in
+              it, until TLS handshake finishes.  If all backend server
+              recognizes "Early-Data" header  field, using this option
+              makes nghttpx  not postpone  forwarding request  and get
+              full potential of 0-RTT data.
+  --tls-max-early-data=<SIZE>
+              Sets  the  maximum  amount  of 0-RTT  data  that  server
+              accepts.
+              Default: )"
+      << util::utos_unit(config->tls.max_early_data) << R"(
 
 HTTP/2:
   -c, --frontend-http2-max-concurrent-streams=<N>
@@ -2609,6 +2655,9 @@ HTTP:
               Default: obfuscated
   --no-via    Don't append to  Via header field.  If  Via header field
               is received, it is left unaltered.
+  --no-strip-incoming-early-data
+              Don't strip Early-Data header  field from inbound client
+              requests.
   --no-location-rewrite
               Don't  rewrite location  header field  in default  mode.
               When --http2-proxy  is used, location header  field will
@@ -3436,6 +3485,12 @@ int main(int argc, char **argv) {
          160},
         {SHRPX_OPT_IGNORE_PER_PATTERN_MRUBY_ERROR.c_str(), no_argument, &flag,
          161},
+        {SHRPX_OPT_TLS_NO_POSTPONE_EARLY_DATA.c_str(), no_argument, &flag, 162},
+        {SHRPX_OPT_TLS_MAX_EARLY_DATA.c_str(), required_argument, &flag, 163},
+        {SHRPX_OPT_TLS13_CIPHERS.c_str(), required_argument, &flag, 164},
+        {SHRPX_OPT_TLS13_CLIENT_CIPHERS.c_str(), required_argument, &flag, 165},
+        {SHRPX_OPT_NO_STRIP_INCOMING_EARLY_DATA.c_str(), no_argument, &flag,
+         166},
         {nullptr, 0, nullptr, 0}};
 
     int option_index = 0;
@@ -4205,6 +4260,28 @@ int main(int argc, char **argv) {
       case 161:
         // --ignore-per-pattern-mruby-error
         cmdcfgs.emplace_back(SHRPX_OPT_IGNORE_PER_PATTERN_MRUBY_ERROR,
+                             StringRef::from_lit("yes"));
+        break;
+      case 162:
+        // --tls-no-postpone-early-data
+        cmdcfgs.emplace_back(SHRPX_OPT_TLS_NO_POSTPONE_EARLY_DATA,
+                             StringRef::from_lit("yes"));
+        break;
+      case 163:
+        // --tls-max-early-data
+        cmdcfgs.emplace_back(SHRPX_OPT_TLS_MAX_EARLY_DATA, StringRef{optarg});
+        break;
+      case 164:
+        // --tls13-ciphers
+        cmdcfgs.emplace_back(SHRPX_OPT_TLS13_CIPHERS, StringRef{optarg});
+        break;
+      case 165:
+        // --tls13-client-ciphers
+        cmdcfgs.emplace_back(SHRPX_OPT_TLS13_CLIENT_CIPHERS, StringRef{optarg});
+        break;
+      case 166:
+        // --no-strip-incoming-early-data
+        cmdcfgs.emplace_back(SHRPX_OPT_NO_STRIP_INCOMING_EARLY_DATA,
                              StringRef::from_lit("yes"));
         break;
       default:

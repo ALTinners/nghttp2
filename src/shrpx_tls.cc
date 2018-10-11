@@ -517,6 +517,13 @@ int ticket_key_cb(SSL *ssl, unsigned char *key_name, unsigned char *iv,
 
 namespace {
 void info_callback(const SSL *ssl, int where, int ret) {
+#ifdef TLS1_3_VERSION
+  // TLSv1.3 has no renegotiation.
+  if (SSL_version(ssl) == TLS1_3_VERSION) {
+    return;
+  }
+#endif // TLS1_3_VERSION
+
   // To mitigate possible DOS attack using lots of renegotiations, we
   // disable renegotiation. Since OpenSSL does not provide an easy way
   // to disable it, we check that renegotiation is started in this
@@ -584,7 +591,7 @@ int sct_add_cb(SSL *ssl, unsigned int ext_type, unsigned int context,
 
   if (LOG_ENABLED(INFO)) {
     LOG(INFO) << "sct_add_cb is called, chainidx=" << chainidx << ", x=" << x
-              << ", context=" << std::hex << context;
+              << ", context=" << log::hex << context;
   }
 
   // We only have SCTs for leaf certificate.
@@ -763,7 +770,17 @@ SSL_CTX *create_ssl_context(const char *private_key_file, const char *cert_file,
       (SSL_OP_ALL & ~SSL_OP_DONT_INSERT_EMPTY_FRAGMENTS) | SSL_OP_NO_SSLv2 |
       SSL_OP_NO_SSLv3 | SSL_OP_NO_COMPRESSION |
       SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION | SSL_OP_SINGLE_ECDH_USE |
-      SSL_OP_SINGLE_DH_USE | SSL_OP_CIPHER_SERVER_PREFERENCE;
+      SSL_OP_SINGLE_DH_USE |
+      SSL_OP_CIPHER_SERVER_PREFERENCE
+#if OPENSSL_1_1_1_API
+      // The reason for disabling built-in anti-replay in OpenSSL is
+      // that it only works if client gets back to the same server.
+      // The freshness check described in
+      // https://tools.ietf.org/html/rfc8446#section-8.3 is still
+      // performed.
+      | SSL_OP_NO_ANTI_REPLAY
+#endif // OPENSSL_1_1_1_API
+      ;
 
   auto config = mod_config();
   auto &tlsconf = config->tls;
@@ -792,6 +809,14 @@ SSL_CTX *create_ssl_context(const char *private_key_file, const char *cert_file,
                << " failed: " << ERR_error_string(ERR_get_error(), nullptr);
     DIE();
   }
+
+#if OPENSSL_1_1_1_API
+  if (SSL_CTX_set_ciphersuites(ssl_ctx, tlsconf.tls13_ciphers.c_str()) == 0) {
+    LOG(FATAL) << "SSL_CTX_set_ciphersuites " << tlsconf.tls13_ciphers
+               << " failed: " << ERR_error_string(ERR_get_error(), nullptr);
+    DIE();
+  }
+#endif // OPENSSL_1_1_1_API
 
 #ifndef OPENSSL_NO_EC
 #  if !LIBRESSL_LEGACY_API && OPENSSL_VERSION_NUMBER >= 0x10002000L
@@ -966,6 +991,14 @@ SSL_CTX *create_ssl_context(const char *private_key_file, const char *cert_file,
   }
 #endif // !LIBRESSL_IN_USE && OPENSSL_VERSION_NUMBER >= 0x10002000L
 
+#if OPENSSL_1_1_1_API
+  if (SSL_CTX_set_max_early_data(ssl_ctx, tlsconf.max_early_data) != 1) {
+    LOG(FATAL) << "SSL_CTX_set_max_early_data failed: "
+               << ERR_error_string(ERR_get_error(), nullptr);
+    DIE();
+  }
+#endif // OPENSSL_1_1_1_API
+
 #ifndef OPENSSL_NO_PSK
   SSL_CTX_set_psk_server_callback(ssl_ctx, psk_server_cb);
 #endif // !LIBRESSL_NO_PSK
@@ -1065,6 +1098,15 @@ SSL_CTX *create_ssl_client_context(
                << " failed: " << ERR_error_string(ERR_get_error(), nullptr);
     DIE();
   }
+
+#if OPENSSL_1_1_1_API
+  if (SSL_CTX_set_ciphersuites(ssl_ctx, tlsconf.client.tls13_ciphers.c_str()) ==
+      0) {
+    LOG(FATAL) << "SSL_CTX_set_ciphersuites " << tlsconf.client.tls13_ciphers
+               << " failed: " << ERR_error_string(ERR_get_error(), nullptr);
+    DIE();
+  }
+#endif // OPENSSL_1_1_1_API
 
   SSL_CTX_set_mode(ssl_ctx, SSL_MODE_RELEASE_BUFFERS);
 
@@ -1814,7 +1856,7 @@ void try_cache_tls_session(TLSSessionCache *cache, SSL_SESSION *session,
 
   if (LOG_ENABLED(INFO)) {
     LOG(INFO) << "Update client cache entry "
-              << "timestamp = " << std::fixed << std::setprecision(6) << t;
+              << "timestamp = " << t;
   }
 
   cache->session_data = serialize_ssl_session(session);
@@ -1864,6 +1906,11 @@ int verify_ocsp_response(SSL_CTX *ssl_ctx, const uint8_t *ocsp_resp,
     return -1;
   }
   auto resp_deleter = defer(OCSP_RESPONSE_free, resp);
+
+  if (OCSP_response_status(resp) != OCSP_RESPONSE_STATUS_SUCCESSFUL) {
+    LOG(ERROR) << "OCSP response status is not successful";
+    return -1;
+  }
 
   ERR_clear_error();
 

@@ -347,6 +347,11 @@ Enums
 
         (``0x06``) 
         SETTINGS_MAX_HEADER_LIST_SIZE
+    .. macro:: NGHTTP2_SETTINGS_ENABLE_CONNECT_PROTOCOL
+
+        (``0x08``) 
+        SETTINGS_ENABLE_CONNECT_PROTOCOL
+        (`RFC 8441 <https://tools.ietf.org/html/rfc8441>`_)
 
 .. type:: nghttp2_error_code
 

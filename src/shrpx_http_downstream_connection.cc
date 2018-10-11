@@ -39,6 +39,7 @@
 #include "shrpx_log.h"
 #include "http2.h"
 #include "util.h"
+#include "ssl_compat.h"
 
 using namespace nghttp2;
 
@@ -189,9 +190,8 @@ HttpDownstreamConnection::HttpDownstreamConnection(
     const std::shared_ptr<DownstreamAddrGroup> &group, size_t initial_addr_idx,
     struct ev_loop *loop, Worker *worker)
     : conn_(loop, -1, nullptr, worker->get_mcpool(),
-            worker->get_downstream_config()->timeout.write,
-            worker->get_downstream_config()->timeout.read, {}, {}, connectcb,
-            readcb, connect_timeoutcb, this,
+            group->shared_addr->timeout.write, group->shared_addr->timeout.read,
+            {}, {}, connectcb, readcb, connect_timeoutcb, this,
             get_config()->tls.dyn_rec.warmup_threshold,
             get_config()->tls.dyn_rec.idle_timeout, PROTO_HTTP1),
       on_read_(&HttpDownstreamConnection::noop),
@@ -458,11 +458,11 @@ int HttpDownstreamConnection::initiate_connection() {
   } else {
     // we may set read timer cb to idle_timeoutcb.  Reset again.
     ev_set_cb(&conn_.rt, timeoutcb);
-    if (conn_.read_timeout < downstreamconf.timeout.read) {
-      conn_.read_timeout = downstreamconf.timeout.read;
+    if (conn_.read_timeout < group_->shared_addr->timeout.read) {
+      conn_.read_timeout = group_->shared_addr->timeout.read;
       conn_.last_read = ev_now(conn_.loop);
     } else {
-      conn_.again_rt(downstreamconf.timeout.read);
+      conn_.again_rt(group_->shared_addr->timeout.read);
     }
 
     ev_set_cb(&conn_.rev, readcb);
@@ -488,7 +488,7 @@ int HttpDownstreamConnection::push_request_headers() {
 
   auto &balloc = downstream_->get_block_allocator();
 
-  auto connect_method = req.method == HTTP_CONNECT;
+  auto connect_method = req.regular_connect_method();
 
   auto config = get_config();
   auto &httpconf = config->http;
@@ -512,7 +512,8 @@ int HttpDownstreamConnection::push_request_headers() {
   auto buf = downstream_->get_request_buf();
 
   // Assume that method and request path do not contain \r\n.
-  auto meth = http2::to_method_string(req.method);
+  auto meth = http2::to_method_string(
+      req.connect_proto == CONNECT_PROTO_WEBSOCKET ? HTTP_GET : req.method);
   buf->append(meth);
   buf->append(' ');
 
@@ -539,11 +540,14 @@ int HttpDownstreamConnection::push_request_headers() {
   auto &fwdconf = httpconf.forwarded;
   auto &xffconf = httpconf.xff;
   auto &xfpconf = httpconf.xfp;
+  auto &earlydataconf = httpconf.early_data;
 
   uint32_t build_flags =
       (fwdconf.strip_incoming ? http2::HDOP_STRIP_FORWARDED : 0) |
       (xffconf.strip_incoming ? http2::HDOP_STRIP_X_FORWARDED_FOR : 0) |
-      (xfpconf.strip_incoming ? http2::HDOP_STRIP_X_FORWARDED_PROTO : 0);
+      (xfpconf.strip_incoming ? http2::HDOP_STRIP_X_FORWARDED_PROTO : 0) |
+      (earlydataconf.strip_incoming ? http2::HDOP_STRIP_EARLY_DATA : 0) |
+      (req.http_major == 2 ? http2::HDOP_STRIP_SEC_WEBSOCKET_KEY : 0);
 
   http2::build_http1_headers_from_headers(buf, req.fs.headers(), build_flags);
 
@@ -556,16 +560,30 @@ int HttpDownstreamConnection::push_request_headers() {
 
   // set transfer-encoding only when content-length is unknown and
   // request body is expected.
-  if (!connect_method && req.http2_expect_body && req.fs.content_length == -1) {
+  if (req.method != HTTP_CONNECT && req.http2_expect_body &&
+      req.fs.content_length == -1) {
     downstream_->set_chunked_request(true);
     buf->append("Transfer-Encoding: chunked\r\n");
   }
 
-  if (req.connection_close) {
-    buf->append("Connection: close\r\n");
-  }
+  if (req.connect_proto == CONNECT_PROTO_WEBSOCKET) {
+    if (req.http_major == 2) {
+      std::array<uint8_t, 16> nonce;
+      util::random_bytes(std::begin(nonce), std::end(nonce),
+                         worker_->get_randgen());
+      auto iov = make_byte_ref(balloc, base64::encode_length(nonce.size()) + 1);
+      auto p = base64::encode(std::begin(nonce), std::end(nonce), iov.base);
+      *p = '\0';
+      auto key = StringRef{iov.base, p};
+      downstream_->set_ws_key(key);
 
-  if (!connect_method && req.upgrade_request) {
+      buf->append("Sec-Websocket-Key: ");
+      buf->append(key);
+      buf->append("\r\n");
+    }
+
+    buf->append("Upgrade: websocket\r\nConnection: Upgrade\r\n");
+  } else if (!connect_method && req.upgrade_request) {
     auto connection = req.fs.header(http2::HD_CONNECTION);
     if (connection) {
       buf->append("Connection: ");
@@ -579,10 +597,20 @@ int HttpDownstreamConnection::push_request_headers() {
       buf->append((*upgrade).value);
       buf->append("\r\n");
     }
+  } else if (req.connection_close) {
+    buf->append("Connection: close\r\n");
   }
 
   auto upstream = downstream_->get_upstream();
   auto handler = upstream->get_client_handler();
+
+#if OPENSSL_1_1_1_API
+  auto conn = handler->get_connection();
+
+  if (conn->tls.ssl && !SSL_is_init_finished(conn->tls.ssl)) {
+    buf->append("Early-Data: 1\r\n");
+  }
+#endif // OPENSSL_1_1_1_API
 
   auto fwd =
       fwdconf.strip_incoming ? nullptr : req.fs.header(http2::HD_FORWARDED);
@@ -697,7 +725,8 @@ int HttpDownstreamConnection::push_request_headers() {
   // Don't call signal_write() if we anticipate request body.  We call
   // signal_write() when we received request body chunk, and it
   // enables us to send headers and data in one writev system call.
-  if (connect_method || downstream_->get_blocked_request_buf()->rleft() ||
+  if (req.method == HTTP_CONNECT ||
+      downstream_->get_blocked_request_buf()->rleft() ||
       (!req.http2_expect_body && req.fs.content_length == 0)) {
     signal_write();
   }
@@ -909,7 +938,7 @@ int htp_hdrs_completecb(http_parser *htp) {
 
   // Server MUST NOT send Transfer-Encoding with a status code 1xx or
   // 204.  Also server MUST NOT send Transfer-Encoding with a status
-  // code 200 to a CONNECT request.  Same holds true with
+  // code 2xx to a CONNECT request.  Same holds true with
   // Content-Length.
   if (resp.http_status == 204) {
     if (resp.fs.header(http2::HD_TRANSFER_ENCODING)) {
@@ -931,7 +960,7 @@ int htp_hdrs_completecb(http_parser *htp) {
       return -1;
     }
   } else if (resp.http_status / 100 == 1 ||
-             (resp.http_status == 200 && req.method == HTTP_CONNECT)) {
+             (resp.http_status / 100 == 2 && req.method == HTTP_CONNECT)) {
     if (resp.fs.header(http2::HD_CONTENT_LENGTH) ||
         resp.fs.header(http2::HD_TRANSFER_ENCODING)) {
       return -1;
@@ -943,7 +972,7 @@ int htp_hdrs_completecb(http_parser *htp) {
 
   // Check upgrade before processing non-final response, since if
   // upgrade succeeded, 101 response is treated as final in nghttpx.
-  downstream->check_upgrade_fulfilled();
+  downstream->check_upgrade_fulfilled_http1();
 
   if (downstream->get_non_final_response()) {
     // Reset content-length because we reuse same Downstream for the
@@ -1459,10 +1488,8 @@ int HttpDownstreamConnection::connected() {
     DCLOG(INFO, this) << "Connected to downstream host";
   }
 
-  auto &downstreamconf = *get_config()->conn.downstream;
-
   // Reset timeout for write.  Previously, we set timeout for connect.
-  conn_.wt.repeat = downstreamconf.timeout.write;
+  conn_.wt.repeat = group_->shared_addr->timeout.write;
   ev_timer_again(conn_.loop, &conn_.wt);
 
   conn_.rlimit.startw();
