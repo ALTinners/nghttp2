@@ -329,8 +329,8 @@ int tls_session_new_cb(SSL *ssl, SSL_SESSION *session) {
     LOG(INFO) << "Memcached: cache session, id=" << util::format_hex(id, idlen);
   }
 
-  auto req = make_unique<MemcachedRequest>();
-  req->op = MEMCACHED_OP_ADD;
+  auto req = std::make_unique<MemcachedRequest>();
+  req->op = MemcachedOp::ADD;
   req->key = MEMCACHED_SESSION_CACHE_KEY_PREFIX.str();
   req->key +=
       util::format_hex(balloc, StringRef{id, static_cast<size_t>(idlen)});
@@ -343,12 +343,14 @@ int tls_session_new_cb(SSL *ssl, SSL_SESSION *session) {
   req->cb = [](MemcachedRequest *req, MemcachedResult res) {
     if (LOG_ENABLED(INFO)) {
       LOG(INFO) << "Memcached: session cache done.  key=" << req->key
-                << ", status_code=" << res.status_code << ", value="
+                << ", status_code=" << static_cast<uint16_t>(res.status_code)
+                << ", value="
                 << std::string(std::begin(res.value), std::end(res.value));
     }
-    if (res.status_code != 0) {
+    if (res.status_code != MemcachedStatusCode::NO_ERROR) {
       LOG(WARN) << "Memcached: failed to cache session key=" << req->key
-                << ", status_code=" << res.status_code << ", value="
+                << ", status_code=" << static_cast<uint16_t>(res.status_code)
+                << ", value="
                 << std::string(std::begin(res.value), std::end(res.value));
     }
   };
@@ -397,14 +399,15 @@ SSL_SESSION *tls_session_get_cb(SSL *ssl,
               << util::format_hex(id, idlen);
   }
 
-  auto req = make_unique<MemcachedRequest>();
-  req->op = MEMCACHED_OP_GET;
+  auto req = std::make_unique<MemcachedRequest>();
+  req->op = MemcachedOp::GET;
   req->key = MEMCACHED_SESSION_CACHE_KEY_PREFIX.str();
   req->key +=
       util::format_hex(balloc, StringRef{id, static_cast<size_t>(idlen)});
   req->cb = [conn](MemcachedRequest *, MemcachedResult res) {
     if (LOG_ENABLED(INFO)) {
-      LOG(INFO) << "Memcached: returned status code " << res.status_code;
+      LOG(INFO) << "Memcached: returned status code "
+                << static_cast<uint16_t>(res.status_code);
     }
 
     // We might stop reading, so start it again
@@ -415,8 +418,8 @@ SSL_SESSION *tls_session_get_cb(SSL *ssl,
     ev_timer_again(conn->loop, &conn->wt);
 
     conn->tls.cached_session_lookup_req = nullptr;
-    if (res.status_code != 0) {
-      conn->tls.handshake_state = TLS_CONN_CANCEL_SESSION_CACHE;
+    if (res.status_code != MemcachedStatusCode::NO_ERROR) {
+      conn->tls.handshake_state = TLSHandshakeState::CANCEL_SESSION_CACHE;
       return;
     }
 
@@ -427,15 +430,15 @@ SSL_SESSION *tls_session_get_cb(SSL *ssl,
       if (LOG_ENABLED(INFO)) {
         LOG(INFO) << "cannot materialize session";
       }
-      conn->tls.handshake_state = TLS_CONN_CANCEL_SESSION_CACHE;
+      conn->tls.handshake_state = TLSHandshakeState::CANCEL_SESSION_CACHE;
       return;
     }
 
     conn->tls.cached_session = session;
-    conn->tls.handshake_state = TLS_CONN_GOT_SESSION_CACHE;
+    conn->tls.handshake_state = TLSHandshakeState::GOT_SESSION_CACHE;
   };
 
-  conn->tls.handshake_state = TLS_CONN_WAIT_FOR_SESSION_CACHE;
+  conn->tls.handshake_state = TLSHandshakeState::WAIT_FOR_SESSION_CACHE;
   conn->tls.cached_session_lookup_req = req.get();
 
   dispatcher->add_request(std::move(req));
@@ -1049,9 +1052,9 @@ int select_next_proto_cb(SSL *ssl, unsigned char **out, unsigned char *outlen,
                          void *arg) {
   auto conn = static_cast<Connection *>(SSL_get_app_data(ssl));
   switch (conn->proto) {
-  case PROTO_HTTP1:
+  case Proto::HTTP1:
     return select_h1_next_proto_cb(ssl, out, outlen, in, inlen, arg);
-  case PROTO_HTTP2:
+  case Proto::HTTP2:
     return select_h2_next_proto_cb(ssl, out, outlen, in, inlen, arg);
   default:
     return SSL_TLSEXT_ERR_NOACK;
@@ -1831,7 +1834,7 @@ std::unique_ptr<CertLookupTree> create_cert_lookup_tree() {
   if (!upstream_tls_enabled(config->conn)) {
     return nullptr;
   }
-  return make_unique<CertLookupTree>();
+  return std::make_unique<CertLookupTree>();
 }
 
 namespace {

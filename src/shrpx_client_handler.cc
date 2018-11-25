@@ -396,7 +396,7 @@ ClientHandler::ClientHandler(Worker *worker, int fd, SSL *ssl,
             get_config()->conn.upstream.ratelimit.write,
             get_config()->conn.upstream.ratelimit.read, writecb, readcb,
             timeoutcb, this, get_config()->tls.dyn_rec.warmup_threshold,
-            get_config()->tls.dyn_rec.idle_timeout, PROTO_NONE),
+            get_config()->tls.dyn_rec.idle_timeout, Proto::NONE),
       ipaddr_(make_string_ref(balloc_, ipaddr)),
       port_(make_string_ref(balloc_, port)),
       faddr_(faddr),
@@ -430,7 +430,7 @@ ClientHandler::ClientHandler(Worker *worker, int fd, SSL *ssl,
   auto &fwdconf = config->http.forwarded;
 
   if (fwdconf.params & FORWARDED_FOR) {
-    if (fwdconf.for_node_type == FORWARDED_NODE_OBFUSCATED) {
+    if (fwdconf.for_node_type == ForwardedNode::OBFUSCATED) {
       // 1 for '_'
       auto len = SHRPX_OBFUSCATED_NODE_LENGTH + 1;
       // 1 for terminating NUL.
@@ -478,7 +478,7 @@ void ClientHandler::setup_upstream_io_callback() {
     // For non-TLS version, first create HttpsUpstream. It may be
     // upgraded to HTTP/2 through HTTP Upgrade or direct HTTP/2
     // connection.
-    upstream_ = make_unique<HttpsUpstream>(this);
+    upstream_ = std::make_unique<HttpsUpstream>(this);
     alpn_ = StringRef::from_lit("http/1.1");
     read_ = &ClientHandler::read_clear;
     write_ = &ClientHandler::write_clear;
@@ -584,7 +584,7 @@ int ClientHandler::validate_next_proto() {
   if (util::check_h2_is_selected(proto)) {
     on_read_ = &ClientHandler::upstream_http2_connhd_read;
 
-    auto http2_upstream = make_unique<Http2Upstream>(this);
+    auto http2_upstream = std::make_unique<Http2Upstream>(this);
 
     upstream_ = std::move(http2_upstream);
     alpn_ = make_string_ref(balloc_, proto);
@@ -600,7 +600,7 @@ int ClientHandler::validate_next_proto() {
   }
 
   if (proto == StringRef::from_lit("http/1.1")) {
-    upstream_ = make_unique<HttpsUpstream>(this);
+    upstream_ = std::make_unique<HttpsUpstream>(this);
     alpn_ = StringRef::from_lit("http/1.1");
 
     // At this point, input buffer is already filled with some bytes.
@@ -660,7 +660,7 @@ void ClientHandler::pool_downstream_connection(
 
   auto &shared_addr = group->shared_addr;
 
-  if (shared_addr->affinity.type == AFFINITY_NONE) {
+  if (shared_addr->affinity.type == SessionAffinity::NONE) {
     auto &dconn_pool = group->shared_addr->dconn_pool;
     dconn_pool.add_downstream_connection(std::move(dconn));
 
@@ -769,7 +769,7 @@ Http2Session *ClientHandler::select_http2_session(
   // First count the working backend addresses.
   size_t min = 0;
   for (const auto &addr : shared_addr->addrs) {
-    if (addr.proto != PROTO_HTTP2 || addr.connect_blocker->blocked()) {
+    if (addr.proto != Proto::HTTP2 || addr.connect_blocker->blocked()) {
       continue;
     }
 
@@ -825,7 +825,7 @@ Http2Session *ClientHandler::select_http2_session(
   DownstreamAddr *selected_addr = nullptr;
 
   for (auto &addr : shared_addr->addrs) {
-    if (addr.in_avail || addr.proto != PROTO_HTTP2 ||
+    if (addr.in_avail || addr.proto != Proto::HTTP2 ||
         (addr.http2_extra_freelist.size() == 0 &&
          addr.connect_blocker->blocked())) {
       continue;
@@ -939,7 +939,7 @@ uint32_t ClientHandler::get_affinity_cookie(Downstream *downstream,
 
 std::unique_ptr<DownstreamConnection>
 ClientHandler::get_downstream_connection(int &err, Downstream *downstream,
-                                         shrpx_proto pref_proto) {
+                                         Proto pref_proto) {
   size_t group_idx;
   auto &downstreamconf = *worker_->get_downstream_config();
   auto &routerconf = downstreamconf.router;
@@ -952,10 +952,12 @@ ClientHandler::get_downstream_connection(int &err, Downstream *downstream,
   err = 0;
 
   switch (faddr_->alt_mode) {
-  case ALTMODE_API:
-    return make_unique<APIDownstreamConnection>(worker_);
-  case ALTMODE_HEALTHMON:
-    return make_unique<HealthMonitorDownstreamConnection>();
+  case UpstreamAltMode::API:
+    return std::make_unique<APIDownstreamConnection>(worker_);
+  case UpstreamAltMode::HEALTHMON:
+    return std::make_unique<HealthMonitorDownstreamConnection>();
+  default:
+    break;
   }
 
   auto &balloc = downstream->get_block_allocator();
@@ -1003,17 +1005,17 @@ ClientHandler::get_downstream_connection(int &err, Downstream *downstream,
   auto &group = groups[group_idx];
   auto &shared_addr = group->shared_addr;
 
-  if (shared_addr->affinity.type != AFFINITY_NONE) {
+  if (shared_addr->affinity.type != SessionAffinity::NONE) {
     uint32_t hash;
     switch (shared_addr->affinity.type) {
-    case AFFINITY_IP:
+    case SessionAffinity::IP:
       if (!affinity_hash_computed_) {
         affinity_hash_ = compute_affinity_from_ip(ipaddr_);
         affinity_hash_computed_ = true;
       }
       hash = affinity_hash_;
       break;
-    case AFFINITY_COOKIE:
+    case SessionAffinity::COOKIE:
       hash = get_affinity_cookie(downstream, shared_addr->affinity.cookie.name);
       break;
     default:
@@ -1043,7 +1045,7 @@ ClientHandler::get_downstream_connection(int &err, Downstream *downstream,
         }
         addr = &shared_addr->addrs[shared_addr->affinity_hash[i].idx];
         if (addr->connect_blocker->blocked() ||
-            (pref_proto != PROTO_NONE && pref_proto != addr->proto)) {
+            (pref_proto != Proto::NONE && pref_proto != addr->proto)) {
           continue;
         }
         break;
@@ -1055,10 +1057,10 @@ ClientHandler::get_downstream_connection(int &err, Downstream *downstream,
       aff_idx = i;
     }
 
-    if (addr->proto == PROTO_HTTP2) {
+    if (addr->proto == Proto::HTTP2) {
       auto http2session = select_http2_session_with_affinity(group, addr);
 
-      auto dconn = make_unique<Http2DownstreamConnection>(http2session);
+      auto dconn = std::make_unique<Http2DownstreamConnection>(http2session);
 
       dconn->set_client_handler(this);
 
@@ -1069,8 +1071,8 @@ ClientHandler::get_downstream_connection(int &err, Downstream *downstream,
     auto dconn = dconn_pool->pop_downstream_connection();
 
     if (!dconn) {
-      dconn = make_unique<HttpDownstreamConnection>(group, aff_idx, conn_.loop,
-                                                    worker_);
+      dconn = std::make_unique<HttpDownstreamConnection>(group, aff_idx,
+                                                         conn_.loop, worker_);
     }
 
     dconn->set_client_handler(this);
@@ -1081,33 +1083,33 @@ ClientHandler::get_downstream_connection(int &err, Downstream *downstream,
   auto http1_weight = shared_addr->http1_pri.weight;
   auto http2_weight = shared_addr->http2_pri.weight;
 
-  auto proto = PROTO_NONE;
+  auto proto = Proto::NONE;
 
-  if (pref_proto == PROTO_HTTP1) {
+  if (pref_proto == Proto::HTTP1) {
     if (http1_weight > 0) {
-      proto = PROTO_HTTP1;
+      proto = Proto::HTTP1;
     }
-  } else if (pref_proto == PROTO_HTTP2) {
+  } else if (pref_proto == Proto::HTTP2) {
     if (http2_weight > 0) {
-      proto = PROTO_HTTP2;
+      proto = Proto::HTTP2;
     }
   } else if (http1_weight > 0 && http2_weight > 0) {
     // We only advance cycle if both weight has nonzero to keep its
     // distance under WEIGHT_MAX.
     if (pri_less(shared_addr->http1_pri, shared_addr->http2_pri)) {
-      proto = PROTO_HTTP1;
+      proto = Proto::HTTP1;
       shared_addr->http1_pri.cycle = next_cycle(shared_addr->http1_pri);
     } else {
-      proto = PROTO_HTTP2;
+      proto = Proto::HTTP2;
       shared_addr->http2_pri.cycle = next_cycle(shared_addr->http2_pri);
     }
   } else if (http1_weight > 0) {
-    proto = PROTO_HTTP1;
+    proto = Proto::HTTP1;
   } else if (http2_weight > 0) {
-    proto = PROTO_HTTP2;
+    proto = Proto::HTTP2;
   }
 
-  if (proto == PROTO_NONE) {
+  if (proto == Proto::NONE) {
     if (LOG_ENABLED(INFO)) {
       CLOG(INFO, this) << "No working downstream address found";
     }
@@ -1116,7 +1118,7 @@ ClientHandler::get_downstream_connection(int &err, Downstream *downstream,
     return nullptr;
   }
 
-  if (proto == PROTO_HTTP2) {
+  if (proto == Proto::HTTP2) {
     if (LOG_ENABLED(INFO)) {
       CLOG(INFO, this) << "Downstream connection pool is empty."
                        << " Create new one";
@@ -1129,7 +1131,7 @@ ClientHandler::get_downstream_connection(int &err, Downstream *downstream,
       return nullptr;
     }
 
-    auto dconn = make_unique<Http2DownstreamConnection>(http2session);
+    auto dconn = std::make_unique<Http2DownstreamConnection>(http2session);
 
     dconn->set_client_handler(this);
 
@@ -1152,8 +1154,8 @@ ClientHandler::get_downstream_connection(int &err, Downstream *downstream,
                        << " Create new one";
     }
 
-    dconn =
-        make_unique<HttpDownstreamConnection>(group, 0, conn_.loop, worker_);
+    dconn = std::make_unique<HttpDownstreamConnection>(group, 0, conn_.loop,
+                                                       worker_);
   }
 
   dconn->set_client_handler(this);
@@ -1166,14 +1168,14 @@ MemchunkPool *ClientHandler::get_mcpool() { return worker_->get_mcpool(); }
 SSL *ClientHandler::get_ssl() const { return conn_.tls.ssl; }
 
 void ClientHandler::direct_http2_upgrade() {
-  upstream_ = make_unique<Http2Upstream>(this);
+  upstream_ = std::make_unique<Http2Upstream>(this);
   alpn_ = StringRef::from_lit(NGHTTP2_CLEARTEXT_PROTO_VERSION_ID);
   on_read_ = &ClientHandler::upstream_read;
   write_ = &ClientHandler::write_clear;
 }
 
 int ClientHandler::perform_http2_upgrade(HttpsUpstream *http) {
-  auto upstream = make_unique<Http2Upstream>(this);
+  auto upstream = std::make_unique<Http2Upstream>(this);
 
   auto output = upstream->get_response_buf();
 
@@ -1319,7 +1321,7 @@ int ClientHandler::proxy_protocol_read() {
   // NULL character really destroys functions which expects NULL
   // terminated string.  We won't expect it in PROXY protocol line, so
   // find it here.
-  auto chrs = std::array<char, 2>{{'\n', '\0'}};
+  auto chrs = std::array<char, 2>{'\n', '\0'};
 
   constexpr size_t MAX_PROXY_LINELEN = 107;
 
@@ -1490,7 +1492,7 @@ int ClientHandler::proxy_protocol_read() {
   auto &fwdconf = config->http.forwarded;
 
   if ((fwdconf.params & FORWARDED_FOR) &&
-      fwdconf.for_node_type == FORWARDED_NODE_IP) {
+      fwdconf.for_node_type == ForwardedNode::IP) {
     init_forwarded_for(family, ipaddr_);
   }
 
@@ -1500,7 +1502,7 @@ int ClientHandler::proxy_protocol_read() {
 StringRef ClientHandler::get_forwarded_by() const {
   auto &fwdconf = get_config()->http.forwarded;
 
-  if (fwdconf.by_node_type == FORWARDED_NODE_OBFUSCATED) {
+  if (fwdconf.by_node_type == ForwardedNode::OBFUSCATED) {
     return fwdconf.by_obfuscated;
   }
 

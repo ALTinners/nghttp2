@@ -58,18 +58,46 @@ struct StreamData {
   Http2DownstreamConnection *dconn;
 };
 
-enum FreelistZone {
+enum class FreelistZone {
   // Http2Session object is not linked in any freelist.
-  FREELIST_ZONE_NONE,
+  NONE,
   // Http2Session object is linked in group scope
   // http2_avail_freelist.
-  FREELIST_ZONE_AVAIL,
+  AVAIL,
   // Http2Session object is linked in address scope
   // http2_extra_freelist.
-  FREELIST_ZONE_EXTRA,
+  EXTRA,
   // Http2Session object is about to be deleted, and it does not
   // belong to any linked list.
-  FREELIST_ZONE_GONE
+  GONE
+};
+
+enum class Http2SessionState {
+  // Disconnected
+  DISCONNECTED,
+  // Connecting proxy and making CONNECT request
+  PROXY_CONNECTING,
+  // Tunnel is established with proxy
+  PROXY_CONNECTED,
+  // Establishing tunnel is failed
+  PROXY_FAILED,
+  // Connecting to downstream and/or performing SSL/TLS handshake
+  CONNECTING,
+  // Connected to downstream
+  CONNECTED,
+  // Connection is started to fail
+  CONNECT_FAILING,
+  // Resolving host name
+  RESOLVING_NAME,
+};
+
+enum class ConnectionCheck {
+  // Connection checking is not required
+  NONE,
+  // Connection checking is required
+  REQUIRED,
+  // Connection checking has been started
+  STARTED,
 };
 
 class Http2Session {
@@ -135,8 +163,8 @@ public:
 
   ev_io *get_wev();
 
-  int get_state() const;
-  void set_state(int state);
+  Http2SessionState get_state() const;
+  void set_state(Http2SessionState state);
 
   void start_settings_timer();
   void stop_settings_timer();
@@ -159,8 +187,8 @@ public:
   // reset_connection_check_timer() is called.
   void connection_alive();
   // Change connection check state.
-  void set_connection_check_state(int state);
-  int get_connection_check_state() const;
+  void set_connection_check_state(ConnectionCheck state);
+  ConnectionCheck get_connection_check_state() const;
 
   bool should_hard_fail() const;
 
@@ -218,34 +246,6 @@ public:
 
   bool get_allow_connect_proto() const;
 
-  enum {
-    // Disconnected
-    DISCONNECTED,
-    // Connecting proxy and making CONNECT request
-    PROXY_CONNECTING,
-    // Tunnel is established with proxy
-    PROXY_CONNECTED,
-    // Establishing tunnel is failed
-    PROXY_FAILED,
-    // Connecting to downstream and/or performing SSL/TLS handshake
-    CONNECTING,
-    // Connected to downstream
-    CONNECTED,
-    // Connection is started to fail
-    CONNECT_FAILING,
-    // Resolving host name
-    RESOLVING_NAME,
-  };
-
-  enum {
-    // Connection checking is not required
-    CONNECTION_CHECK_NONE,
-    // Connection checking is required
-    CONNECTION_CHECK_REQUIRED,
-    // Connection checking has been started
-    CONNECTION_CHECK_STARTED
-  };
-
   using ReadBuf = Buffer<8_k>;
 
   Http2Session *dlnext, *dlprev;
@@ -255,7 +255,7 @@ private:
   DefaultMemchunks wb_;
   ev_timer settings_timer_;
   // This timer has 2 purpose: when it first timeout, set
-  // connection_check_state_ = CONNECTION_CHECK_REQUIRED.  After
+  // connection_check_state_ = ConnectionCheck::REQUIRED.  After
   // connection check has started, this timer is started again and
   // traps PING ACK timeout.
   ev_timer connchk_timer_;
@@ -283,9 +283,9 @@ private:
   // Resolved IP address if dns parameter is used
   std::unique_ptr<Address> resolved_addr_;
   std::unique_ptr<DNSQuery> dns_query_;
-  int state_;
-  int connection_check_state_;
-  int freelist_zone_;
+  Http2SessionState state_;
+  ConnectionCheck connection_check_state_;
+  FreelistZone freelist_zone_;
   // true if SETTINGS without ACK is received from peer.
   bool settings_recved_;
   // true if peer enables RFC 8441 CONNECT protocol.

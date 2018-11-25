@@ -110,7 +110,7 @@ struct DownstreamAddr {
   // address.
   size_t num_dconn;
   // Application protocol used in this backend
-  shrpx_proto proto;
+  Proto proto;
   // true if TLS is used in this backend
   bool tls;
   // true if dynamic DNS is enabled
@@ -137,7 +137,7 @@ struct WeightedPri {
 struct SharedDownstreamAddr {
   SharedDownstreamAddr()
       : balloc(1024, 1024),
-        affinity{AFFINITY_NONE},
+        affinity{SessionAffinity::NONE},
         next{0},
         http1_pri{},
         http2_pri{},
@@ -151,7 +151,7 @@ struct SharedDownstreamAddr {
   BlockAllocator balloc;
   std::vector<DownstreamAddr> addrs;
   // Bunch of session affinity hash.  Only used if affinity ==
-  // AFFINITY_IP.
+  // SessionAffinity::IP.
   std::vector<AffinityHash> affinity_hash;
   // List of Http2Session which is not fully utilized (i.e., the
   // server advertised maximum concurrency is not reached).  We will
@@ -211,7 +211,7 @@ struct WorkerStat {
   size_t num_connections;
 };
 
-enum WorkerEventType {
+enum class WorkerEventType {
   NEW_CONNECTION = 0x01,
   REOPEN_LOG = 0x02,
   GRACEFUL_SHUTDOWN = 0x03,

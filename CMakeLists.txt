@@ -24,7 +24,7 @@
 
 cmake_minimum_required(VERSION 3.0)
 # XXX using 1.8.90 instead of 1.9.0-DEV
-project(nghttp2 VERSION 1.34.0)
+project(nghttp2 VERSION 1.35.0)
 
 # See versioning rule:
 #  http://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
@@ -117,7 +117,7 @@ else()
 endif()
 
 include(ExtractValidFlags)
-foreach(_cxx1x_flag -std=c++11 -std=c++0x)
+foreach(_cxx1x_flag -std=c++14)
   extract_valid_cxx_flags(_cxx1x_flag_supported ${_cxx1x_flag})
   if(_cxx1x_flag_supported)
     set(CXX1XCXXFLAGS ${_cxx1x_flag})
