@@ -362,37 +362,42 @@ constexpr size_t SHRPX_OBFUSCATED_NODE_LENGTH = 8;
 constexpr char DEFAULT_DOWNSTREAM_HOST[] = "127.0.0.1";
 constexpr int16_t DEFAULT_DOWNSTREAM_PORT = 80;
 
-enum shrpx_proto { PROTO_NONE, PROTO_HTTP1, PROTO_HTTP2, PROTO_MEMCACHED };
-
-enum shrpx_session_affinity {
-  // No session affinity
-  AFFINITY_NONE,
-  // Client IP affinity
-  AFFINITY_IP,
-  // Cookie based affinity
-  AFFINITY_COOKIE,
+enum class Proto {
+  NONE,
+  HTTP1,
+  HTTP2,
+  MEMCACHED,
 };
 
-enum shrpx_cookie_secure {
+enum class SessionAffinity {
+  // No session affinity
+  NONE,
+  // Client IP affinity
+  IP,
+  // Cookie based affinity
+  COOKIE,
+};
+
+enum class SessionAffinityCookieSecure {
   // Secure attribute of session affinity cookie is determined by the
   // request scheme.
-  COOKIE_SECURE_AUTO,
+  AUTO,
   // Secure attribute of session affinity cookie is always set.
-  COOKIE_SECURE_YES,
+  YES,
   // Secure attribute of session affinity cookie is always unset.
-  COOKIE_SECURE_NO,
+  NO,
 };
 
 struct AffinityConfig {
   // Type of session affinity.
-  shrpx_session_affinity type;
+  SessionAffinity type;
   struct {
     // Name of a cookie to use.
     StringRef name;
     // Path which a cookie is applied to.
     StringRef path;
     // Secure attribute
-    shrpx_cookie_secure secure;
+    SessionAffinityCookieSecure secure;
   } cookie;
 };
 
@@ -404,9 +409,9 @@ enum shrpx_forwarded_param {
   FORWARDED_PROTO = 0x8,
 };
 
-enum shrpx_forwarded_node_type {
-  FORWARDED_NODE_OBFUSCATED,
-  FORWARDED_NODE_IP,
+enum class ForwardedNode {
+  OBFUSCATED,
+  IP,
 };
 
 struct AltSvc {
@@ -415,13 +420,13 @@ struct AltSvc {
   uint16_t port;
 };
 
-enum UpstreamAltMode {
+enum class UpstreamAltMode {
   // No alternative mode
-  ALTMODE_NONE,
+  NONE,
   // API processing mode
-  ALTMODE_API,
+  API,
   // Health monitor mode
-  ALTMODE_HEALTHMON,
+  HEALTHMON,
 };
 
 struct UpstreamAddr {
@@ -439,7 +444,7 @@ struct UpstreamAddr {
   // domain socket, this is 0.
   int family;
   // Alternate mode
-  int alt_mode;
+  UpstreamAltMode alt_mode;
   // true if |host| contains UNIX domain socket path.
   bool host_unix;
   // true if TLS is enabled.
@@ -466,7 +471,7 @@ struct DownstreamAddrConfig {
   size_t fall;
   size_t rise;
   // Application protocol used in this group
-  shrpx_proto proto;
+  Proto proto;
   // backend port.  0 if |host_unix| is true.
   uint16_t port;
   // true if |host| contains UNIX domain socket path.
@@ -491,13 +496,15 @@ struct AffinityHash {
 
 struct DownstreamAddrGroupConfig {
   DownstreamAddrGroupConfig(const StringRef &pattern)
-      : pattern(pattern), affinity{AFFINITY_NONE}, redirect_if_not_tls(false) {}
+      : pattern(pattern),
+        affinity{SessionAffinity::NONE},
+        redirect_if_not_tls(false) {}
 
   StringRef pattern;
   StringRef mruby_file;
   std::vector<DownstreamAddrConfig> addrs;
   // Bunch of session affinity hash.  Only used if affinity ==
-  // AFFINITY_IP.
+  // SessionAffinity::IP.
   std::vector<AffinityHash> affinity_hash;
   // Cookie based session affinity configuration.
   AffinityConfig affinity;
@@ -697,10 +704,10 @@ struct HttpConfig {
     uint32_t params;
     // type of value recorded in "by" parameter of Forwarded header
     // field.
-    shrpx_forwarded_node_type by_node_type;
+    ForwardedNode by_node_type;
     // type of value recorded in "for" parameter of Forwarded header
     // field.
-    shrpx_forwarded_node_type for_node_type;
+    ForwardedNode for_node_type;
     bool strip_incoming;
   } forwarded;
   struct {
@@ -1232,7 +1239,7 @@ read_tls_ticket_key_file(const std::vector<StringRef> &files,
                          const EVP_CIPHER *cipher, const EVP_MD *hmac);
 
 // Returns string representation of |proto|.
-StringRef strproto(shrpx_proto proto);
+StringRef strproto(Proto proto);
 
 int configure_downstream_group(Config *config, bool http2_proxy,
                                bool numeric_addr_only,

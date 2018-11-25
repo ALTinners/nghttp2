@@ -74,10 +74,11 @@ DownstreamAddrGroup::~DownstreamAddrGroup() {}
 
 // DownstreamKey is used to index SharedDownstreamAddr in order to
 // find the same configuration.
-using DownstreamKey = std::tuple<
-    std::vector<std::tuple<StringRef, StringRef, size_t, size_t, shrpx_proto,
-                           uint16_t, bool, bool, bool, bool>>,
-    bool, int, StringRef, StringRef, int, int64_t, int64_t>;
+using DownstreamKey =
+    std::tuple<std::vector<std::tuple<StringRef, StringRef, size_t, size_t,
+                                      Proto, uint16_t, bool, bool, bool, bool>>,
+               bool, SessionAffinity, StringRef, StringRef,
+               SessionAffinityCookieSecure, int64_t, int64_t>;
 
 namespace {
 DownstreamKey create_downstream_key(
@@ -133,7 +134,7 @@ Worker::Worker(struct ev_loop *loop, SSL_CTX *sv_ssl_ctx, SSL_CTX *cl_ssl_ctx,
       conn_handler_(conn_handler),
       ticket_keys_(ticket_keys),
       connect_blocker_(
-          make_unique<ConnectBlocker>(randgen_, loop_, []() {}, []() {})),
+          std::make_unique<ConnectBlocker>(randgen_, loop_, []() {}, []() {})),
       graceful_shutdown_(false) {
   ev_async_init(&w_, eventcb);
   w_.data = this;
@@ -148,7 +149,7 @@ Worker::Worker(struct ev_loop *loop, SSL_CTX *sv_ssl_ctx, SSL_CTX *cl_ssl_ctx,
   auto &session_cacheconf = get_config()->tls.session_cache;
 
   if (!session_cacheconf.memcached.host.empty()) {
-    session_cache_memcached_dispatcher_ = make_unique<MemcachedDispatcher>(
+    session_cache_memcached_dispatcher_ = std::make_unique<MemcachedDispatcher>(
         &session_cacheconf.memcached.addr, loop,
         tls_session_cache_memcached_ssl_ctx,
         StringRef{session_cacheconf.memcached.host}, &mcpool_, randgen_);
@@ -164,7 +165,7 @@ void Worker::replace_downstream_config(
 
     auto &shared_addr = g->shared_addr;
 
-    if (shared_addr->affinity.type == AFFINITY_NONE) {
+    if (shared_addr->affinity.type == SessionAffinity::NONE) {
       shared_addr->dconn_pool.remove_all();
       continue;
     }
@@ -213,7 +214,7 @@ void Worker::replace_downstream_config(
 
     shared_addr->addrs.resize(src.addrs.size());
     shared_addr->affinity.type = src.affinity.type;
-    if (src.affinity.type == AFFINITY_COOKIE) {
+    if (src.affinity.type == SessionAffinity::COOKIE) {
       shared_addr->affinity.cookie.name =
           make_string_ref(shared_addr->balloc, src.affinity.cookie.name);
       if (!src.affinity.cookie.path.empty()) {
@@ -250,40 +251,40 @@ void Worker::replace_downstream_config(
 
       auto shared_addr_ptr = shared_addr.get();
 
-      dst_addr.connect_blocker =
-          make_unique<ConnectBlocker>(randgen_, loop_,
-                                      [shared_addr_ptr, &dst_addr]() {
-                                        switch (dst_addr.proto) {
-                                        case PROTO_HTTP1:
-                                          --shared_addr_ptr->http1_pri.weight;
-                                          break;
-                                        case PROTO_HTTP2:
-                                          --shared_addr_ptr->http2_pri.weight;
-                                          break;
-                                        default:
-                                          assert(0);
-                                        }
-                                      },
-                                      [shared_addr_ptr, &dst_addr]() {
-                                        switch (dst_addr.proto) {
-                                        case PROTO_HTTP1:
-                                          ++shared_addr_ptr->http1_pri.weight;
-                                          break;
-                                        case PROTO_HTTP2:
-                                          ++shared_addr_ptr->http2_pri.weight;
-                                          break;
-                                        default:
-                                          assert(0);
-                                        }
-                                      });
+      dst_addr.connect_blocker = std::make_unique<ConnectBlocker>(
+          randgen_, loop_,
+          [shared_addr_ptr, &dst_addr]() {
+            switch (dst_addr.proto) {
+            case Proto::HTTP1:
+              --shared_addr_ptr->http1_pri.weight;
+              break;
+            case Proto::HTTP2:
+              --shared_addr_ptr->http2_pri.weight;
+              break;
+            default:
+              assert(0);
+            }
+          },
+          [shared_addr_ptr, &dst_addr]() {
+            switch (dst_addr.proto) {
+            case Proto::HTTP1:
+              ++shared_addr_ptr->http1_pri.weight;
+              break;
+            case Proto::HTTP2:
+              ++shared_addr_ptr->http2_pri.weight;
+              break;
+            default:
+              assert(0);
+            }
+          });
 
-      dst_addr.live_check =
-          make_unique<LiveCheck>(loop_, cl_ssl_ctx_, this, &dst_addr, randgen_);
+      dst_addr.live_check = std::make_unique<LiveCheck>(
+          loop_, cl_ssl_ctx_, this, &dst_addr, randgen_);
 
-      if (dst_addr.proto == PROTO_HTTP2) {
+      if (dst_addr.proto == Proto::HTTP2) {
         ++num_http2;
       } else {
-        assert(dst_addr.proto == PROTO_HTTP1);
+        assert(dst_addr.proto == Proto::HTTP1);
         ++num_http1;
       }
     }
@@ -303,9 +304,9 @@ void Worker::replace_downstream_config(
       shared_addr->http1_pri.weight = num_http1;
       shared_addr->http2_pri.weight = num_http2;
 
-      if (shared_addr->affinity.type != AFFINITY_NONE) {
+      if (shared_addr->affinity.type != SessionAffinity::NONE) {
         for (auto &addr : shared_addr->addrs) {
-          addr.dconn_pool = make_unique<DownstreamConnectionPool>();
+          addr.dconn_pool = std::make_unique<DownstreamConnectionPool>();
         }
       }
 
@@ -368,9 +369,9 @@ void Worker::process_events() {
     std::lock_guard<std::mutex> g(m_);
 
     // Process event one at a time.  This is important for
-    // NEW_CONNECTION event since accepting large number of new
-    // connections at once may delay time to 1st byte for existing
-    // connections.
+    // WorkerEventType::NEW_CONNECTION event since accepting large
+    // number of new connections at once may delay time to 1st byte
+    // for existing connections.
 
     if (q_.empty()) {
       ev_timer_stop(loop_, &proc_wev_timer_);
@@ -388,7 +389,7 @@ void Worker::process_events() {
   auto worker_connections = config->conn.upstream.worker_connections;
 
   switch (wev.type) {
-  case NEW_CONNECTION: {
+  case WorkerEventType::NEW_CONNECTION: {
     if (LOG_ENABLED(INFO)) {
       WLOG(INFO, this) << "WorkerEvent: client_fd=" << wev.client_fd
                        << ", addrlen=" << wev.client_addrlen;
@@ -422,14 +423,14 @@ void Worker::process_events() {
 
     break;
   }
-  case REOPEN_LOG:
+  case WorkerEventType::REOPEN_LOG:
     WLOG(NOTICE, this) << "Reopening log files: worker process (thread " << this
                        << ")";
 
     reopen_log_files(config->logging);
 
     break;
-  case GRACEFUL_SHUTDOWN:
+  case WorkerEventType::GRACEFUL_SHUTDOWN:
     WLOG(NOTICE, this) << "Graceful shutdown commencing";
 
     graceful_shutdown_ = true;
@@ -441,7 +442,7 @@ void Worker::process_events() {
     }
 
     break;
-  case REPLACE_DOWNSTREAM:
+  case WorkerEventType::REPLACE_DOWNSTREAM:
     WLOG(NOTICE, this) << "Replace downstream";
 
     replace_downstream_config(wev.downstreamconf);
@@ -449,7 +450,7 @@ void Worker::process_events() {
     break;
   default:
     if (LOG_ENABLED(INFO)) {
-      WLOG(INFO, this) << "unknown event type " << wev.type;
+      WLOG(INFO, this) << "unknown event type " << static_cast<int>(wev.type);
     }
   }
 }

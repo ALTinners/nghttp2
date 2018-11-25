@@ -270,14 +270,14 @@ void memcached_get_ticket_key_cb(struct ev_loop *loop, ev_timer *w,
   auto conn_handler = static_cast<ConnectionHandler *>(w->data);
   auto dispatcher = conn_handler->get_tls_ticket_key_memcached_dispatcher();
 
-  auto req = make_unique<MemcachedRequest>();
+  auto req = std::make_unique<MemcachedRequest>();
   req->key = "nghttpx:tls-ticket-key";
-  req->op = MEMCACHED_OP_GET;
+  req->op = MemcachedOp::GET;
   req->cb = [conn_handler, w](MemcachedRequest *req, MemcachedResult res) {
     switch (res.status_code) {
-    case MEMCACHED_ERR_NO_ERROR:
+    case MemcachedStatusCode::NO_ERROR:
       break;
-    case MEMCACHED_ERR_EXT_NETWORK_ERROR:
+    case MemcachedStatusCode::EXT_NETWORK_ERROR:
       conn_handler->on_tls_ticket_key_network_error(w);
       return;
     default:
@@ -411,16 +411,16 @@ int worker_process_event_loop(WorkerProcessConfig *wpconf) {
 
   auto gen = util::make_mt19937();
 
-  auto conn_handler = make_unique<ConnectionHandler>(loop, gen);
+  auto conn_handler = std::make_unique<ConnectionHandler>(loop, gen);
 
   for (auto &addr : config->conn.listener.addrs) {
     conn_handler->add_acceptor(
-        make_unique<AcceptHandler>(&addr, conn_handler.get()));
+        std::make_unique<AcceptHandler>(&addr, conn_handler.get()));
   }
 
 #ifdef HAVE_NEVERBLEED
   std::array<char, NEVERBLEED_ERRBUF_SIZE> nb_errbuf;
-  auto nb = make_unique<neverbleed_t>();
+  auto nb = std::make_unique<neverbleed_t>();
   if (neverbleed_init(nb.get(), nb_errbuf.data()) != 0) {
     LOG(FATAL) << "neverbleed_init failed: " << nb_errbuf.data();
     return -1;
@@ -452,7 +452,7 @@ int worker_process_event_loop(WorkerProcessConfig *wpconf) {
       }
 
       conn_handler->set_tls_ticket_key_memcached_dispatcher(
-          make_unique<MemcachedDispatcher>(
+          std::make_unique<MemcachedDispatcher>(
               &ticketconf.memcached.addr, loop, ssl_ctx,
               StringRef{memcachedconf.host}, &mcpool, gen));
 

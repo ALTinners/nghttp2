@@ -183,7 +183,7 @@ void ConnectionHandler::set_ticket_keys_to_worker(
 void ConnectionHandler::worker_reopen_log_files() {
   WorkerEvent wev{};
 
-  wev.type = REOPEN_LOG;
+  wev.type = WorkerEventType::REOPEN_LOG;
 
   for (auto &worker : workers_) {
     worker->send(wev);
@@ -194,7 +194,7 @@ void ConnectionHandler::worker_replace_downstream(
     std::shared_ptr<DownstreamConfig> downstreamconf) {
   WorkerEvent wev{};
 
-  wev.type = REPLACE_DOWNSTREAM;
+  wev.type = WorkerEventType::REPLACE_DOWNSTREAM;
   wev.downstreamconf = std::move(downstreamconf);
 
   for (auto &worker : workers_) {
@@ -238,7 +238,7 @@ int ConnectionHandler::create_single_worker() {
     }
   }
 
-  single_worker_ = make_unique<Worker>(
+  single_worker_ = std::make_unique<Worker>(
       loop_, sv_ssl_ctx, cl_ssl_ctx, session_cache_ssl_ctx, cert_tree_.get(),
       ticket_keys_, this, config->conn.downstream);
 #ifdef HAVE_MRUBY
@@ -299,7 +299,7 @@ int ConnectionHandler::create_worker_thread(size_t num) {
   for (size_t i = 0; i < num; ++i) {
     auto loop = ev_loop_new(config->ev_loop_flags);
 
-    auto worker = make_unique<Worker>(
+    auto worker = std::make_unique<Worker>(
         loop, sv_ssl_ctx, cl_ssl_ctx, session_cache_ssl_ctx, cert_tree_.get(),
         ticket_keys_, this, config->conn.downstream);
 #  ifdef HAVE_MRUBY
@@ -348,7 +348,7 @@ void ConnectionHandler::graceful_shutdown_worker() {
   }
 
   WorkerEvent wev{};
-  wev.type = GRACEFUL_SHUTDOWN;
+  wev.type = WorkerEventType::GRACEFUL_SHUTDOWN;
 
   if (LOG_ENABLED(INFO)) {
     LLOG(INFO, this) << "Sending graceful shutdown signal to worker";
@@ -407,7 +407,7 @@ int ConnectionHandler::handle_connection(int fd, sockaddr *addr, int addrlen,
 
   Worker *worker;
 
-  if (faddr->alt_mode == ALTMODE_API) {
+  if (faddr->alt_mode == UpstreamAltMode::API) {
     worker = workers_[0].get();
 
     if (LOG_ENABLED(INFO)) {
@@ -432,7 +432,7 @@ int ConnectionHandler::handle_connection(int fd, sockaddr *addr, int addrlen,
   }
 
   WorkerEvent wev{};
-  wev.type = NEW_CONNECTION;
+  wev.type = WorkerEventType::NEW_CONNECTION;
   wev.client_fd = fd;
   memcpy(&wev.client_addr, addr, addrlen);
   wev.client_addrlen = addrlen;
@@ -828,7 +828,7 @@ void ConnectionHandler::handle_serial_event() {
 
   for (auto &sev : q) {
     switch (sev.type) {
-    case SEV_REPLACE_DOWNSTREAM:
+    case SerialEventType::REPLACE_DOWNSTREAM:
       // Mmake sure that none of worker uses
       // get_config()->conn.downstream
       mod_config()->conn.downstream = sev.downstreamconf;
@@ -842,13 +842,16 @@ void ConnectionHandler::handle_serial_event() {
       worker_replace_downstream(sev.downstreamconf);
 
       break;
+    default:
+      break;
     }
   }
 }
 
 void ConnectionHandler::send_replace_downstream(
     const std::shared_ptr<DownstreamConfig> &downstreamconf) {
-  send_serial_event(SerialEvent(SEV_REPLACE_DOWNSTREAM, downstreamconf));
+  send_serial_event(
+      SerialEvent(SerialEventType::REPLACE_DOWNSTREAM, downstreamconf));
 }
 
 void ConnectionHandler::send_serial_event(SerialEvent ev) {

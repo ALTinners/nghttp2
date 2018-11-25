@@ -62,16 +62,16 @@ Http2DownstreamConnection::~Http2DownstreamConnection() {
     downstream_->disable_downstream_wtimer();
 
     uint32_t error_code;
-    if (downstream_->get_request_state() == Downstream::STREAM_CLOSED &&
+    if (downstream_->get_request_state() == DownstreamState::STREAM_CLOSED &&
         downstream_->get_upgraded()) {
       // For upgraded connection, send NO_ERROR.  Should we consider
-      // request states other than Downstream::STREAM_CLOSED ?
+      // request states other than DownstreamState::STREAM_CLOSED ?
       error_code = NGHTTP2_NO_ERROR;
     } else {
       error_code = NGHTTP2_INTERNAL_ERROR;
     }
 
-    if (http2session_->get_state() == Http2Session::CONNECTED &&
+    if (http2session_->get_state() == Http2SessionState::CONNECTED &&
         downstream_->get_downstream_stream_id() != -1) {
       submit_rst_stream(downstream_, error_code);
 
@@ -105,7 +105,7 @@ int Http2DownstreamConnection::attach_downstream(Downstream *downstream) {
   auto &req = downstream_->request();
 
   // HTTP/2 disables HTTP Upgrade.
-  if (req.method != HTTP_CONNECT && !req.connect_proto) {
+  if (req.method != HTTP_CONNECT && req.connect_proto == ConnectProto::NONE) {
     req.upgrade_request = false;
   }
 
@@ -140,12 +140,12 @@ void Http2DownstreamConnection::detach_downstream(Downstream *downstream) {
 int Http2DownstreamConnection::submit_rst_stream(Downstream *downstream,
                                                  uint32_t error_code) {
   int rv = -1;
-  if (http2session_->get_state() == Http2Session::CONNECTED &&
+  if (http2session_->get_state() == Http2SessionState::CONNECTED &&
       downstream->get_downstream_stream_id() != -1) {
     switch (downstream->get_response_state()) {
-    case Downstream::MSG_RESET:
-    case Downstream::MSG_BAD_HEADER:
-    case Downstream::MSG_COMPLETE:
+    case DownstreamState::MSG_RESET:
+    case DownstreamState::MSG_BAD_HEADER:
+    case DownstreamState::MSG_COMPLETE:
       break;
     default:
       if (LOG_ENABLED(INFO)) {
@@ -188,12 +188,12 @@ ssize_t http2_data_read_callback(nghttp2_session *session, int32_t stream_id,
   *data_flags |= NGHTTP2_DATA_FLAG_NO_COPY;
 
   if (input_empty &&
-      downstream->get_request_state() == Downstream::MSG_COMPLETE &&
+      downstream->get_request_state() == DownstreamState::MSG_COMPLETE &&
       // If connection is upgraded, don't set EOF flag, since HTTP/1
       // will set MSG_COMPLETE to request state after upgrade response
       // header is seen.
       (!req.upgrade_request ||
-       (downstream->get_response_state() == Downstream::HEADER_COMPLETE &&
+       (downstream->get_response_state() == DownstreamState::HEADER_COMPLETE &&
         !downstream->get_upgraded()))) {
 
     *data_flags |= NGHTTP2_DATA_FLAG_EOF;
@@ -244,7 +244,8 @@ int Http2DownstreamConnection::push_request_headers() {
 
   const auto &req = downstream_->request();
 
-  if (req.connect_proto && !http2session_->get_allow_connect_proto()) {
+  if (req.connect_proto != ConnectProto::NONE &&
+      !http2session_->get_allow_connect_proto()) {
     return -1;
   }
 
@@ -292,7 +293,7 @@ int Http2DownstreamConnection::push_request_headers() {
   nva.reserve(req.fs.headers().size() + 11 + num_cookies +
               httpconf.add_request_headers.size());
 
-  if (req.connect_proto == CONNECT_PROTO_WEBSOCKET) {
+  if (req.connect_proto == ConnectProto::WEBSOCKET) {
     nva.push_back(http2::make_nv_ll(":method", "CONNECT"));
     nva.push_back(http2::make_nv_ll(":protocol", "websocket"));
   } else {
@@ -318,7 +319,7 @@ int Http2DownstreamConnection::push_request_headers() {
       nva.push_back(http2::make_nv_ls_nocopy(":path", req.path));
     }
 
-    if (!req.no_authority || req.connect_proto) {
+    if (!req.no_authority || req.connect_proto != ConnectProto::NONE) {
       nva.push_back(http2::make_nv_ls_nocopy(":authority", authority));
     } else {
       nva.push_back(http2::make_nv_ls_nocopy("host", authority));
@@ -475,8 +476,8 @@ int Http2DownstreamConnection::push_request_headers() {
 
   // Add body as long as transfer-encoding is given even if
   // req.fs.content_length == 0 to forward trailer fields.
-  if (req.method == HTTP_CONNECT || req.connect_proto || transfer_encoding ||
-      req.fs.content_length > 0 || req.http2_expect_body) {
+  if (req.method == HTTP_CONNECT || req.connect_proto != ConnectProto::NONE ||
+      transfer_encoding || req.fs.content_length > 0 || req.http2_expect_body) {
     // Request-body is expected.
     data_prd = {{}, http2_data_read_callback};
     data_prdptr = &data_prd;
@@ -533,7 +534,7 @@ int Http2DownstreamConnection::resume_read(IOCtrlReason reason,
                                            size_t consumed) {
   int rv;
 
-  if (http2session_->get_state() != Http2Session::CONNECTED) {
+  if (http2session_->get_state() != Http2SessionState::CONNECTED) {
     return 0;
   }
 

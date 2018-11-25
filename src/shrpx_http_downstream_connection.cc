@@ -92,7 +92,7 @@ void retry_downstream_connection(Downstream *downstream,
   // request in request buffer.
   auto ndconn = handler->get_downstream_connection(
       rv, downstream,
-      downstream->get_request_header_sent() ? PROTO_HTTP1 : PROTO_NONE);
+      downstream->get_request_header_sent() ? Proto::HTTP1 : Proto::NONE);
   if (ndconn) {
     if (downstream->attach_downstream_connection(std::move(ndconn)) == 0 &&
         downstream->push_request_headers() == 0) {
@@ -100,7 +100,7 @@ void retry_downstream_connection(Downstream *downstream,
     }
   }
 
-  downstream->set_request_state(Downstream::CONNECT_FAIL);
+  downstream->set_request_state(DownstreamState::CONNECT_FAIL);
 
   if (rv == SHRPX_ERR_TLS_REQUIRED) {
     rv = upstream->on_downstream_abort_request_with_https_redirect(downstream);
@@ -193,7 +193,7 @@ HttpDownstreamConnection::HttpDownstreamConnection(
             group->shared_addr->timeout.write, group->shared_addr->timeout.read,
             {}, {}, connectcb, readcb, connect_timeoutcb, this,
             get_config()->tls.dyn_rec.warmup_threshold,
-            get_config()->tls.dyn_rec.idle_timeout, PROTO_HTTP1),
+            get_config()->tls.dyn_rec.idle_timeout, Proto::HTTP1),
       on_read_(&HttpDownstreamConnection::noop),
       on_write_(&HttpDownstreamConnection::noop),
       signal_write_(&HttpDownstreamConnection::noop),
@@ -259,7 +259,7 @@ int HttpDownstreamConnection::initiate_connection() {
     // initial_addr_idx_.
     size_t temp_idx = initial_addr_idx_;
 
-    auto &next_downstream = shared_addr->affinity.type == AFFINITY_NONE
+    auto &next_downstream = shared_addr->affinity.type == SessionAffinity::NONE
                                 ? shared_addr->next
                                 : temp_idx;
     auto end = next_downstream;
@@ -274,7 +274,7 @@ int HttpDownstreamConnection::initiate_connection() {
         assert(addr->dns);
       } else {
         assert(addr_ == nullptr);
-        if (shared_addr->affinity.type == AFFINITY_NONE) {
+        if (shared_addr->affinity.type == SessionAffinity::NONE) {
           addr = &addrs[next_downstream];
           if (++next_downstream >= addrs.size()) {
             next_downstream = 0;
@@ -286,7 +286,7 @@ int HttpDownstreamConnection::initiate_connection() {
           }
         }
 
-        if (addr->proto != PROTO_HTTP1) {
+        if (addr->proto != Proto::HTTP1) {
           if (end == next_downstream) {
             return SHRPX_ERR_NETWORK;
           }
@@ -316,11 +316,12 @@ int HttpDownstreamConnection::initiate_connection() {
 
       if (addr->dns) {
         if (!check_dns_result) {
-          auto dns_query = make_unique<DNSQuery>(
-              addr->host, [this](int status, const Address *result) {
+          auto dns_query = std::make_unique<DNSQuery>(
+              addr->host,
+              [this](DNSResolverStatus status, const Address *result) {
                 int rv;
 
-                if (status == DNS_STATUS_OK) {
+                if (status == DNSResolverStatus::OK) {
                   *this->resolved_addr_ = *result;
                 }
 
@@ -335,33 +336,32 @@ int HttpDownstreamConnection::initiate_connection() {
           auto dns_tracker = worker_->get_dns_tracker();
 
           if (!resolved_addr_) {
-            resolved_addr_ = make_unique<Address>();
+            resolved_addr_ = std::make_unique<Address>();
           }
-          rv = dns_tracker->resolve(resolved_addr_.get(), dns_query.get());
-          switch (rv) {
-          case DNS_STATUS_ERROR:
+          switch (dns_tracker->resolve(resolved_addr_.get(), dns_query.get())) {
+          case DNSResolverStatus::ERROR:
             downstream_failure(addr, nullptr);
             if (end == next_downstream) {
               return SHRPX_ERR_NETWORK;
             }
             continue;
-          case DNS_STATUS_RUNNING:
+          case DNSResolverStatus::RUNNING:
             dns_query_ = std::move(dns_query);
             // Remember current addr
             addr_ = addr;
             return 0;
-          case DNS_STATUS_OK:
+          case DNSResolverStatus::OK:
             break;
           default:
             assert(0);
           }
         } else {
           switch (dns_query_->status) {
-          case DNS_STATUS_ERROR:
+          case DNSResolverStatus::ERROR:
             dns_query_.reset();
             downstream_failure(addr, nullptr);
             continue;
-          case DNS_STATUS_OK:
+          case DNSResolverStatus::OK:
             dns_query_.reset();
             break;
           default:
@@ -513,7 +513,7 @@ int HttpDownstreamConnection::push_request_headers() {
 
   // Assume that method and request path do not contain \r\n.
   auto meth = http2::to_method_string(
-      req.connect_proto == CONNECT_PROTO_WEBSOCKET ? HTTP_GET : req.method);
+      req.connect_proto == ConnectProto::WEBSOCKET ? HTTP_GET : req.method);
   buf->append(meth);
   buf->append(' ');
 
@@ -566,7 +566,7 @@ int HttpDownstreamConnection::push_request_headers() {
     buf->append("Transfer-Encoding: chunked\r\n");
   }
 
-  if (req.connect_proto == CONNECT_PROTO_WEBSOCKET) {
+  if (req.connect_proto == ConnectProto::WEBSOCKET) {
     if (req.http_major == 2) {
       std::array<uint8_t, 16> nonce;
       util::random_bytes(std::begin(nonce), std::end(nonce),
@@ -810,7 +810,7 @@ void remove_from_pool(HttpDownstreamConnection *dconn) {
   auto &group = dconn->get_downstream_addr_group();
   auto &shared_addr = group->shared_addr;
 
-  if (shared_addr->affinity.type == AFFINITY_NONE) {
+  if (shared_addr->affinity.type == SessionAffinity::NONE) {
     auto &dconn_pool =
         dconn->get_downstream_addr_group()->shared_addr->dconn_pool;
     dconn_pool.remove_downstream_connection(dconn);
@@ -901,7 +901,7 @@ namespace {
 int htp_msg_begincb(http_parser *htp) {
   auto downstream = static_cast<Downstream *>(htp->data);
 
-  if (downstream->get_response_state() != Downstream::INITIAL) {
+  if (downstream->get_response_state() != DownstreamState::INITIAL) {
     return -1;
   }
 
@@ -966,7 +966,7 @@ int htp_hdrs_completecb(http_parser *htp) {
       return -1;
     }
   } else if (resp.fs.parse_content_length() != 0) {
-    downstream->set_response_state(Downstream::MSG_BAD_HEADER);
+    downstream->set_response_state(DownstreamState::MSG_BAD_HEADER);
     return -1;
   }
 
@@ -992,13 +992,18 @@ int htp_hdrs_completecb(http_parser *htp) {
   }
 
   resp.connection_close = !http_should_keep_alive(htp);
-  downstream->set_response_state(Downstream::HEADER_COMPLETE);
+  downstream->set_response_state(DownstreamState::HEADER_COMPLETE);
   downstream->inspect_http1_response();
   if (downstream->get_upgraded()) {
     // content-length must be ignored for upgraded connection.
     resp.fs.content_length = -1;
     resp.connection_close = true;
     // transfer-encoding not applied to upgraded connection
+    downstream->set_chunked_response(false);
+  } else if (http2::legacy_http1(req.http_major, req.http_minor)) {
+    if (resp.fs.content_length == -1) {
+      resp.connection_close = true;
+    }
     downstream->set_chunked_response(false);
   } else if (!downstream->expect_response_body()) {
     downstream->set_chunked_response(false);
@@ -1018,7 +1023,7 @@ int htp_hdrs_completecb(http_parser *htp) {
     if (upstream->resume_read(SHRPX_NO_BUFFER, downstream, 0) != 0) {
       return -1;
     }
-    downstream->set_request_state(Downstream::HEADER_COMPLETE);
+    downstream->set_request_state(DownstreamState::HEADER_COMPLETE);
     if (LOG_ENABLED(INFO)) {
       LOG(INFO) << "HTTP upgrade success. stream_id="
                 << downstream->get_stream_id();
@@ -1081,7 +1086,7 @@ int htp_hdr_keycb(http_parser *htp, const char *data, size_t len) {
     return -1;
   }
 
-  if (downstream->get_response_state() == Downstream::INITIAL) {
+  if (downstream->get_response_state() == DownstreamState::INITIAL) {
     if (resp.fs.header_key_prev()) {
       resp.fs.append_last_header_key(data, len);
     } else {
@@ -1118,7 +1123,7 @@ int htp_hdr_valcb(http_parser *htp, const char *data, size_t len) {
     return -1;
   }
 
-  if (downstream->get_response_state() == Downstream::INITIAL) {
+  if (downstream->get_response_state() == DownstreamState::INITIAL) {
     resp.fs.append_last_header_value(data, len);
   } else {
     resp.fs.append_last_trailer_value(data, len);
@@ -1158,7 +1163,7 @@ int htp_msg_completecb(http_parser *htp) {
     return 0;
   }
 
-  downstream->set_response_state(Downstream::MSG_COMPLETE);
+  downstream->set_response_state(DownstreamState::MSG_COMPLETE);
   // Block reading another response message from (broken?)
   // server. This callback is not called if the connection is
   // tunneled.
@@ -1430,7 +1435,7 @@ int HttpDownstreamConnection::process_input(const uint8_t *data,
   if (htperr != HPE_OK) {
     // Handling early return (in other words, response was hijacked by
     // mruby scripting).
-    if (downstream_->get_response_state() == Downstream::MSG_COMPLETE) {
+    if (downstream_->get_response_state() == DownstreamState::MSG_COMPLETE) {
       return SHRPX_ERR_DCONN_CANCELED;
     }
 

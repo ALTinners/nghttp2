@@ -135,9 +135,9 @@ private:
 };
 
 // Protocols allowed in HTTP/2 :protocol header field.
-enum shrpx_connect_proto {
-  CONNECT_PROTO_NONE,
-  CONNECT_PROTO_WEBSOCKET,
+enum class ConnectProto {
+  NONE,
+  WEBSOCKET,
 };
 
 struct Request {
@@ -148,7 +148,7 @@ struct Request {
         method(-1),
         http_major(1),
         http_minor(1),
-        connect_proto(CONNECT_PROTO_NONE),
+        connect_proto(ConnectProto::NONE),
         upgrade_request(false),
         http2_upgrade_seen(false),
         connection_close(false),
@@ -161,10 +161,12 @@ struct Request {
   }
 
   bool regular_connect_method() const {
-    return method == HTTP_CONNECT && !connect_proto;
+    return method == HTTP_CONNECT && connect_proto == ConnectProto::NONE;
   }
 
-  bool extended_connect_method() const { return connect_proto; }
+  bool extended_connect_method() const {
+    return connect_proto != ConnectProto::NONE;
+  }
 
   FieldStore fs;
   // Timestamp when all request header fields are received.
@@ -192,7 +194,7 @@ struct Request {
   // connect_proto specified in HTTP/2 :protocol pseudo header field
   // which enables extended CONNECT method.  This field is also set if
   // WebSocket upgrade is requested in h1 frontend for convenience.
-  int connect_proto;
+  ConnectProto connect_proto;
   // Returns true if the request is HTTP upgrade (HTTP Upgrade or
   // CONNECT method).  Upgrade to HTTP/2 is excluded.  For HTTP/2
   // Upgrade, check get_http2_upgrade_request().
@@ -242,7 +244,7 @@ struct Response {
   void resource_pushed(const StringRef &scheme, const StringRef &authority,
                        const StringRef &path) {
     if (!pushed_resources) {
-      pushed_resources = make_unique<
+      pushed_resources = std::make_unique<
           std::vector<std::tuple<StringRef, StringRef, StringRef>>>();
     }
     pushed_resources->emplace_back(scheme, authority, path);
@@ -272,6 +274,30 @@ struct Response {
   // END_STREAM.  This is used to tell Http2Upstream that it can send
   // response with single HEADERS with END_STREAM flag only.
   bool headers_only;
+};
+
+enum class DownstreamState {
+  INITIAL,
+  HEADER_COMPLETE,
+  MSG_COMPLETE,
+  STREAM_CLOSED,
+  CONNECT_FAIL,
+  MSG_RESET,
+  // header contains invalid header field.  We can safely send error
+  // response (502) to a client.
+  MSG_BAD_HEADER,
+  // header fields in HTTP/1 request exceed the configuration limit.
+  // This state is only transitioned from INITIAL state, and solely
+  // used to signal 431 status code to the client.
+  HTTP1_REQUEST_HEADER_TOO_LARGE,
+};
+
+enum class DispatchState {
+  NONE,
+  PENDING,
+  BLOCKED,
+  ACTIVE,
+  FAILURE,
 };
 
 class Downstream {
@@ -347,24 +373,8 @@ public:
   void set_request_downstream_host(const StringRef &host);
   bool expect_response_body() const;
   bool expect_response_trailer() const;
-  enum {
-    INITIAL,
-    HEADER_COMPLETE,
-    MSG_COMPLETE,
-    STREAM_CLOSED,
-    CONNECT_FAIL,
-    IDLE,
-    MSG_RESET,
-    // header contains invalid header field.  We can safely send error
-    // response (502) to a client.
-    MSG_BAD_HEADER,
-    // header fields in HTTP/1 request exceed the configuration limit.
-    // This state is only transitioned from INITIAL state, and solely
-    // used to signal 431 status code to the client.
-    HTTP1_REQUEST_HEADER_TOO_LARGE,
-  };
-  void set_request_state(int state);
-  int get_request_state() const;
+  void set_request_state(DownstreamState state);
+  DownstreamState get_request_state() const;
   DefaultMemchunks *get_request_buf();
   void set_request_pending(bool f);
   bool get_request_pending() const;
@@ -389,8 +399,8 @@ public:
   bool get_chunked_response() const;
   void set_chunked_response(bool f);
 
-  void set_response_state(int state);
-  int get_response_state() const;
+  void set_response_state(DownstreamState state);
+  DownstreamState get_response_state() const;
   DefaultMemchunks *get_response_buf();
   bool response_buf_full();
   // Validates that received response body length and content-length
@@ -446,8 +456,8 @@ public:
   // true if retry attempt should not be done.
   bool no_more_retry() const;
 
-  int get_dispatch_state() const;
-  void set_dispatch_state(int s);
+  DispatchState get_dispatch_state() const;
+  void set_dispatch_state(DispatchState s);
 
   void attach_blocked_link(BlockedLink *l);
   BlockedLink *detach_blocked_link();
@@ -486,14 +496,6 @@ public:
   enum {
     EVENT_ERROR = 0x1,
     EVENT_TIMEOUT = 0x2,
-  };
-
-  enum {
-    DISPATCH_NONE,
-    DISPATCH_PENDING,
-    DISPATCH_BLOCKED,
-    DISPATCH_ACTIVE,
-    DISPATCH_FAILURE,
   };
 
   Downstream *dlnext, *dlprev;
@@ -555,11 +557,11 @@ private:
   // An affinity cookie value.
   uint32_t affinity_cookie_;
   // request state
-  int request_state_;
+  DownstreamState request_state_;
   // response state
-  int response_state_;
+  DownstreamState response_state_;
   // only used by HTTP/2 upstream
-  int dispatch_state_;
+  DispatchState dispatch_state_;
   // true if the connection is upgraded (HTTP Upgrade or CONNECT),
   // excluding upgrade to HTTP/2.
   bool upgraded_;
