@@ -1,3 +1,9 @@
+nghttp2 (1.35.1-1) unstable; urgency=medium
+
+  * New upstream version 1.35.1
+
+ -- Tomasz Buchert <tomasz@debian.org>  Fri, 14 Dec 2018 10:03:56 +0100
+
 nghttp2 (1.35.0-1) unstable; urgency=medium
 
   * New upstream version 1.35.0
