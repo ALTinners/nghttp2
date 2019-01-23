@@ -1,3 +1,10 @@
+nghttp2 (1.36.0-1) unstable; urgency=medium
+
+  * Packaging refresh (debhelper 12, std-ver 4.3.0)
+  * New upstream release 1.36.0
+
+ -- Tomasz Buchert <tomasz@debian.org>  Wed, 23 Jan 2019 09:32:13 +0100
+
 nghttp2 (1.35.1-1) unstable; urgency=medium
 
   * New upstream version 1.35.1
