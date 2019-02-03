@@ -1,3 +1,9 @@
+nghttp2 (1.36.0-2) unstable; urgency=medium
+
+  * d/*: drop support for spdy (Closes: #920988)
+
+ -- Tomasz Buchert <tomasz@debian.org>  Sun, 03 Feb 2019 10:53:17 -0800
+
 nghttp2 (1.36.0-1) unstable; urgency=medium
 
   * Packaging refresh (debhelper 12, std-ver 4.3.0)
