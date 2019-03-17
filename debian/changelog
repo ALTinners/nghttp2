@@ -1,3 +1,9 @@
+nghttp2 (1.37.0-1) unstable; urgency=medium
+
+  * New upstream release 1.37.0
+
+ -- Tomasz Buchert <tomasz@debian.org>  Sun, 17 Mar 2019 12:41:37 +0100
+
 nghttp2 (1.36.0-2) unstable; urgency=medium
 
   * d/*: drop support for spdy (Closes: #920988)
