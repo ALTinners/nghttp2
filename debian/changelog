@@ -1,3 +1,9 @@
+nghttp2 (1.37.0-1ubuntu1) unstable; urgency=medium
+
+  * Modified for ubuntu 16.04 Xenial packaging
+
+ -- Andrew Lipscomb <andrew.lipscomb@swarmfarm.com>  Wed, 20 Mar 2019 08:22:26 +1000
+
 nghttp2 (1.37.0-1) unstable; urgency=medium
 
   * New upstream release 1.37.0
