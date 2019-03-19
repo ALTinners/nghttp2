@@ -1,6 +1,11 @@
 nghttp2 - HTTP/2 C Library
 ==========================
 
+### This is a hacked up copy of the original https://salsa.debian.org/debian/nghttp2/tree/master/debian library package. 
+### Forked from the 1.37.0 release
+### It removes the binaries from the package and instead builds the ASIO lib as part of the main library
+### It should build well enough with dpkg-buildpackage -b -uc -us -d
+
 This is an implementation of the Hypertext Transfer Protocol version 2
 in C.
 
