@@ -26,7 +26,7 @@ override_dh_auto_install-arch: custom_install_init_scripts custom_install_system
 override_dh_auto_install-indep: custom_install_manual
 
 override_dh_strip:
-        dh_strip --no-automatic-dbgsym
+	dh_strip --no-automatic-dbgsym
 
 #override_dh_installinit:
 #	dh_installinit -pnghttp2-proxy --onlyscripts --name=nghttpx
