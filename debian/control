@@ -37,17 +37,6 @@ Description: library implementing HTTP/2 protocol (development files)
  .
  This package installs development files.
 
-Package: libnghttp2-doc
-Architecture: all
-Section: doc
-Depends: libjs-jquery, libjs-underscore, lynx | www-browser, ${misc:Depends}
-Description: library implementing HTTP/2 protocol (documentation)
- This is an implementation of the Hypertext Transfer Protocol version
- 2 in C. The framing layer of HTTP/2 is implemented as a reusable C
- library.
- .
- This package installs documentation.
-
 Package: libnghttp2-14
 Architecture: any
 Multi-Arch: same
