@@ -3,8 +3,8 @@ Maintainer: Tomasz Buchert <tomasz@debian.org>
 Uploaders: Ondřej Surý <ondrej@debian.org>
 Section: httpd
 Priority: optional
-Build-Depends: debhelper (>= 9),
-               debhelper-compat (= 9),
+Build-Depends: debhelper (>= 11),
+               debhelper-compat (= 11),
                dpkg-dev (>= 1.17.14),
                libc-ares-dev,
                libcunit1-dev <!nocheck>,
